@@ -1,4 +1,4 @@
-FROM ubuntu:xenial
+FROM ubuntu:bionic
 
 RUN apt-get update && apt-get -y install \
     curl clang g++ g++-4.9 git make ccache \
