@@ -1,9 +1,9 @@
 FROM ubuntu:bionic
 
 RUN apt-get update && apt-get -y install \
-    curl clang g++ g++-4.9 git make ccache \
+    curl clang g++ g++-5 git make ccache \
     libedit-dev zlib1g-dev \
-    llvm-3.7-tools wget mercurial
+llvm-3.9-tools wget mercurial
 RUN wget -q https://hg.mozilla.org/mozilla-central/raw-file/default/python/mozboot/bin/bootstrap.py -O bootstrap.py && python bootstrap.py --application-choice=browser --no-interactive
 
 ENV PATH ~/.cargo/bin:$PATH
