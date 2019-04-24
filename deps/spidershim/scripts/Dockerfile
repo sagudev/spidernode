@@ -8,7 +8,7 @@ RUN curl https://sh.rustup.rs -sSf | \
     sh -s -- --default-toolchain stable -y
 
 ENV PATH=~/.cargo/bin:$PATH
-RUN wget -q https://hg.mozilla.org/mozilla-central/raw-file/default/python/mozboot/bin/bootstrap.py -O bootstrap.py && python bootstrap.py --application-choice=browser --no-interactive
+RUN wget -q https://hg.mozilla.org/mozilla-central/raw-file/default/python/mozboot/bin/bootstrap.py -O bootstrap.py && python bootstrap.py --application-choice=browser --no-interactive; exit 0
 
 ENV SHELL /bin/bash
 ENV TRAVIS true
