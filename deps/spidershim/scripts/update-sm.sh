@@ -41,6 +41,6 @@ git rm -r `git ls-files --deleted spidermonkey` || true
 # The following will fail if there are no added files, so || with true.
 git add -f `git ls-files --others spidermonkey` || true
 
-scripts/build-spidermonkey-files.py && git add spidermonkey-files.gypi
+scripts/build-spidermonkey-files.py && sed -i '/spaces.bat/d' ./spidermonkey-files.gypi && git add spidermonkey-files.gypi
 sed -i '/spaces.bat/d' ./spidermonkey-files.gypi
 git commit -m "Sync SpiderMonkey from $2"
