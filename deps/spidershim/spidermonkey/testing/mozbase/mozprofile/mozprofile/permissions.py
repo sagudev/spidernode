@@ -7,10 +7,15 @@
 add permissions to the profile
 """
 
+from __future__ import absolute_import
+
 import codecs
 import os
 import sqlite3
-import urlparse
+
+from six import string_types
+from six.moves.urllib import parse
+import six
 
 __all__ = ['MissingPrimaryLocationError', 'MultiplePrimaryLocationsError',
            'DEFAULT_PORTS', 'DuplicateLocationError', 'BadPortLocationError',
@@ -137,7 +142,7 @@ class ServerLocations(object):
             self.add_callback([location])
 
     def add_host(self, host, port='80', scheme='http', options='privileged'):
-        if isinstance(options, basestring):
+        if isinstance(options, string_types):
             options = options.split(',')
         self.add(Location(scheme, host, port, options))
 
@@ -180,7 +185,7 @@ class ServerLocations(object):
             # parse the server url
             if '://' not in server:
                 server = 'http://' + server
-            scheme, netloc, path, query, fragment = urlparse.urlsplit(server)
+            scheme, netloc, path, query, fragment = parse.urlsplit(server)
             # get the host and port
             try:
                 host, port = netloc.rsplit(':', 1)
@@ -267,7 +272,7 @@ class Permissions(object):
         for location in locations:
             # set the permissions
             permissions = {'allowXULXBL': 'noxul' not in location.options}
-            for perm, allow in permissions.iteritems():
+            for perm, allow in six.iteritems(permissions):
                 if allow:
                     permission_type = 1
                 else:

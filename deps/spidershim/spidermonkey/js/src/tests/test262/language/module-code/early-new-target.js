@@ -7,8 +7,11 @@ description: >
     It is a Syntax Error if ModuleItemList Contains NewTarget
 flags: [module]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
+features: [new.target]
 ---*/
+
+$DONOTEVALUATE();
 
 new.target;

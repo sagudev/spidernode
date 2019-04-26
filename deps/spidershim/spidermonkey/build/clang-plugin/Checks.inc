@@ -6,9 +6,14 @@
 
 CHECK(ArithmeticArgChecker, "arithmetic-argument")
 CHECK(AssertAssignmentChecker, "assignment-in-assert")
+CHECK(CanRunScriptChecker, "can-run-script")
+CHECK(DanglingOnTemporaryChecker, "dangling-on-temporary")
 CHECK(ExplicitImplicitChecker, "implicit-constructor")
 CHECK(ExplicitOperatorBoolChecker, "explicit-operator-bool")
 CHECK(KungFuDeathGripChecker, "kungfu-death-grip")
+#ifdef _WIN32
+CHECK(LoadLibraryUsageChecker, "load-library-usage")
+#endif
 CHECK(MustOverrideChecker, "must-override")
 CHECK(MustReturnFromCallerChecker, "must-return-from-caller")
 CHECK(MustUseChecker, "must-use")
@@ -23,6 +28,7 @@ CHECK(NonMemMovableTemplateArgChecker, "non-memmovable-template-arg")
 CHECK(NonParamInsideFunctionDeclChecker, "non-memmovable-template-arg")
 CHECK(OverrideBaseCallChecker, "override-base-call")
 CHECK(OverrideBaseCallUsageChecker, "override-base-call-usage")
+CHECK(ParamTraitsEnumChecker, "paramtraits-enum")
 CHECK(RefCountedCopyConstructorChecker, "refcounted-copy-constructor")
 CHECK(RefCountedInsideLambdaChecker, "refcounted-inside-lambda")
 CHECK(ScopeChecker, "scope")

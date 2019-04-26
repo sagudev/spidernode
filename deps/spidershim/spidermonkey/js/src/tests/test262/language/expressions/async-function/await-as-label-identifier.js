@@ -8,7 +8,7 @@ esid: prod-AsyncFunctionExpression
 features: [async-functions]
 flags: [generated]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 info: |
     Async Function Definitions
@@ -23,6 +23,7 @@ info: |
     StringValue of Identifier is "await".
 
 ---*/
+$DONOTEVALUATE();
 
 
 var fn = async function () {

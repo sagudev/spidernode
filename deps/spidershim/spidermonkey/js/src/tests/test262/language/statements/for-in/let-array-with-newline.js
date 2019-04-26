@@ -11,10 +11,12 @@ info: |
     [lookahead ∉ { {, function, async [no LineTerminator here] function, class, let [ }]
     Expression[+In, ?Yield, ?Await] ;
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 flags: [noStrict]
 ---*/
+
+$DONOTEVALUATE();
 
 for (var x in null) let
 [a] = 0;

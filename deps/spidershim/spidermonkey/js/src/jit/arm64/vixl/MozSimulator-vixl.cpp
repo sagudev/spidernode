@@ -27,25 +27,25 @@
 #include "mozilla/DebugOnly.h"
 
 #include "jit/arm64/vixl/Debugger-vixl.h"
+#include "jit/arm64/vixl/MozCachingDecoder.h"
 #include "jit/arm64/vixl/Simulator-vixl.h"
 #include "jit/IonTypes.h"
+#include "js/UniquePtr.h"
 #include "js/Utility.h"
 #include "threading/LockGuard.h"
 #include "vm/Runtime.h"
-#include "wasm/WasmCode.h"
 
 js::jit::SimulatorProcess* js::jit::SimulatorProcess::singleton_ = nullptr;
 
 namespace vixl {
 
-
 using mozilla::DebugOnly;
 using js::jit::ABIFunctionType;
+using js::jit::JitActivation;
 using js::jit::SimulatorProcess;
 
-Simulator::Simulator(JSContext* cx, Decoder* decoder, FILE* stream)
-  : cx_(cx)
-  , stream_(nullptr)
+Simulator::Simulator(Decoder* decoder, FILE* stream)
+  : stream_(nullptr)
   , print_disasm_(nullptr)
   , instrumentation_(nullptr)
   , stack_(nullptr)
@@ -84,7 +84,6 @@ void Simulator::ResetState() {
   // Reset registers to 0.
   pc_ = nullptr;
   pc_modified_ = false;
-  wasm_interrupt_ = false;
   for (unsigned i = 0; i < kNumberOfRegisters; i++) {
     set_xreg(i, 0xbadbeef);
   }
@@ -123,7 +122,7 @@ void Simulator::init(Decoder* decoder, FILE* stream) {
   ResetState();
 
   // Allocate and set up the simulator stack.
-  stack_ = (byte*)js_malloc(stack_size_);
+  stack_ = js_pod_malloc<byte>(stack_size_);
   if (!stack_) {
     oom_ = true;
     return;
@@ -139,10 +138,12 @@ void Simulator::init(Decoder* decoder, FILE* stream) {
   set_sp(tos);
 
   // Set the sample period to 10, as the VIXL examples and tests are short.
-  instrumentation_ = js_new<Instrument>("vixl_stats.csv", 10);
-  if (!instrumentation_) {
-    oom_ = true;
-    return;
+  if (getenv("VIXL_STATS")) {
+    instrumentation_ = js_new<Instrument>("vixl_stats.csv", 10);
+    if (!instrumentation_) {
+      oom_ = true;
+      return;
+    }
   }
 
   // Print a warning about exclusive-access instructions, but only the first
@@ -154,32 +155,48 @@ void Simulator::init(Decoder* decoder, FILE* stream) {
 
 Simulator* Simulator::Current() {
   JSContext* cx = js::TlsContext.get();
-  MOZ_ASSERT(js::CurrentThreadCanAccessRuntime(cx->runtime()));
+  if (!cx) {
+    return nullptr;
+  }
+  JSRuntime* rt = cx->runtime();
+  if (!rt) {
+    return nullptr;
+  }
+  MOZ_ASSERT(js::CurrentThreadCanAccessRuntime(rt));
   return cx->simulator();
 }
 
 
-Simulator* Simulator::Create(JSContext* cx) {
-  Decoder *decoder = js_new<vixl::Decoder>();
+Simulator* Simulator::Create() {
+  Decoder *decoder = js_new<Decoder>();
   if (!decoder)
     return nullptr;
 
   // FIXME: This just leaks the Decoder object for now, which is probably OK.
   // FIXME: We should free it at some point.
   // FIXME: Note that it can't be stored in the SimulatorRuntime due to lifetime conflicts.
-  Simulator *sim;
-  if (getenv("USE_DEBUGGER") != nullptr)
-    sim = js_new<Debugger>(cx, decoder, stdout);
-  else
-    sim = js_new<Simulator>(cx, decoder, stdout);
+  js::UniquePtr<Simulator> sim;
+  if (getenv("USE_DEBUGGER") != nullptr) {
+    sim.reset(js_new<Debugger>(decoder, stdout));
+  } else {
+    sim.reset(js_new<Simulator>(decoder, stdout));
+  }
 
   // Check if Simulator:init ran out of memory.
   if (sim && sim->oom()) {
-    js_delete(sim);
     return nullptr;
   }
 
-  return sim;
+#ifdef JS_CACHE_SIMULATOR_ARM64
+  // Register the simulator in the Simulator process to handle cache flushes
+  // across threads.
+  js::jit::AutoLockSimulatorCache alsc;
+  if (!SimulatorProcess::registerSimulator(sim.get())) {
+    return nullptr;
+  }
+#endif
+
+  return sim.release();
 }
 
 
@@ -193,15 +210,6 @@ void Simulator::ExecuteInstruction() {
   VIXL_ASSERT(IsWordAligned(pc_));
   decoder_->Decode(pc_);
   increment_pc();
-
-  if (MOZ_UNLIKELY(wasm_interrupt_)) {
-    handle_wasm_interrupt();
-    // Just calling set_pc turns the pc_modified_ flag on, which means it doesn't
-    // auto-step after executing the next instruction.  Force that to off so it
-    // will auto-step after executing the first instruction of the handler.
-    pc_modified_ = false;
-    wasm_interrupt_ = false;
-  }
 }
 
 
@@ -217,42 +225,27 @@ uintptr_t* Simulator::addressOfStackLimit() {
 
 bool Simulator::overRecursed(uintptr_t newsp) const {
   if (newsp)
-    newsp = xreg(31, Reg31IsStackPointer);
+    newsp = get_sp();
   return newsp <= stackLimit();
 }
 
 
 bool Simulator::overRecursedWithExtra(uint32_t extra) const {
-  uintptr_t newsp = xreg(31, Reg31IsStackPointer) - extra;
+  uintptr_t newsp = get_sp() - extra;
   return newsp <= stackLimit();
 }
 
 
-void Simulator::trigger_wasm_interrupt() {
-  MOZ_ASSERT(!wasm_interrupt_);
-  wasm_interrupt_ = true;
+JS::ProfilingFrameIterator::RegisterState
+Simulator::registerState()
+{
+  JS::ProfilingFrameIterator::RegisterState state;
+  state.pc = (uint8_t*) get_pc();
+  state.fp = (uint8_t*) get_fp();
+  state.lr = (uint8_t*) get_lr();
+  state.sp = (uint8_t*) get_sp();
+  return state;
 }
-
-
-// The signal handler only redirects the PC to the interrupt stub when the PC is
-// in function code. However, this guard is racy for the ARM simulator since the
-// signal handler samples PC in the middle of simulating an instruction and thus
-// the current PC may have advanced once since the signal handler's guard. So we
-// re-check here.
-void Simulator::handle_wasm_interrupt() {
-  void* pc = (void*)get_pc();
-  uint8_t* fp = (uint8_t*)xreg(30);
-
-  js::WasmActivation* activation = js::wasm::ActivationIfInnermost(cx_);
-  const js::wasm::CodeSegment* segment;
-  const js::wasm::Code* code = activation->compartment()->wasm.lookupCode(pc, &segment);
-  if (!code || !segment->containsFunctionPC(pc))
-    return;
-
-  activation->startInterrupt(pc, fp);
-  set_pc((Instruction*)segment->interruptCode());
-}
-
 
 int64_t Simulator::call(uint8_t* entry, int argument_count, ...) {
   va_list parameters;
@@ -296,12 +289,12 @@ int64_t Simulator::call(uint8_t* entry, int argument_count, ...) {
   va_end(parameters);
 
   // Call must transition back to native code on exit.
-  VIXL_ASSERT(xreg(30) == int64_t(kEndOfSimAddress));
+  VIXL_ASSERT(get_lr() == int64_t(kEndOfSimAddress));
 
   // Execute the simulation.
-  DebugOnly<int64_t> entryStack = xreg(31, Reg31IsStackPointer);
+  DebugOnly<int64_t> entryStack = get_sp();
   RunFrom((Instruction*)entry);
-  DebugOnly<int64_t> exitStack = xreg(31, Reg31IsStackPointer);
+  DebugOnly<int64_t> exitStack = get_sp();
   VIXL_ASSERT(entryStack == exitStack);
 
   int64_t result = xreg(0);
@@ -309,20 +302,6 @@ int64_t Simulator::call(uint8_t* entry, int argument_count, ...) {
       printf("LEAVE\n");
   return result;
 }
-
-
-// Protects the icache and redirection properties of the simulator.
-class AutoLockSimulatorCache : public js::LockGuard<js::Mutex>
-{
-  friend class Simulator;
-  using Base = js::LockGuard<js::Mutex>;
-
- public:
-  explicit AutoLockSimulatorCache()
-    : Base(SimulatorProcess::singleton_->lock_)
-  {
-  }
-};
 
 
 // When the generated code calls a VM function (masm.callWithABI) we need to
@@ -341,7 +320,6 @@ class Redirection
     next_(nullptr)
   {
     next_ = SimulatorProcess::redirection();
-    // TODO: Flush ICache?
     SimulatorProcess::setRedirection(this);
 
     Instruction* instr = (Instruction*)(&svcInstruction_);
@@ -354,7 +332,7 @@ class Redirection
   ABIFunctionType type() const { return type_; }
 
   static Redirection* Get(void* nativeFunction, ABIFunctionType type) {
-    AutoLockSimulatorCache alsr;
+    js::jit::AutoLockSimulatorCache alsr;
 
     // TODO: Store srt_ in the simulator for this assertion.
     // VIXL_ASSERT_IF(pt->simulator(), pt->simulator()->srt_ == srt);
@@ -367,8 +345,9 @@ class Redirection
       }
     }
 
+    // Note: we can't use js_new here because the constructor is private.
     js::AutoEnterOOMUnsafeRegion oomUnsafe;
-    Redirection* redir = (Redirection*)js_malloc(sizeof(Redirection));
+    Redirection* redir = js_pod_malloc<Redirection>(1);
     if (!redir)
         oomUnsafe.crash("Simulator redirection");
     new(redir) Redirection(nativeFunction, type);
@@ -396,7 +375,6 @@ void* Simulator::RedirectNativeFunction(void* nativeFunction, ABIFunctionType ty
   return redirection->addressOfSvcInstruction();
 }
 
-
 void Simulator::VisitException(const Instruction* instr) {
   switch (instr->Mask(ExceptionMask)) {
     case BRK: {
@@ -407,9 +385,15 @@ void Simulator::VisitException(const Instruction* instr) {
     }
     case HLT:
       switch (instr->ImmException()) {
-        case kUnreachableOpcode:
+        case kUnreachableOpcode: {
+          uint8_t* newPC;
+          if (js::wasm::HandleIllegalInstruction(registerState(), &newPC)) {
+            set_pc((Instruction*)newPC);
+            return;
+          }
           DoUnreachable(instr);
           return;
+        }
         case kTraceOpcode:
           DoTrace(instr);
           return;
@@ -432,12 +416,12 @@ void Simulator::VisitException(const Instruction* instr) {
           return;
         case kMarkStackPointer: {
           js::AutoEnterOOMUnsafeRegion oomUnsafe;
-          if (!spStack_.append(xreg(31, Reg31IsStackPointer)))
+          if (!spStack_.append(get_sp()))
             oomUnsafe.crash("tracking stack for ARM64 simulator");
           return;
         }
         case kCheckStackPointer: {
-          int64_t current = xreg(31, Reg31IsStackPointer);
+          int64_t current = get_sp();
           int64_t expected = spStack_.popCopy();
           VIXL_ASSERT(current == expected);
           return;
@@ -485,18 +469,23 @@ typedef int64_t (*Prototype_General7)(int64_t arg0, int64_t arg1, int64_t arg2, 
                                       int64_t arg4, int64_t arg5, int64_t arg6);
 typedef int64_t (*Prototype_General8)(int64_t arg0, int64_t arg1, int64_t arg2, int64_t arg3,
                                       int64_t arg4, int64_t arg5, int64_t arg6, int64_t arg7);
+typedef int64_t (*Prototype_GeneralGeneralGeneralInt64)(int64_t arg0, int64_t arg1, int64_t arg2,
+                                                        int64_t arg3);
+typedef int64_t (*Prototype_GeneralGeneralInt64Int64)(int64_t arg0, int64_t arg1, int64_t arg2,
+                                                      int64_t arg3);
 
 typedef int64_t (*Prototype_Int_Double)(double arg0);
-typedef int64_t (*Prototype_Int_IntDouble)(int32_t arg0, double arg1);
+typedef int64_t (*Prototype_Int_IntDouble)(int64_t arg0, double arg1);
 typedef int64_t (*Prototype_Int_DoubleIntInt)(double arg0, uint64_t arg1, uint64_t arg2);
 typedef int64_t (*Prototype_Int_IntDoubleIntInt)(uint64_t arg0, double arg1,
                                                  uint64_t arg2, uint64_t arg3);
 
 typedef float (*Prototype_Float32_Float32)(float arg0);
+typedef float (*Prototype_Float32_Float32Float32)(float arg0, float arg1);
 
 typedef double (*Prototype_Double_None)();
 typedef double (*Prototype_Double_Double)(double arg0);
-typedef double (*Prototype_Double_Int)(int32_t arg0);
+typedef double (*Prototype_Double_Int)(int64_t arg0);
 typedef double (*Prototype_Double_DoubleInt)(double arg0, int64_t arg1);
 typedef double (*Prototype_Double_IntDouble)(int64_t arg0, double arg1);
 typedef double (*Prototype_Double_DoubleDouble)(double arg0, double arg1);
@@ -531,7 +520,7 @@ Simulator::VisitCallRedirection(const Instruction* instr)
   DebugOnly<int64_t> x27 = xreg(27);
   DebugOnly<int64_t> x28 = xreg(28);
   DebugOnly<int64_t> x29 = xreg(29);
-  DebugOnly<int64_t> savedSP = xreg(31, Reg31IsStackPointer);
+  DebugOnly<int64_t> savedSP = get_sp();
 
   // Remember LR for returning from the "call".
   int64_t savedLR = xreg(30);
@@ -554,6 +543,7 @@ Simulator::VisitCallRedirection(const Instruction* instr)
   double d2 = dreg(2);
   double d3 = dreg(3);
   float s0 = sreg(0);
+  float s1 = sreg(1);
 
   // Dispatch the call and set the return value.
   switch (redir->type()) {
@@ -603,6 +593,16 @@ Simulator::VisitCallRedirection(const Instruction* instr)
       setGPR64Result(ret);
       break;
     }
+    case js::jit::Args_Int_GeneralGeneralGeneralInt64: {
+      int64_t ret = reinterpret_cast<Prototype_GeneralGeneralGeneralInt64>(nativeFn)(x0, x1, x2, x3);
+      setGPR64Result(ret);
+      break;
+    }
+    case js::jit::Args_Int_GeneralGeneralInt64Int64: {
+      int64_t ret = reinterpret_cast<Prototype_GeneralGeneralInt64Int64>(nativeFn)(x0, x1, x2, x3);
+      setGPR64Result(ret);
+      break;
+    }
 
     // Cases with GPR return type. This can be int32 or int64, but int64 is a safer assumption.
     case js::jit::Args_Int_Double: {
@@ -631,6 +631,11 @@ Simulator::VisitCallRedirection(const Instruction* instr)
     // Cases with float return type.
     case js::jit::Args_Float32_Float32: {
       float ret = reinterpret_cast<Prototype_Float32_Float32>(nativeFn)(s0);
+      setFP32Result(ret);
+      break;
+    }
+    case js::jit::Args_Float32_Float32Float32: {
+      float ret = reinterpret_cast<Prototype_Float32_Float32Float32>(nativeFn)(s0, s1);
       setFP32Result(ret);
       break;
     }
@@ -682,7 +687,12 @@ Simulator::VisitCallRedirection(const Instruction* instr)
       MOZ_CRASH("Unknown function type.");
   }
 
-  // TODO: Nuke the volatile registers.
+  // Nuke the volatile registers. x0-x7 are used as result registers, but except
+  // for x0, none are used in the above signatures.
+  for (int i = 1; i <= 18; i++) {
+    // Code feed 1 bad data
+    set_xreg(i, int64_t(0xc0defeed1badda7a));
+  }
 
   // Assert that callee-saved registers are unchanged.
   VIXL_ASSERT(xreg(19) == x19);
@@ -698,7 +708,7 @@ Simulator::VisitCallRedirection(const Instruction* instr)
   VIXL_ASSERT(xreg(29) == x29);
 
   // Assert that the stack is unchanged.
-  VIXL_ASSERT(savedSP == xreg(31, Reg31IsStackPointer));
+  VIXL_ASSERT(savedSP == get_sp());
 
   // Simulate a return.
   set_lr(savedLR);
@@ -707,9 +717,127 @@ Simulator::VisitCallRedirection(const Instruction* instr)
     printf("SVCRET\n");
 }
 
+#ifdef JS_CACHE_SIMULATOR_ARM64
+void
+Simulator::FlushICache()
+{
+  // Flush the caches recorded by the current thread as well as what got
+  // recorded from other threads before this call.
+  auto& vec = SimulatorProcess::getICacheFlushes(this);
+  for (auto& flush : vec) {
+    decoder_->FlushICache(flush.start, flush.length);
+  }
+  vec.clear();
+}
+
+void CachingDecoder::Decode(const Instruction* instr) {
+  InstDecodedKind state;
+  if (lastPage_ && lastPage_->contains(instr)) {
+    state = lastPage_->decode(instr);
+  } else {
+    uintptr_t key = SinglePageDecodeCache::PageStart(instr);
+    ICacheMap::AddPtr p = iCache_.lookupForAdd(key);
+    if (p) {
+      lastPage_ = p->value();
+      state = lastPage_->decode(instr);
+    } else {
+      js::AutoEnterOOMUnsafeRegion oomUnsafe;
+      SinglePageDecodeCache* newPage = js_new<SinglePageDecodeCache>(instr);
+      if (!newPage || !iCache_.add(p, key, newPage)) {
+        oomUnsafe.crash("Simulator SinglePageDecodeCache");
+      }
+      lastPage_ = newPage;
+      state = InstDecodedKind::NotDecodedYet;
+    }
+  }
+
+  switch (state) {
+  case InstDecodedKind::NotDecodedYet: {
+    cachingDecoder_.setDecodePtr(lastPage_->decodePtr(instr));
+    this->Decoder::Decode(instr);
+    break;
+  }
+#define CASE(A) \
+  case InstDecodedKind::A: { \
+    Visit##A(instr); \
+    break; \
+  }
+
+  VISITOR_LIST(CASE)
+#undef CASE
+  }
+}
+
+void CachingDecoder::FlushICache(void* start, size_t size) {
+  MOZ_ASSERT(uintptr_t(start) % vixl::kInstructionSize == 0);
+  MOZ_ASSERT(size % vixl::kInstructionSize == 0);
+  const uint8_t* it = reinterpret_cast<const uint8_t*>(start);
+  const uint8_t* end = it + size;
+  SinglePageDecodeCache* last = nullptr;
+  for (; it < end; it += vixl::kInstructionSize) {
+    auto instr = reinterpret_cast<const Instruction*>(it);
+    if (last && last->contains(instr)) {
+      last->clearDecode(instr);
+    } else {
+      uintptr_t key = SinglePageDecodeCache::PageStart(instr);
+      ICacheMap::Ptr p = iCache_.lookup(key);
+      if (p) {
+        last = p->value();
+        last->clearDecode(instr);
+      }
+    }
+  }
+}
+#endif
 
 }  // namespace vixl
 
+namespace js {
+namespace jit {
+
+#ifdef JS_CACHE_SIMULATOR_ARM64
+void SimulatorProcess::recordICacheFlush(void* start, size_t length) {
+  MOZ_ASSERT(singleton_->lock_.ownedByCurrentThread());
+  AutoEnterOOMUnsafeRegion oomUnsafe;
+  ICacheFlush range{start, length};
+  for (auto& s : singleton_->pendingFlushes_) {
+    if (!s.records.append(range)) {
+      oomUnsafe.crash("Simulator recordFlushICache");
+    }
+  }
+}
+
+SimulatorProcess::ICacheFlushes& SimulatorProcess::getICacheFlushes(Simulator* sim) {
+  MOZ_ASSERT(singleton_->lock_.ownedByCurrentThread());
+  for (auto& s : singleton_->pendingFlushes_) {
+    if (s.thread == sim) {
+      return s.records;
+    }
+  }
+  MOZ_CRASH("Simulator is not registered in the SimulatorProcess");
+}
+
+bool SimulatorProcess::registerSimulator(Simulator* sim) {
+  MOZ_ASSERT(singleton_->lock_.ownedByCurrentThread());
+  ICacheFlushes empty;
+  SimFlushes simFlushes{sim, std::move(empty)};
+  return singleton_->pendingFlushes_.append(std::move(simFlushes));
+}
+
+void SimulatorProcess::unregisterSimulator(Simulator* sim) {
+  MOZ_ASSERT(singleton_->lock_.ownedByCurrentThread());
+  for (auto& s : singleton_->pendingFlushes_) {
+    if (s.thread == sim) {
+      singleton_->pendingFlushes_.erase(&s);
+      return;
+    }
+  }
+  MOZ_CRASH("Simulator is not registered in the SimulatorProcess");
+}
+#endif // !JS_CACHE_SIMULATOR_ARM64
+
+} // namespace jit
+} // namespace js
 
 vixl::Simulator* JSContext::simulator() const {
   return simulator_;

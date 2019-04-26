@@ -1,7 +1,7 @@
-commit 5c8f4db9d72385965ff8b4fa94536649279f1470
-Author: Rick Waldron <waldron.rick@gmail.com>
-Date:   Wed May 17 15:46:04 2017 -0400
+commit e227f54d01d29629d1f889118e8d3442c8640625
+Author: Leo Balter <leonardo.balter@gmail.com>
+Date:   Wed Mar 6 12:39:58 2019 -0500
 
-    Merge pull request #1040 from leobalter/remove-unnecessary-tests
+    Fix assertions previously not reached before
     
-    Remove unnecessary tests
+    Fix #2049

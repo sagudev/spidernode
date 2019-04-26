@@ -4,14 +4,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# Build mozglue as a shared lib on Windows, OSX and Android.
+# Build mozglue as a shared lib on Windows, OSX and Android. But not for
+# embedders!
 # If this is ever changed, update MOZ_SHARED_MOZGLUE in browser/installer/Makefile.in
-if CONFIG['OS_TARGET'] in ('WINNT', 'Darwin', 'Android'):
+if CONFIG['JS_STANDALONE'] and not CONFIG['MOZ_MEMORY']:
+    Library('mozglue')
+elif CONFIG['OS_TARGET'] in ('WINNT', 'Darwin', 'Android'):
     SharedLibrary('mozglue')
 else:
     Library('mozglue')
 
 if CONFIG['OS_TARGET'] == 'Android':
+    LDFLAGS += ['-Wl,--version-script,%s/mozglue.ver' % SRCDIR]
     SOURCES += [
         'BionicGlue.cpp',
     ]
@@ -21,21 +25,31 @@ if CONFIG['MOZ_ASAN']:
         'AsanOptions.cpp',
     ]
 
+if CONFIG['MOZ_UBSAN']:
+    SOURCES += [
+        'UbsanOptions.cpp',
+    ]
+
 if CONFIG['OS_TARGET'] == 'WINNT':
-    DEFFILE = 'mozglue.def'
+    DEFFILE = '!mozglue.def'
     # We'll break the DLL blocklist if we immediately load user32.dll
     DELAYLOAD_DLLS += [
         'user32.dll',
     ]
+    RCINCLUDE = 'mozglue.rc'
 
-if not CONFIG['JS_STANDALONE']:
+    if CONFIG['MOZ_PGO'] and CONFIG['CC_TYPE'] == 'clang-cl':
+        SOURCES += ['cygprofile.cpp']
+        SOURCES['cygprofile.cpp'].pgo_generate_only = True
+
+if CONFIG['MOZ_WIDGET_TOOLKIT']:
 
     if CONFIG['MOZ_MEMORY'] and FORCE_SHARED_LIB:
         pass
         # TODO: SHARED_LIBRARY_LIBS go here
     else:
         # Temporary, until bug 662814 lands
-        NO_VISIBILITY_FLAGS = True
+        NoVisibilityFlags()
         SOURCES += [
             'dummy.cpp',
         ]
@@ -44,13 +58,38 @@ if not CONFIG['JS_STANDALONE']:
         LOCAL_INCLUDES += [
             '/memory/build',
         ]
+
         SOURCES += [
+            'Authenticode.cpp',
+            'UntrustedDllsHandler.cpp',
             'WindowsDllBlocklist.cpp',
         ]
-        DISABLE_STL_WRAPPING = True
+
+        DisableStlWrapping()
         OS_LIBS += [
+            'crypt32',
             'version',
+            'wintrust',
         ]
+        DELAYLOAD_DLLS += [
+            'crypt32.dll',
+            'wintrust.dll',
+        ]
+        EXPORTS.mozilla += [
+            'Authenticode.h',
+            'WindowsDllBlocklistCommon.h',
+            'WindowsDllBlocklistDefs.h',
+        ]
+        EXPORTS.mozilla.glue += [
+            'WindowsDllServices.h',
+        ]
+        USE_LIBS += [
+            'mscom-mozglue',
+        ]
+        if CONFIG['CPU_ARCH'] == 'aarch64':
+            USE_LIBS += [
+                'interceptor',
+            ]
 
     EXPORTS.mozilla += [
         'arm.h',
@@ -86,8 +125,6 @@ USE_LIBS += [
 DEFINES['IMPL_MFBT'] = True
 LIBRARY_DEFINES['MOZ_HAS_MOZGLUE'] = True
 
-LDFLAGS += CONFIG['MOZ_GLUE_WRAP_LDFLAGS']
-
 if CONFIG['OS_TARGET'] == 'Darwin':
     # On OSX 10.10.3, a dead lock happens in some cases involving dynamic
     # symbol resolution for symbols that jemalloc itself uses. While it
@@ -97,5 +134,8 @@ if CONFIG['OS_TARGET'] == 'Darwin':
     # because somehow clang doesn't want to accept the __thread keyword
     # for TLS.
     LDFLAGS += ['-Wl,-bind_at_load']
+
+if CONFIG['MOZ_LINKER'] and CONFIG['CPU_ARCH'] == 'arm':
+    LDFLAGS += ['-Wl,-version-script,%s/arm-eabi-filter' % SRCDIR]
 
 DIST_INSTALL = True

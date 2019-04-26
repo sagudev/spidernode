@@ -6,10 +6,11 @@ esid: sec-initializers-in-forin-statement-heads
 description: >
     for-in heads prohibit AssignmentExpressions
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
-var a;
-throw NotEarlyError;
-for (a = 0 in {});
 
+$DONOTEVALUATE();
+var a;
+
+for (a = 0 in {});

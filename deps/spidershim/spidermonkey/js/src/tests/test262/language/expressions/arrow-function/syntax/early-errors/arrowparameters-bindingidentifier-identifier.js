@@ -17,7 +17,9 @@ description: >
     ReservedWord : Keyword
 
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 var af = switch => 1;

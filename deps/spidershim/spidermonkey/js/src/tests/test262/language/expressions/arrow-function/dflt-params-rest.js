@@ -8,7 +8,7 @@ esid: sec-arrow-function-definitions-runtime-semantics-evaluation
 features: [default-parameters]
 flags: [generated]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 info: |
     ArrowFunction : ArrowParameters => ConciseBody
@@ -58,6 +58,7 @@ info: |
       ...BindingPattern[?Yield]
 
 ---*/
+$DONOTEVALUATE();
 
 0, (...x = []) => {
   

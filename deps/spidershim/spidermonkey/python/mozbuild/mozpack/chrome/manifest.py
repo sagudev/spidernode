@@ -6,7 +6,12 @@ from __future__ import absolute_import
 
 import re
 import os
-from urlparse import urlparse
+
+try:
+    from urlparse import urlparse
+except ImportError:
+    from urllib.parse import urlparse
+
 import mozpack.path as mozpath
 from mozpack.chrome.flags import Flags
 from mozpack.errors import errors
@@ -38,6 +43,7 @@ class ManifestEntry(object):
         'xpcnativewrappers',
         'tablet',
         'process',
+        'contentaccessible',
     ]
 
     def __init__(self, base, *flags):
@@ -49,7 +55,7 @@ class ManifestEntry(object):
         if not all(f in self.allowed_flags for f in self.flags):
             errors.fatal('%s unsupported for %s manifest entries' %
                          (','.join(f for f in self.flags
-                          if not f in self.allowed_flags), self.type))
+                                   if f not in self.allowed_flags), self.type))
 
     def serialize(self, *args):
         '''
@@ -90,6 +96,7 @@ class ManifestEntryWithRelPath(ManifestEntry):
     '''
     Abstract manifest entry type with a relative path definition.
     '''
+
     def __init__(self, base, relpath, *flags):
         ManifestEntry.__init__(self, base, *flags)
         self.relpath = relpath
@@ -109,7 +116,7 @@ class ManifestEntryWithRelPath(ManifestEntry):
     @property
     def path(self):
         return mozpath.normpath(mozpath.join(self.base,
-                                                       self.relpath))
+                                             self.relpath))
 
 
 class Manifest(ManifestEntryWithRelPath):
@@ -124,6 +131,7 @@ class ManifestChrome(ManifestEntryWithRelPath):
     '''
     Abstract class for chrome entries.
     '''
+
     def __init__(self, base, name, relpath, *flags):
         ManifestEntryWithRelPath.__init__(self, base, relpath, *flags)
         self.name = name
@@ -196,12 +204,6 @@ class ManifestOverload(ManifestEntry):
     def __str__(self):
         return self.serialize(self.overloaded, self.overload)
 
-    @property
-    def localized(self):
-        u = urlparse(self.overload)
-        return u.scheme == 'chrome' and \
-               u.path.split('/')[0:2] == ['', 'locale']
-
 
 class ManifestOverlay(ManifestOverload):
     '''
@@ -215,7 +217,7 @@ class ManifestOverlay(ManifestOverload):
 class ManifestStyle(ManifestOverload):
     '''
     Class for 'style' entries.
-        style chrome://global/content/customizeToolbar.xul \
+        style chrome://global/content/viewSource.xul \
             chrome://browser/skin/
     '''
     type = 'style'
@@ -320,10 +322,11 @@ class ManifestContract(ManifestEntry):
     def __str__(self):
         return self.serialize(self.contractID, self.cid)
 
+
 # All manifest classes by their type name.
 MANIFESTS_TYPES = dict([(c.type, c) for c in globals().values()
-                       if type(c) == type and issubclass(c, ManifestEntry)
-                       and hasattr(c, 'type') and c.type])
+                        if type(c) == type and issubclass(c, ManifestEntry)
+                        and hasattr(c, 'type') and c.type])
 
 MANIFEST_RE = re.compile(r'^#.*$')
 

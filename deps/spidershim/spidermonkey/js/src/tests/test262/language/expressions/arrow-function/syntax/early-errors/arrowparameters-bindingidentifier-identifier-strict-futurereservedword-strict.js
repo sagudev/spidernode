@@ -20,8 +20,10 @@ description: >
     Strict Mode
 
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 flags: [onlyStrict]
 ---*/
+
+$DONOTEVALUATE();
 var af = package => 1;

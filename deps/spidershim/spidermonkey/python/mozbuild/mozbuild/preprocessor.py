@@ -45,6 +45,15 @@ __all__ = [
 ]
 
 
+def path_starts_with(path, prefix):
+    if os.altsep:
+        prefix = prefix.replace(os.altsep, os.sep)
+        path = path.replace(os.altsep, os.sep)
+    prefix = [os.path.normcase(p) for p in prefix.split(os.sep)]
+    path = [os.path.normcase(p) for p in path.split(os.sep)]
+    return path[:len(prefix)] == prefix
+
+
 class Expression:
     def __init__(self, expression_string):
         """
@@ -56,7 +65,7 @@ class Expression:
         self.__ignore_whitespace()
         self.e = self.__get_logical_or()
         if self.content:
-            raise Expression.ParseError, self
+            raise Expression.ParseError(self)
 
     def __get_logical_or(self):
         """
@@ -157,7 +166,7 @@ class Expression:
                 if word_len:
                     rv = Expression.__ASTLeaf('string', self.content[:word_len])
                 else:
-                    raise Expression.ParseError, self
+                    raise Expression.ParseError(self)
         self.__strip(word_len)
         self.__ignore_whitespace()
         return rv
@@ -196,7 +205,7 @@ class Expression:
                 return left and right
             elif tok[1].value == '||':
                 return left or right
-            raise Expression.ParseError, self
+            raise Expression.ParseError(self)
 
         # Mapping from token types to evaluator functions
         # Apart from (non-)equality, all these can be simple lambda forms.
@@ -280,6 +289,15 @@ class Preprocessor:
                     'LINE': 0,
                     'DIRECTORY': os.path.abspath('.')}.iteritems():
             self.context[k] = v
+        try:
+            # Can import globally because of bootstrapping issues.
+            from buildconfig import topsrcdir, topobjdir
+        except ImportError:
+            # Allow this script to still work independently of a configured objdir.
+            topsrcdir = topobjdir = None
+        self.topsrcdir = topsrcdir
+        self.topobjdir = topobjdir
+        self.curdir = '.'
         self.actionLevel = 0
         self.disableLevel = 0
         # ifStates can be
@@ -339,9 +357,8 @@ class Preprocessor:
         """
         self.marker = aMarker
         if aMarker:
-            self.instruction = re.compile('{0}(?P<cmd>[a-z]+)(?:\s(?P<args>.*))?$'
-                                          .format(aMarker),
-                                          re.U)
+            self.instruction = re.compile('{0}(?P<cmd>[a-z]+)(?:\s+(?P<args>.*?))?\s*$'
+                                          .format(aMarker))
             self.comment = re.compile(aMarker, re.U)
         else:
             class NoMatch(object):
@@ -578,7 +595,7 @@ class Preprocessor:
     # Logic
     def ensure_not_else(self):
         if len(self.ifStates) == 0 or self.ifStates[-1] == 2:
-            sys.stderr.write('WARNING: bad nesting of #else\n')
+            sys.stderr.write('WARNING: bad nesting of #else in %s\n' % self.context['FILE'])
     def do_if(self, args, replace=False):
         if self.disableLevel and not replace:
             self.disableLevel += 1
@@ -606,7 +623,7 @@ class Preprocessor:
         if self.disableLevel and not replace:
             self.disableLevel += 1
             return
-        if re.match('\W', args, re.U):
+        if re.search('\W', args, re.U):
             raise Preprocessor.Error(self, 'INVALID_VAR', args)
         if args not in self.context:
             self.disableLevel = 1
@@ -621,7 +638,7 @@ class Preprocessor:
         if self.disableLevel and not replace:
             self.disableLevel += 1
             return
-        if re.match('\W', args, re.U):
+        if re.search('\W', args, re.U):
             raise Preprocessor.Error(self, 'INVALID_VAR', args)
         if args in self.context:
             self.disableLevel = 1
@@ -748,7 +765,7 @@ class Preprocessor:
                 if filters:
                     args = self.applyFilters(args)
                 if not os.path.isabs(args):
-                    args = os.path.join(self.context['DIRECTORY'], args)
+                    args = os.path.join(self.curdir, args)
                 args = open(args, 'rU')
             except Preprocessor.Error:
                 raise
@@ -758,15 +775,22 @@ class Preprocessor:
         oldFile = self.context['FILE']
         oldLine = self.context['LINE']
         oldDir = self.context['DIRECTORY']
+        oldCurdir = self.curdir
         self.noteLineInfo()
 
         if args.isatty():
             # we're stdin, use '-' and '' for file and dir
             self.context['FILE'] = '-'
             self.context['DIRECTORY'] = ''
+            self.curdir = '.'
         else:
             abspath = os.path.abspath(args.name)
+            self.curdir = os.path.dirname(abspath)
             self.includes.add(abspath)
+            if self.topobjdir and path_starts_with(abspath, self.topobjdir):
+                abspath = '$OBJDIR' + abspath[len(self.topobjdir):]
+            elif self.topsrcdir and path_starts_with(abspath, self.topsrcdir):
+                abspath = '$SRCDIR' + abspath[len(self.topsrcdir):]
             self.context['FILE'] = abspath
             self.context['DIRECTORY'] = os.path.dirname(abspath)
         self.context['LINE'] = 0
@@ -781,6 +805,7 @@ class Preprocessor:
         self.checkLineNumbers = oldCheckLineNumbers
         self.context['LINE'] = oldLine
         self.context['DIRECTORY'] = oldDir
+        self.curdir = oldCurdir
     def do_includesubst(self, args):
         args = self.filter_substitution(args)
         self.do_include(args)

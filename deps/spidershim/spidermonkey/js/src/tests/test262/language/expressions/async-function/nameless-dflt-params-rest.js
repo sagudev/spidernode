@@ -5,16 +5,17 @@
 /*---
 description: RestParameter does not support an initializer (async function nameless expression)
 esid: sec-async-function-definitions
-features: [default-parameters]
+features: [default-parameters, async-functions]
 flags: [generated]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 info: |
     14.6 Async Function Definitions
 
     AsyncFunctionExpression :
       async function ( FormalParameters ) { AsyncFunctionBody }
+
 
     14.1 Function Definitions
 
@@ -34,6 +35,7 @@ info: |
       ...BindingPattern[?Yield]
 
 ---*/
+$DONOTEVALUATE();
 
 
 (async function(...x = []) {

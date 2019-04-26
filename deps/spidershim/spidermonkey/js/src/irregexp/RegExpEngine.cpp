@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99: */
+ * vim: set ts=8 sts=2 et sw=2 tw=80: */
 
 // Copyright 2012 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,9 @@
 
 #include "irregexp/RegExpEngine.h"
 
+#include <utility>
+
+#include "gc/GC.h"
 #include "irregexp/NativeRegExpMacroAssembler.h"
 #include "irregexp/RegExpCharacters.h"
 #include "irregexp/RegExpMacroAssembler.h"
@@ -85,10 +88,10 @@ AddClass(const int* elmv, int elmc,
     }
 }
 
-static void
-AddClassNegated(const int* elmv,
-                int elmc,
-                CharacterRangeVector* ranges)
+void
+js::irregexp::AddClassNegated(const int* elmv,
+                              int elmc,
+                              CharacterRangeVector* ranges)
 {
     elmc--;
     MOZ_ASSERT(elmv[elmc] == 0x10000);
@@ -196,7 +199,7 @@ static const size_t kEcma262UnCanonicalizeMaxWidth = 4;
 
 // Returns the number of characters in the equivalence class, omitting those
 // that cannot occur in the source string if it is a one byte string.
-static int
+static MOZ_ALWAYS_INLINE int
 GetCaseIndependentLetters(char16_t character,
                           bool latin1_subject,
                           bool unicode,
@@ -297,6 +300,10 @@ CharacterRange::AddCaseEquivalents(bool is_latin1, bool unicode, CharacterRangeV
             return;
         if (top > kMaxOneByteCharCode)
             top = kMaxOneByteCharCode;
+    } else {
+        // Nothing to do for surrogates.
+        if (bottom >= unicode::LeadSurrogateMin && top <= unicode::TrailSurrogateMax)
+            return;
     }
 
     for (char16_t c = bottom;; c++) {
@@ -629,9 +636,7 @@ ActionNode::FillInBMInfo(int offset,
     if (!bm->CheckOverRecursed())
         return false;
 
-    if (action_type_ == BEGIN_SUBMATCH) {
-        bm->SetRest(offset);
-    } else if (action_type_ != POSITIVE_SUBMATCH_SUCCESS) {
+    if (action_type_ != POSITIVE_SUBMATCH_SUCCESS) {
         if (!on_success()->FillInBMInfo(offset, budget - 1, bm, not_at_start))
             return false;
     }
@@ -836,7 +841,17 @@ void TextNode::MakeCaseIndependent(bool is_latin1, bool unicode)
             if (cc->is_standard(alloc()))
                 continue;
 
+            // Similarly, there's nothing to do for the character class
+            // containing all characters except line terminators and surrogates.
+            // This one is added by UnicodeEverythingAtom.
             CharacterRangeVector& ranges = cc->ranges(alloc());
+            if (CompareInverseRanges(ranges,
+                                     kLineTerminatorAndSurrogateRanges,
+                                     kLineTerminatorAndSurrogateRangeCount))
+            {
+                continue;
+            }
+
             int range_count = ranges.length();
             for (int j = 0; j < range_count; j++)
                 ranges[j].AddCaseEquivalents(is_latin1, unicode, &ranges);
@@ -1040,7 +1055,7 @@ ChoiceNode::FilterLATIN1(int depth, bool ignore_case, bool unicode)
         }
     }
 
-    alternatives_ = Move(new_alternatives);
+    alternatives_ = std::move(new_alternatives);
     return this;
 }
 
@@ -1311,6 +1326,7 @@ Analysis::VisitAssertion(AssertionNode* that)
     EnsureAnalyzed(that->on_success());
 }
 
+// [SMDOC] Irregexp internals
 // -------------------------------------------------------------------
 // Implementation of the Irregexp regular expression engine.
 //
@@ -1637,6 +1653,7 @@ RegExpCompiler::RegExpCompiler(JSContext* cx, LifoAlloc* alloc, int capture_coun
                                bool ignore_case, bool latin1, bool match_only, bool unicode)
   : next_register_(2 * (capture_count + 1)),
     recursion_depth_(0),
+    macro_assembler_(nullptr),
     ignore_case_(ignore_case),
     latin1_(latin1),
     match_only_(match_only),
@@ -1682,6 +1699,7 @@ RegExpCompiler::Assemble(JSContext* cx,
 
     if (reg_exp_too_big_) {
         code.destroy();
+        js::gc::AutoSuppressGC suppress(cx);
         JS_ReportErrorASCII(cx, "regexp too big");
         return RegExpCode();
     }
@@ -1717,17 +1735,16 @@ IsNativeRegExpEnabled(JSContext* cx)
 }
 
 RegExpCode
-irregexp::CompilePattern(JSContext* cx, HandleRegExpShared shared, RegExpCompileData* data,
-                         HandleLinearString sample, bool is_global, bool ignore_case,
-                         bool is_latin1, bool match_only, bool force_bytecode, bool sticky,
-                         bool unicode)
+irregexp::CompilePattern(JSContext* cx, LifoAlloc& alloc, HandleRegExpShared shared,
+                         RegExpCompileData* data, HandleLinearString sample, bool is_global,
+                         bool ignore_case, bool is_latin1, bool match_only, bool force_bytecode,
+                         bool sticky, bool unicode, RegExpShared::JitCodeTables& tables)
 {
     if ((data->capture_count + 1) * 2 - 1 > RegExpMacroAssembler::kMaxRegister) {
         JS_ReportErrorASCII(cx, "regexp too big");
         return RegExpCode();
     }
 
-    LifoAlloc& alloc = cx->tempLifoAlloc();
     RegExpCompiler compiler(cx, &alloc, data->capture_count, ignore_case, is_latin1, match_only,
                             unicode);
 
@@ -1776,7 +1793,7 @@ irregexp::CompilePattern(JSContext* cx, HandleRegExpShared shared, RegExpCompile
     }
 
     if (compiler.isRegExpTooBig()) {
-        MOZ_ASSERT(compiler.cx()->isExceptionPending()); // over recursed
+        // This might erase the over-recurse error, if any.
         JS_ReportErrorASCII(cx, "regexp too big");
         return RegExpCode();
     }
@@ -1800,6 +1817,11 @@ irregexp::CompilePattern(JSContext* cx, HandleRegExpShared shared, RegExpCompile
         return RegExpCode();
     }
 
+    // We should not GC when we have a jit::MacroAssembler on the stack. Check
+    // this here because the static analysis does not understand the
+    // Maybe<NativeRegExpMacroAssembler> below.
+    JS::AutoCheckCannotGC nogc(cx);
+
     Maybe<jit::JitContext> ctx;
     Maybe<NativeRegExpMacroAssembler> native_assembler;
     Maybe<InterpretedRegExpMacroAssembler> interpreted_assembler;
@@ -1815,10 +1837,10 @@ irregexp::CompilePattern(JSContext* cx, HandleRegExpShared shared, RegExpCompile
                       : NativeRegExpMacroAssembler::CHAR16;
 
         ctx.emplace(cx, (jit::TempAllocator*) nullptr);
-        native_assembler.emplace(cx, &alloc, shared, mode, (data->capture_count + 1) * 2);
+        native_assembler.emplace(cx, &alloc, mode, (data->capture_count + 1) * 2, tables);
         assembler = native_assembler.ptr();
     } else {
-        interpreted_assembler.emplace(cx, &alloc, shared, (data->capture_count + 1) * 2);
+        interpreted_assembler.emplace(cx, &alloc, (data->capture_count + 1) * 2);
         assembler = interpreted_assembler.ptr();
     }
 
@@ -1900,7 +1922,7 @@ RegExpDisjunction::ToNode(RegExpCompiler* compiler, RegExpNode* on_success)
     const RegExpTreeVector& alternatives = this->alternatives();
     size_t length = alternatives.length();
     ChoiceNode* result = compiler->alloc()->newInfallible<ChoiceNode>(compiler->alloc(), length);
-    for (size_t i = 0; i < length; i++) {
+    for (size_t i = 0; i < length && !compiler->isRegExpTooBig(); i++) {
         GuardedAlternative alternative(alternatives[i]->ToNode(compiler, on_success));
         result->AddAlternative(alternative);
     }
@@ -2251,7 +2273,7 @@ RegExpAlternative::ToNode(RegExpCompiler* compiler, RegExpNode* on_success)
 
     const RegExpTreeVector& children = nodes();
     RegExpNode* current = on_success;
-    for (int i = children.length() - 1; i >= 0; i--)
+    for (int i = children.length() - 1; i >= 0 && !compiler->isRegExpTooBig(); i--)
         current = children[i]->ToNode(compiler, current);
     return current;
 }
@@ -2311,7 +2333,8 @@ BoyerMoorePositionInfo::SetInterval(const Interval& interval)
         }
         return;
     }
-    for (int i = interval.from(); i <= interval.to(); i++) {
+    MOZ_ASSERT(interval.from() <= interval.to());
+    for (int i = interval.from(); i != interval.to() + 1; i++) {
         int mod_character = (i & kMask);
         if (!map_[mod_character]) {
             map_count_++;
@@ -2499,21 +2522,21 @@ BoyerMooreLookahead::EmitSkipInstructions(RegExpMacroAssembler* masm)
         return true;
     }
 
-    uint8_t* boolean_skip_table;
+    RegExpShared::JitCodeTable boolean_skip_table;
     {
         AutoEnterOOMUnsafeRegion oomUnsafe;
-        boolean_skip_table = static_cast<uint8_t*>(js_malloc(kSize));
-        if (!boolean_skip_table || !masm->shared->addTable(boolean_skip_table))
+        boolean_skip_table.reset(static_cast<uint8_t*>(js_malloc(kSize)));
+        if (!boolean_skip_table)
             oomUnsafe.crash("Table malloc");
     }
 
-    int skip_distance = GetSkipTable(min_lookahead, max_lookahead, boolean_skip_table);
+    int skip_distance = GetSkipTable(min_lookahead, max_lookahead, boolean_skip_table.get());
     MOZ_ASSERT(skip_distance != 0);
 
     jit::Label cont, again;
     masm->Bind(&again);
     masm->LoadCurrentCharacter(max_lookahead, &cont, true);
-    masm->CheckBitInTable(boolean_skip_table, &cont);
+    masm->CheckBitInTable(std::move(boolean_skip_table), &cont);
     masm->AdvanceCurrentPosition(skip_distance);
     masm->JumpOrBacktrack(&again);
     masm->Bind(&cont);
@@ -2524,7 +2547,13 @@ BoyerMooreLookahead::EmitSkipInstructions(RegExpMacroAssembler* masm)
 bool
 RegExpCompiler::CheckOverRecursed()
 {
-    if (!CheckRecursionLimit(cx())) {
+    if (!CheckRecursionLimitDontReport(cx())) {
+#ifdef JS_MORE_DETERMINISTIC
+        // We don't report overrecursion here, but we throw an exception later
+        // and this still affects differential testing. Mimic ReportOverRecursed
+        // (the fuzzers check for this particular string).
+        fprintf(stderr, "ReportOverRecursed called\n");
+#endif
         SetRegExpTooBig();
         return false;
     }
@@ -3294,18 +3323,18 @@ EmitUseLookupTable(RegExpMacroAssembler* masm,
     }
 
     // TODO(erikcorry): Cache these.
-    uint8_t* ba;
+    RegExpShared::JitCodeTable ba;
     {
         AutoEnterOOMUnsafeRegion oomUnsafe;
-        ba = static_cast<uint8_t*>(js_malloc(kSize));
-        if (!ba || !masm->shared->addTable(ba))
+        ba.reset(static_cast<uint8_t*>(js_malloc(kSize)));
+        if (!ba)
             oomUnsafe.crash("Table malloc");
     }
 
     for (int i = 0; i < kSize; i++)
         ba[i] = templ[i];
 
-    masm->CheckBitInTable(ba, on_bit_set);
+    masm->CheckBitInTable(std::move(ba), on_bit_set);
     if (on_bit_clear != fall_through)
         masm->JumpOrBacktrack(on_bit_clear);
 }
@@ -3890,6 +3919,9 @@ TextNode::TextEmitPass(RegExpCompiler* compiler,
                     break;
                 }
                 if (emit_function != nullptr) {
+                    // emit_function is a function pointer. Suppress static
+                    // analysis false positives.
+                    JS::AutoSuppressGCAnalysis suppress;
                     bool bound_checked = emit_function(compiler,
                                                        quarks[j],
                                                        backtrack,

@@ -9,9 +9,11 @@ description: >
     Checking if laballed "continue" with no IterationStatement, placed
     into a block, fails
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 LABEL : x=3.14;
 

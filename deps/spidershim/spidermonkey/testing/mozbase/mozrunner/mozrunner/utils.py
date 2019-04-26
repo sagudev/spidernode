@@ -6,9 +6,12 @@
 
 """Utility functions for mozrunner"""
 
-import mozinfo
+from __future__ import absolute_import, print_function
+
 import os
 import sys
+
+import mozinfo
 
 __all__ = ['findInPath', 'get_metadata_from_egg']
 
@@ -61,9 +64,10 @@ def findInPath(fileName, path=os.environ['PATH']):
             if os.path.isfile(os.path.join(dir, fileName + ".exe")):
                 return os.path.join(dir, fileName + ".exe")
 
+
 if __name__ == '__main__':
     for i in sys.argv[1:]:
-        print findInPath(i)
+        print(findInPath(i))
 
 
 def _find_marionette_in_args(*args, **kwargs):
@@ -81,7 +85,7 @@ def _raw_log():
 
 
 def test_environment(xrePath, env=None, crashreporter=True, debugger=False,
-                     dmdPath=None, lsanPath=None, log=None):
+                     lsanPath=None, ubsanPath=None, log=None):
     """
     populate OS environment variables for mochitest and reftests.
 
@@ -99,32 +103,17 @@ def test_environment(xrePath, env=None, crashreporter=True, debugger=False,
         ldLibraryPath = xrePath
 
     envVar = None
-    dmdLibrary = None
-    preloadEnvVar = None
-    if 'toolkit' in mozinfo.info and mozinfo.info['toolkit'] == "gonk":
-        # Skip all of this, it's only valid for the host.
-        pass
-    elif mozinfo.isUnix:
+    if mozinfo.isUnix:
         envVar = "LD_LIBRARY_PATH"
-        env['MOZILLA_FIVE_HOME'] = xrePath
-        dmdLibrary = "libdmd.so"
-        preloadEnvVar = "LD_PRELOAD"
     elif mozinfo.isMac:
         envVar = "DYLD_LIBRARY_PATH"
-        dmdLibrary = "libdmd.dylib"
-        preloadEnvVar = "DYLD_INSERT_LIBRARIES"
     elif mozinfo.isWin:
         envVar = "PATH"
-        dmdLibrary = "dmd.dll"
-        preloadEnvVar = "MOZ_REPLACE_MALLOC_LIB"
     if envVar:
         envValue = ((env.get(envVar), str(ldLibraryPath))
                     if mozinfo.isWin
-                    else (ldLibraryPath, dmdPath, env.get(envVar)))
+                    else (ldLibraryPath, env.get(envVar)))
         env[envVar] = os.path.pathsep.join([path for path in envValue if path])
-
-    if dmdPath and dmdLibrary and preloadEnvVar:
-        env[preloadEnvVar] = os.path.join(dmdPath, dmdLibrary)
 
     # crashreporter
     env['GNOME_DISABLE_CRASH_DIALOG'] = '1'
@@ -133,6 +122,7 @@ def test_environment(xrePath, env=None, crashreporter=True, debugger=False,
     if crashreporter and not debugger:
         env['MOZ_CRASHREPORTER_NO_REPORT'] = '1'
         env['MOZ_CRASHREPORTER'] = '1'
+        env['MOZ_CRASHREPORTER_SHUTDOWN'] = '1'
     else:
         env['MOZ_CRASHREPORTER_DISABLE'] = '1'
 
@@ -145,7 +135,7 @@ def test_environment(xrePath, env=None, crashreporter=True, debugger=False,
     # Set WebRTC logging in case it is not set yet
     env.setdefault(
         'MOZ_LOG',
-        'signaling:3,mtransport:4,DataChannel:4,jsep:4,MediaPipelineFactory:4'
+        'signaling:3,mtransport:4,DataChannel:4,jsep:4'
     )
     env.setdefault('R_LOG_LEVEL', '6')
     env.setdefault('R_LOG_DESTINATION', 'stderr')
@@ -156,21 +146,27 @@ def test_environment(xrePath, env=None, crashreporter=True, debugger=False,
     if asan:
         try:
             # Symbolizer support
+            if mozinfo.isMac:
+                llvmSymbolizerDir = ldLibraryPath
+            else:
+                llvmSymbolizerDir = xrePath
             llvmsym = os.path.join(
-                xrePath,
+                llvmSymbolizerDir,
                 "llvm-symbolizer" + mozinfo.info["bin_suffix"].encode('ascii'))
             if os.path.isfile(llvmsym):
                 env["ASAN_SYMBOLIZER_PATH"] = llvmsym
                 log.info("INFO | runtests.py | ASan using symbolizer at %s"
                          % llvmsym)
             else:
-                log.info("TEST-UNEXPECTED-FAIL | runtests.py | Failed to find"
-                         " ASan symbolizer at %s" % llvmsym)
+                log.error("TEST-UNEXPECTED-FAIL | runtests.py | Failed to find"
+                          " ASan symbolizer at %s" % llvmsym)
 
             # Returns total system memory in kilobytes.
             if mozinfo.isWin:
                 totalMemory = int(
                     os.popen("wmic computersystem get TotalPhysicalMemory").readlines()[1]) / 1024
+            elif mozinfo.isMac:
+                totalMemory = int(os.popen("sysctl hw.memsize").readlines()[0].split()[1]) / 1024
             else:
                 totalMemory = int(os.popen("free").readlines()[1].split()[1])
 
@@ -208,7 +204,7 @@ def test_environment(xrePath, env=None, crashreporter=True, debugger=False,
         except OSError as err:
             log.info("Failed determine available memory, disabling ASan"
                      " low-memory configuration: %s" % err.strerror)
-        except:
+        except Exception:
             log.info("Failed determine available memory, disabling ASan"
                      " low-memory configuration")
         else:
@@ -223,8 +219,23 @@ def test_environment(xrePath, env=None, crashreporter=True, debugger=False,
             log.info("INFO | runtests.py | TSan using symbolizer at %s"
                      % llvmsym)
         else:
-            log.info("TEST-UNEXPECTED-FAIL | runtests.py | Failed to find TSan"
-                     " symbolizer at %s" % llvmsym)
+            log.error("TEST-UNEXPECTED-FAIL | runtests.py | Failed to find TSan"
+                      " symbolizer at %s" % llvmsym)
+
+    ubsan = bool(mozinfo.info.get("ubsan"))
+    if ubsan and (mozinfo.isLinux or mozinfo.isMac):
+        if ubsanPath:
+            log.info("UBSan enabled.")
+            ubsanOptions = []
+            suppressionsFile = os.path.join(
+                ubsanPath, 'ubsan_suppressions.txt')
+            if os.path.exists(suppressionsFile):
+                log.info("UBSan using suppression file " + suppressionsFile)
+                ubsanOptions.append("suppressions=" + suppressionsFile)
+            else:
+                log.info("WARNING | runtests.py | UBSan suppressions file"
+                         " does not exist! " + suppressionsFile)
+            env["UBSAN_OPTIONS"] = ':'.join(ubsanOptions)
 
     return env
 

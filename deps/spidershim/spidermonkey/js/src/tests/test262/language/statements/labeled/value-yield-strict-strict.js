@@ -9,9 +9,11 @@
       as a label.
   es6id: 12.1.1
   negative:
-    phase: early
+    phase: parse
     type: SyntaxError
   flags: [onlyStrict]
- ---*/
+---*/
+
+$DONOTEVALUATE();
 
 yield: 1;

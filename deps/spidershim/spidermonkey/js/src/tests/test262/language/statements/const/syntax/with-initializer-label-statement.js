@@ -4,10 +4,12 @@
 /*---
 es6id: 13.1
 description: >
-    const declarations with initialisers in statement positions: 
+    const declarations with initialisers in statement positions:
     label: Statement
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 label: const x = 1;

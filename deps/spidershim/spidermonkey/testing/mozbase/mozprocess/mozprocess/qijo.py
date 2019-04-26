@@ -16,8 +16,9 @@ from ctypes import (
     c_size_t,
     c_ulong
 )
-
 from ctypes.wintypes import BOOL, BYTE, DWORD, HANDLE, LARGE_INTEGER
+
+import six
 
 LPVOID = c_void_p
 LPDWORD = POINTER(DWORD)
@@ -80,6 +81,7 @@ class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(Structure):
                 ('PeakProcessMemoryUsed', SIZE_T),
                 ('PeakJobMemoryUsed', SIZE_T)]
 
+
 # These numbers below come from:
 # http://msdn.microsoft.com/en-us/library/ms686216%28v=vs.85%29.aspx
 JobObjectAssociateCompletionPortInformation = 7
@@ -98,7 +100,7 @@ class JobObjectInfo(object):
     }
 
     def __init__(self, _class):
-        if isinstance(_class, basestring):
+        if isinstance(_class, six.string_types):
             assert _class in self.mapping, \
                 'Class should be one of %s; you gave %s' % (self.mapping, _class)
             _class = self.mapping[_class]
@@ -109,12 +111,12 @@ class JobObjectInfo(object):
 
 
 QueryInformationJobObjectProto = WINFUNCTYPE(
-    BOOL,        # Return type
-    HANDLE,      # hJob
-    DWORD,       # JobObjectInfoClass
-    LPVOID,      # lpJobObjectInfo
-    DWORD,       # cbJobObjectInfoLength
-    LPDWORD      # lpReturnLength
+    BOOL,  # Return type
+    HANDLE,  # hJob
+    DWORD,  # JobObjectInfoClass
+    LPVOID,  # lpJobObjectInfo
+    DWORD,  # cbJobObjectInfoLength
+    LPDWORD  # lpReturnLength
 )
 
 QueryInformationJobObjectFlags = (

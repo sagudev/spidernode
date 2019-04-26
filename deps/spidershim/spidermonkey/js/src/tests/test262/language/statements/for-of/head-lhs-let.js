@@ -17,8 +17,10 @@ info: |
     for ( ForDeclaration[?Yield] of AssignmentExpression[+In, ?Yield] )
       Statement[?Yield, ?Return]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 for ( let of [] ) ;

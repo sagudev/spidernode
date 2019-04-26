@@ -8,8 +8,10 @@ description: >
     SyntaxError expected: reserved words used as Identifier
     Names in UTF8: catch
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 var \u{63}atch = 123;

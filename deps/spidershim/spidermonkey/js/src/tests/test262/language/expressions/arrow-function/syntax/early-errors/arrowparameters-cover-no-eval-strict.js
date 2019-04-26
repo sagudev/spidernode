@@ -17,8 +17,10 @@ description: >
     No parameters named "eval"
 
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 flags: [onlyStrict]
 ---*/
+
+$DONOTEVALUATE();
 var af = (eval) => 1;

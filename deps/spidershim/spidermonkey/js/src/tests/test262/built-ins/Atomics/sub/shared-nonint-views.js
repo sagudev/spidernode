@@ -1,20 +1,24 @@
+// |reftest| skip-if(!this.hasOwnProperty('Atomics')||!this.hasOwnProperty('SharedArrayBuffer')||(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration()['arm64-simulator'])) -- Atomics,SharedArrayBuffer is not enabled unconditionally, ARM64 Simulator cannot emulate atomics
 // Copyright (C) 2017 Mozilla Corporation.  All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
+esid: sec-atomics.sub
 description: >
   Test Atomics.sub on shared non-integer TypedArrays
 includes: [testTypedArray.js]
+features: [Atomics, SharedArrayBuffer, TypedArray]
 ---*/
 
-var sab = new SharedArrayBuffer(1024);
+var buffer = new SharedArrayBuffer(1024);
 
-var other_views = [Uint8ClampedArray, Float32Array, Float64Array];
+testWithTypedArrayConstructors(function(TA) {
+  assert.throws(TypeError, function() {
+    Atomics.sub(new TA(buffer), 0, 0);
+  }, '`Atomics.sub(new TA(buffer), 0, 0)` throws TypeError');
+}, floatArrayConstructors);
 
-testWithTypedArrayConstructors(function(View) {
-    var view = new View(sab);
 
-    assert.throws(TypeError, (() => Atomics.sub(view, 0, 0)));
-}, other_views);
+
 
 reportCompare(0, 0);

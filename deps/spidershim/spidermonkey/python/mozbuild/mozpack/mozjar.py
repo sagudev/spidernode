@@ -6,6 +6,7 @@ from __future__ import absolute_import
 
 from io import BytesIO
 import struct
+import subprocess
 import zlib
 import os
 from zipfile import (
@@ -13,11 +14,13 @@ from zipfile import (
     ZIP_DEFLATED,
 )
 from collections import OrderedDict
-from urlparse import urlparse, ParseResult
 import mozpack.path as mozpath
+from mozbuild.util import memoize
+
 
 JAR_STORED = ZIP_STORED
 JAR_DEFLATED = ZIP_DEFLATED
+JAR_BROTLI = 0x81
 MAX_WBITS = 15
 
 
@@ -69,7 +72,7 @@ class JarStruct(object):
         '''
         assert self.MAGIC and isinstance(self.STRUCT, OrderedDict)
         self.size_fields = set(t for t in self.STRUCT.itervalues()
-                               if not t in JarStruct.TYPE_MAPPING)
+                               if t not in JarStruct.TYPE_MAPPING)
         self._values = {}
         if data:
             self._init_data(data)
@@ -98,7 +101,7 @@ class JarStruct(object):
                 value = data[offset:offset + size]
                 if isinstance(value, memoryview):
                     value = value.tobytes()
-            if not name in sizes:
+            if name not in sizes:
                 self._values[name] = value
             else:
                 sizes[name] = value
@@ -135,7 +138,7 @@ class JarStruct(object):
         '''
         serialized = struct.pack('<I', self.signature)
         sizes = dict((t, name) for name, t in self.STRUCT.iteritems()
-                     if not t in JarStruct.TYPE_MAPPING)
+                     if t not in JarStruct.TYPE_MAPPING)
         for name, t in self.STRUCT.iteritems():
             if t in JarStruct.TYPE_MAPPING:
                 format, size = JarStruct.TYPE_MAPPING[t]
@@ -166,7 +169,7 @@ class JarStruct(object):
         return self._values[key]
 
     def __setitem__(self, key, value):
-        if not key in self.STRUCT:
+        if key not in self.STRUCT:
             raise KeyError(key)
         if key in self.size_fields:
             raise AttributeError("can't set attribute")
@@ -198,6 +201,7 @@ class JarCdirEnd(JarStruct):
         ('comment_size', 'uint16'),
         ('comment', 'comment_size'),
     ])
+
 
 CDIR_END_SIZE = JarCdirEnd().size
 
@@ -256,19 +260,21 @@ class JarFileReader(object):
     File-like class for use by JarReader to give access to individual files
     within a Jar archive.
     '''
+
     def __init__(self, header, data):
         '''
         Initialize a JarFileReader. header is the local file header
         corresponding to the file in the jar archive, data a buffer containing
         the file data.
         '''
-        assert header['compression'] in [JAR_DEFLATED, JAR_STORED]
+        assert header['compression'] in [JAR_DEFLATED, JAR_STORED, JAR_BROTLI]
         self._data = data
         # Copy some local file header fields.
         for name in ['filename', 'compressed_size',
                      'uncompressed_size', 'crc32']:
             setattr(self, name, header[name])
-        self.compressed = header['compression'] == JAR_DEFLATED
+        self.compressed = header['compression'] != JAR_STORED
+        self.compress = header['compression']
 
     def read(self, length=-1):
         '''
@@ -317,10 +323,14 @@ class JarFileReader(object):
         if hasattr(self, '_uncompressed_data'):
             return self._uncompressed_data
         data = self.compressed_data
-        if self.compressed:
+        if self.compress == JAR_STORED:
+            data = data.tobytes()
+        elif self.compress == JAR_BROTLI:
+            data = Brotli.decompress(data.tobytes())
+        elif self.compress == JAR_DEFLATED:
             data = zlib.decompress(data.tobytes(), -MAX_WBITS)
         else:
-            data = data.tobytes()
+            assert False  # Can't be another value per __init__
         if len(data) != self.uncompressed_size:
             raise JarReaderError('Corrupted file? %s' % self.filename)
         self._uncompressed_data = BytesIO(data)
@@ -332,6 +342,7 @@ class JarReader(object):
     Class with methods to read Jar files. Can open standard jar files as well
     as Mozilla jar files (see further details in the JarWriter documentation).
     '''
+
     def __init__(self, file=None, fileobj=None, data=None):
         '''
         Opens the given file as a Jar archive. Use the given file-like object
@@ -361,6 +372,13 @@ class JarReader(object):
         del self._data
 
     @property
+    def compression(self):
+        entries = self.entries
+        if not entries:
+            return JAR_STORED
+        return max(f['compression'] for f in entries.itervalues())
+
+    @property
     def entries(self):
         '''
         Return an ordered dict of central directory entries, indexed by
@@ -385,7 +403,7 @@ class JarReader(object):
             xattr = entry['external_attr']
             # Skip directories
             if (host == 0 and xattr & 0x10) or (host == 3 and
-                                                xattr & (040000 << 16)):
+                                                xattr & (0o040000 << 16)):
                 continue
             entries[entry['filename']] = entry
             if entry['offset'] < preload:
@@ -458,8 +476,8 @@ class JarWriter(object):
     archives as well as jar archives optimized for Gecko. See the documentation
     for the close() member function for a description of both layouts.
     '''
-    def __init__(self, file=None, fileobj=None, compress=True, optimize=True,
-                 compress_level=9):
+
+    def __init__(self, file=None, fileobj=None, compress=True, compress_level=9):
         '''
         Initialize a Jar archive in the given file. Use the given file-like
         object if one is given instead of opening the given file name.
@@ -473,11 +491,12 @@ class JarWriter(object):
             self._data = fileobj
         else:
             self._data = open(file, 'wb')
+        if compress is True:
+            compress = JAR_DEFLATED
         self._compress = compress
         self._compress_level = compress_level
         self._contents = OrderedDict()
         self._last_preloaded = None
-        self._optimize = optimize
 
     def __enter__(self):
         '''
@@ -547,11 +566,10 @@ class JarWriter(object):
                                   self._contents.values(), 0)
         # On optimized archives, store the preloaded size and the central
         # directory entries, followed by the first end of central directory.
-        if self._optimize:
+        if preload_size:
             end['cdir_offset'] = 4
             offset = end['cdir_size'] + end['cdir_offset'] + end.size
-            if preload_size:
-                preload_size += offset
+            preload_size += offset
             self._data.write(struct.pack('<I', preload_size))
             for entry, _ in self._contents.itervalues():
                 entry['offset'] += offset
@@ -562,7 +580,7 @@ class JarWriter(object):
             self._data.write(headers[entry].serialize())
             self._data.write(content)
         # On non optimized archives, store the central directory entries.
-        if not self._optimize:
+        if not preload_size:
             end['cdir_offset'] = offset
             for entry, _ in self._contents.itervalues():
                 self._data.write(entry.serialize())
@@ -574,12 +592,13 @@ class JarWriter(object):
         '''
         Add a new member to the jar archive, with the given name and the given
         data.
-        The compress option indicates if the given data should be compressed
-        (True), not compressed (False), or compressed according to the default
-        defined when creating the JarWriter (None).
-        When the data should be compressed (True or None with self.compress ==
-        True), it is only really compressed if the compressed size is smaller
-        than the uncompressed size.
+        The compress option indicates how the given data should be compressed
+        (one of JAR_STORED, JAR_DEFLATE or JAR_BROTLI), or compressed according
+        to the default defined when creating the JarWriter (None). True and
+        False are allowed values for backwards compatibility, mapping,
+        respectively, to JAR_DEFLATE and JAR_STORED.
+        When the data should be compressed, it is only really compressed if
+        the compressed size is smaller than the uncompressed size.
         The mode option gives the unix permissions that should be stored
         for the jar entry.
         If a duplicated member is found skip_duplicates will prevent raising
@@ -594,8 +613,12 @@ class JarWriter(object):
             raise JarWriterError("File %s already in JarWriter" % name)
         if compress is None:
             compress = self._compress
-        if (isinstance(data, JarFileReader) and data.compressed == compress) \
-                or (isinstance(data, Deflater) and data.compress == compress):
+        if compress is True:
+            compress = JAR_DEFLATED
+        if compress is False:
+            compress = JAR_STORED
+        if (isinstance(data, (JarFileReader, Deflater)) and
+                data.compress == compress):
             deflater = data
         else:
             deflater = Deflater(compress, compress_level=self._compress_level)
@@ -615,11 +638,11 @@ class JarWriter(object):
             # Set creator host system (upper byte of creator_version)
             # to 3 (Unix) so mode is honored when there is one.
             entry['creator_version'] |= 3 << 8
-            entry['external_attr'] = (mode & 0xFFFF) << 16L
+            entry['external_attr'] = (mode & 0xFFFF) << 16
         if deflater.compressed:
             entry['min_version'] = 20  # Version 2.0 supports deflated streams
             entry['general_flag'] = 2  # Max compression
-            entry['compression'] = JAR_DEFLATED
+            entry['compression'] = deflater.compress
         else:
             entry['min_version'] = 10  # Version 1.0 for stored streams
             entry['general_flag'] = 0
@@ -641,12 +664,12 @@ class JarWriter(object):
         '''
         new_contents = OrderedDict()
         for f in files:
-            if not f in self._contents:
+            if f not in self._contents:
                 continue
             new_contents[f] = self._contents[f]
             self._last_preloaded = f
         for f in self._contents:
-            if not f in new_contents:
+            if f not in new_contents:
                 new_contents[f] = self._contents[f]
         self._contents = new_contents
 
@@ -657,32 +680,46 @@ class Deflater(object):
     compressed unless the compressed form is smaller than the uncompressed
     data.
     '''
+
     def __init__(self, compress=True, compress_level=9):
         '''
-        Initialize a Deflater. The compress argument determines whether to
-        try to compress at all.
+        Initialize a Deflater. The compress argument determines how to
+        compress.
         '''
         self._data = BytesIO()
+        if compress is True:
+            compress = JAR_DEFLATED
+        elif compress is False:
+            compress = JAR_STORED
         self.compress = compress
-        if compress:
-            self._deflater = zlib.compressobj(compress_level, zlib.DEFLATED,
-                                              -MAX_WBITS)
+        if compress in (JAR_DEFLATED, JAR_BROTLI):
+            if compress == JAR_DEFLATED:
+                self._deflater = zlib.compressobj(
+                    compress_level, zlib.DEFLATED, -MAX_WBITS)
+            else:
+                self._deflater = BrotliCompress()
             self._deflated = BytesIO()
         else:
+            assert compress == JAR_STORED
             self._deflater = None
+        self.crc32 = 0
 
     def write(self, data):
         '''
         Append a buffer to the Deflater.
         '''
         self._data.write(data)
+
+        if isinstance(data, memoryview):
+            data = data.tobytes()
+
         if self.compress:
             if self._deflater:
-                if isinstance(data, memoryview):
-                    data = data.tobytes()
                 self._deflated.write(self._deflater.compress(data))
             else:
                 raise JarWriterError("Can't write after flush")
+
+        self.crc32 = zlib.crc32(data, self.crc32) & 0xffffffff
 
     def close(self):
         '''
@@ -741,13 +778,6 @@ class Deflater(object):
         return self._data.tell()
 
     @property
-    def crc32(self):
-        '''
-        Return the crc32 of the data written to the Deflater.
-        '''
-        return zlib.crc32(self._data.getvalue()) & 0xffffffff
-
-    @property
     def compressed_data(self):
         '''
         Return the compressed data, if the data should be compressed (real
@@ -759,58 +789,61 @@ class Deflater(object):
         return self._data.getvalue()
 
 
+class Brotli(object):
+    @staticmethod
+    @memoize
+    def brotli_tool():
+        from buildconfig import topobjdir, substs
+        return os.path.join(topobjdir, 'dist', 'host', 'bin',
+                            'bro' + substs.get('BIN_SUFFIX', ''))
+
+    @staticmethod
+    def run_brotli_tool(args, input):
+        proc = subprocess.Popen([Brotli.brotli_tool()] + args,
+                                stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE)
+        (stdout, _) = proc.communicate(input)
+        ret = proc.wait()
+        if ret != 0:
+            raise Exception("Brotli compression failed")
+        return stdout
+
+    @staticmethod
+    def compress(data):
+        return Brotli.run_brotli_tool(['--window', '17'], data)
+
+    @staticmethod
+    def decompress(data):
+        return Brotli.run_brotli_tool(['--decompress'], data)
+
+
+class BrotliCompress(object):
+    def __init__(self):
+        self._buf = BytesIO()
+
+    def compress(self, data):
+        self._buf.write(data)
+        return b''
+
+    def flush(self):
+        return Brotli.compress(self._buf.getvalue())
+
+
 class JarLog(dict):
     '''
     Helper to read the file Gecko generates when setting MOZ_JAR_LOG_FILE.
-    The jar log is then available as a dict with the jar path as key (see
-    canonicalize for more details on the key value), and the corresponding
-    access log as a list value. Only the first access to a given member of
-    a jar is stored.
+    The jar log is then available as a dict with the jar path as key, and
+    the corresponding access log as a list value. Only the first access to
+    a given member of a jar is stored.
     '''
+
     def __init__(self, file=None, fileobj=None):
         if not fileobj:
             fileobj = open(file, 'r')
-        urlmap = {}
         for line in fileobj:
-            url, path = line.strip().split(None, 1)
-            if not url or not path:
+            jar, path = line.strip().split(None, 1)
+            if not jar or not path:
                 continue
-            if url not in urlmap:
-                urlmap[url] = JarLog.canonicalize(url)
-            jar = urlmap[url]
             entry = self.setdefault(jar, [])
             if path not in entry:
                 entry.append(path)
-
-    @staticmethod
-    def canonicalize(url):
-        '''
-        The jar path is stored in a MOZ_JAR_LOG_FILE log as a url. This method
-        returns a unique value corresponding to such urls.
-        - file:///{path} becomes {path}
-        - jar:file:///{path}!/{subpath} becomes ({path}, {subpath})
-        - jar:jar:file:///{path}!/{subpath}!/{subpath2} becomes
-           ({path}, {subpath}, {subpath2})
-        '''
-        if not isinstance(url, ParseResult):
-            # Assume that if it doesn't start with jar: or file:, it's a path.
-            if not url.startswith(('jar:', 'file:')):
-                url = 'file:///' + os.path.abspath(url)
-            url = urlparse(url)
-        assert url.scheme
-        assert url.scheme in ('jar', 'file')
-        if url.scheme == 'jar':
-            path = JarLog.canonicalize(url.path)
-            if isinstance(path, tuple):
-                return path[:-1] + tuple(path[-1].split('!/', 1))
-            return tuple(path.split('!/', 1))
-        if url.scheme == 'file':
-            assert os.path.isabs(url.path)
-            path = url.path
-            # On Windows, url.path will be /drive:/path ; on Unix systems,
-            # /path. As we want drive:/path instead of /drive:/path on Windows,
-            # remove the leading /.
-            if os.path.isabs(path[1:]):
-                path = path[1:]
-            path = os.path.realpath(path)
-            return mozpath.normsep(os.path.normcase(path))

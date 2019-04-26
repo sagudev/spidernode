@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2.7
 
 # tooltool is a lookaside cache implemented in Python
 # Copyright (C) 2011 John H. Ford <john@johnford.info>
@@ -80,7 +80,7 @@ class MissingFileException(ExceptionWithFilename):
 class FileRecord(object):
 
     def __init__(self, filename, size, digest, algorithm, unpack=False,
-                 version=None, visibility=None, setup=None):
+                 version=None, visibility=None):
         object.__init__(self)
         if '/' in filename or '\\' in filename:
             log.error(
@@ -93,7 +93,6 @@ class FileRecord(object):
         self.unpack = unpack
         self.version = version
         self.visibility = visibility
-        self.setup = setup
 
     def __eq__(self, other):
         if self is other:
@@ -141,7 +140,7 @@ class FileRecord(object):
             raise MissingFileException(filename=self.filename)
 
     def validate(self):
-        if self.validate_size():
+        if self.size is None or self.validate_size():
             if self.validate_digest():
                 return True
         return False
@@ -185,8 +184,6 @@ class FileRecordJSONEncoder(json.JSONEncoder):
                 rv['version'] = obj.version
             if obj.visibility is not None:
                 rv['visibility'] = obj.visibility
-            if obj.setup:
-                rv['setup'] = obj.setup
             return rv
 
     def default(self, f):
@@ -232,10 +229,9 @@ class FileRecordJSONDecoder(json.JSONDecoder):
                 unpack = obj.get('unpack', False)
                 version = obj.get('version', None)
                 visibility = obj.get('visibility', None)
-                setup = obj.get('setup')
                 rv = FileRecord(
                     obj['filename'], obj['size'], obj['digest'], obj['algorithm'],
-                    unpack, version, visibility, setup)
+                    unpack, version, visibility)
                 log.debug("materialized %s" % rv)
                 return rv
         return obj
@@ -372,9 +368,9 @@ def list_manifest(manifest_file):
         ))
         return False
     for f in manifest.file_records:
-        print "%s\t%s\t%s" % ("P" if f.present() else "-",
+        print("%s\t%s\t%s" % ("P" if f.present() else "-",
                               "V" if f.present() and f.validate() else "-",
-                              f.filename)
+                              f.filename))
     return True
 
 
@@ -494,10 +490,9 @@ def fetch_file(base_urls, file_record, grabchunk=1024 * 4, auth_file=None, regio
                          (file_record.filename, base_url, temp_path))
                 fetched_path = temp_path
                 break
-        except (urllib2.URLError, urllib2.HTTPError, ValueError) as e:
+        except (urllib2.URLError, urllib2.HTTPError, ValueError):
             log.info("...failed to fetch '%s' from %s" %
-                     (file_record.filename, base_url))
-            log.debug("%s" % e)
+                     (file_record.filename, base_url), exc_info=True)
         except IOError:  # pragma: no cover
             log.info("failed to write to temporary file for '%s'" %
                      file_record.filename, exc_info=True)
@@ -520,14 +515,39 @@ def clean_path(dirname):
         shutil.rmtree(dirname)
 
 
-def unpack_file(filename, setup=None):
+CHECKSUM_SUFFIX = ".checksum"
+
+
+def _cache_checksum_matches(base_file, checksum):
+    try:
+        with open(base_file + CHECKSUM_SUFFIX, "rb") as f:
+            prev_checksum = f.read().strip()
+            if prev_checksum == checksum:
+                log.info("Cache matches, avoiding extracting in '%s'" % base_file)
+                return True
+            return False
+    except IOError as e:
+        return False
+
+
+def _compute_cache_checksum(filename):
+    with open(filename, "rb") as f:
+        return digest_file(f, "sha256")
+
+
+def unpack_file(filename):
     """Untar `filename`, assuming it is uncompressed or compressed with bzip2,
     xz, gzip, or unzip a zip file. The file is assumed to contain a single
     directory with a name matching the base of the given filename.
     Xz support is handled by shelling out to 'tar'."""
+
+    checksum = _compute_cache_checksum(filename)
+
     if tarfile.is_tarfile(filename):
         tar_file, zip_ext = os.path.splitext(filename)
         base_file, tar_ext = os.path.splitext(tar_file)
+        if _cache_checksum_matches(base_file, checksum):
+            return True
         clean_path(base_file)
         log.info('untarring "%s"' % filename)
         tar = tarfile.open(filename)
@@ -535,12 +555,16 @@ def unpack_file(filename, setup=None):
         tar.close()
     elif filename.endswith('.tar.xz'):
         base_file = filename.replace('.tar.xz', '')
+        if _cache_checksum_matches(base_file, checksum):
+            return True
         clean_path(base_file)
         log.info('untarring "%s"' % filename)
         if not execute('tar -Jxf %s 2>&1' % filename):
             return False
     elif zipfile.is_zipfile(filename):
         base_file = filename.replace('.zip', '')
+        if _cache_checksum_matches(base_file, checksum):
+            return True
         clean_path(base_file)
         log.info('unzipping "%s"' % filename)
         z = zipfile.ZipFile(filename)
@@ -550,8 +574,9 @@ def unpack_file(filename, setup=None):
         log.error("Unknown archive extension for filename '%s'" % filename)
         return False
 
-    if setup and not execute(os.path.join(base_file, setup)):
-        return False
+    with open(base_file + CHECKSUM_SUFFIX, "wb") as f:
+        f.write(checksum)
+
     return True
 
 
@@ -578,9 +603,6 @@ def fetch_files(manifest_file, base_urls, filenames=[], cache_folder=None,
 
     # Files that we want to unpack.
     unpack_files = []
-
-    # Setup for unpacked files.
-    setup_files = {}
 
     # Lets go through the manifest and fetch the files that we want
     for f in manifest.file_records:
@@ -641,13 +663,6 @@ def fetch_files(manifest_file, base_urls, filenames=[], cache_folder=None,
         else:
             log.debug("skipping %s" % f.filename)
 
-        if f.setup:
-            if f.unpack:
-                setup_files[f.filename] = f.setup
-            else:
-                log.error("'setup' requires 'unpack' being set for %s" % f.filename)
-                failed_files.append(f.filename)
-
     # lets ensure that fetched files match what the manifest specified
     for localfile, temp_file_name in fetched_files:
         # since I downloaded to a temp file, I need to perform all validations on the temp file
@@ -674,7 +689,7 @@ def fetch_files(manifest_file, base_urls, filenames=[], cache_folder=None,
                 try:
                     if not os.path.exists(cache_folder):
                         log.info("Creating cache in %s..." % cache_folder)
-                        os.makedirs(cache_folder, 0700)
+                        os.makedirs(cache_folder, 0o0700)
                     shutil.copy(os.path.join(os.getcwd(), localfile.filename),
                                 os.path.join(cache_folder, localfile.digest))
                     log.info("Local cache %s updated with %s" % (cache_folder,
@@ -690,7 +705,7 @@ def fetch_files(manifest_file, base_urls, filenames=[], cache_folder=None,
 
     # Unpack files that need to be unpacked.
     for filename in unpack_files:
-        if not unpack_file(filename, setup_files.get(filename)):
+        if not unpack_file(filename):
             failed_files.append(filename)
 
     # If we failed to fetch or validate a file, we need to fail
@@ -999,7 +1014,7 @@ def main(argv, _skip_logging=False):
 
     # default the options list if not provided
     if not options_obj.base_url:
-        options_obj.base_url = ['https://api.pub.build.mozilla.org/tooltool/']
+        options_obj.base_url = ['https://tooltool.mozilla-releng.net/']
 
     # ensure all URLs have a trailing slash
     def add_slash(url):

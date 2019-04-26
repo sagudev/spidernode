@@ -2,16 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+import sys
+
 from mozboot.base import BaseBootstrapper
 
-STYLO_MOZCONFIG = '''
-To enable Stylo in your builds, paste the lines between the chevrons
-(>>> and <<<) into your mozconfig file:
-
-<<<
-ac_add_options --enable-stylo
->>>
-'''
 
 class FreeBSDBootstrapper(BaseBootstrapper):
     def __init__(self, version, flavor, **kwargs):
@@ -21,11 +16,11 @@ class FreeBSDBootstrapper(BaseBootstrapper):
 
         self.packages = [
             'autoconf213',
-            'cargo',
             'gmake',
             'gtar',
-            'mercurial',
             'pkgconf',
+            'py%s%s-sqlite3' % sys.version_info[0:2],
+            'python3',
             'rust',
             'watchman',
             'zip',
@@ -36,18 +31,19 @@ class FreeBSDBootstrapper(BaseBootstrapper):
             'gconf2',
             'gtk2',
             'gtk3',
-            'libGL',
+            'libXt',
+            'mesa-dri',  # depends on llvm*
+            'nasm',
             'pulseaudio',
             'v4l_compat',
             'yasm',
         ]
 
+        if not self.which('as'):
+            self.packages.append('binutils')
+
         if not self.which('unzip'):
             self.packages.append('unzip')
-
-        # GCC 4.2 or Clang 3.4 in base are too old
-        if self.flavor == 'freebsd' and self.version < 11:
-            self.browser_packages.append('gcc')
 
     def pkg_install(self, *packages):
         command = ['pkg', 'install']
@@ -70,12 +66,20 @@ class FreeBSDBootstrapper(BaseBootstrapper):
         # TODO: Figure out what not to install for artifact mode
         self.pkg_install(*self.browser_packages)
 
-    def ensure_stylo_packages(self, state_dir, checkout_root):
-        self.pkg_install('llvm40')
+    def ensure_clang_static_analysis_package(self, state_dir, checkout_root):
+        # TODO: we don't ship clang base static analysis for this platform
+        pass
 
-    def suggest_browser_mozconfig(self):
-        if self.stylo:
-            print(STYLO_MOZCONFIG)
+    def ensure_stylo_packages(self, state_dir, checkout_root):
+        # Clang / llvm already installed as browser package
+        self.pkg_install('rust-cbindgen')
+
+    def ensure_nasm_packages(self, state_dir, checkout_root):
+        # installed via ensure_browser_packages
+        pass
+
+    def ensure_node_packages(self, state_dir, checkout_root):
+        self.pkg_install('npm')
 
     def upgrade_mercurial(self, current):
         self.pkg_install('mercurial')

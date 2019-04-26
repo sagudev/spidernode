@@ -6,9 +6,11 @@ esid: sec-initializers-in-forin-statement-heads
 description: >
     for-in initializers with ObjectBindingPattern are always prohibited
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
-throw NotEarlyError;
+
+$DONOTEVALUATE();
+
 for (var {a} = 0 in {});
 

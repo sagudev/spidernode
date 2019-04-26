@@ -8,9 +8,11 @@ description: >
     duplicate entries.
 flags: [module]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 export default var x = null;
 export default var x = null;

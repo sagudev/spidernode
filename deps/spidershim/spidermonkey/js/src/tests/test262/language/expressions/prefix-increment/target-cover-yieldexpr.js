@@ -24,9 +24,11 @@ info: |
   1. Return false.
 features: [generators]
 negative:
-  phase: early
+  phase: parse
   type: ReferenceError
 ---*/
+
+$DONOTEVALUATE();
 
 function* g() {
   ++(yield);

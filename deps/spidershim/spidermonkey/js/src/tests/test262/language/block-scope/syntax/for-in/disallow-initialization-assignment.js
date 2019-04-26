@@ -7,8 +7,10 @@ description: >
     for declaration:
     disallow initialization assignment
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 for (let x = 3 in {}) { }
 

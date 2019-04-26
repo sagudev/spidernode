@@ -11,9 +11,11 @@ info: |
   AsyncMethod:
     async [no LineTerminator here] PropertyName ( UniqueFormalParameters ) { AsyncFunctionBody }
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 ({
   async

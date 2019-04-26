@@ -55,27 +55,36 @@ def encode_ver(v):
     t = split_ver(v)
     return t[0] << 16 | t[1] << 8 | t[2]
 
-def find_version(e):
-    """Given the value of environment variable CXX or HOST_CXX, find the
-    version of the libstdc++ it uses.
+def find_version(args):
+    """Given a base command line for a compiler, find the version of the
+    libstdc++ it uses.
     """
-    args = e.split()
     args +=  ['-shared', '-Wl,-t']
     p = subprocess.Popen(args, stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
     candidates = [x for x in p.stdout if 'libstdc++.so' in x]
+    candidates = [x for x in candidates if 'skipping incompatible' not in x]
     if not candidates:
-        return ''
-    assert len(candidates) == 1
+        raise Exception('''Couldn't find libstdc++ candidates!
+command line: %s''' % args)
+    if len(candidates) != 1:
+        raise Exception('''Too many libstdc++ candidates!
+command line: %s
+candidates:
+%s''' % (args, '\n'.join(candidates)))
+
     libstdcxx = parse_ld_line(candidates[-1])
 
     p = subprocess.Popen(['readelf', '-V', libstdcxx], stdout=subprocess.PIPE)
     versions = [parse_readelf_line(x)
                 for x in p.stdout.readlines() if 'Name: GLIBCXX' in x]
     last_version = sorted(versions, cmp = cmp_ver)[-1]
-    return encode_ver(last_version)
+    return (last_version, encode_ver(last_version))
 
 if __name__ == '__main__':
+    """Given the value of environment variable CXX or HOST_CXX, find the
+    version of the libstdc++ it uses.
+    """
     cxx_env = os.environ['CXX']
-    print 'MOZ_LIBSTDCXX_TARGET_VERSION=%s' % find_version(cxx_env)
+    print('MOZ_LIBSTDCXX_TARGET_VERSION=%s' % find_version(cxx_env.split())[1])
     host_cxx_env = os.environ.get('HOST_CXX', cxx_env)
-    print 'MOZ_LIBSTDCXX_HOST_VERSION=%s' % find_version(host_cxx_env)
+    print('MOZ_LIBSTDCXX_HOST_VERSION=%s' % find_version(host_cxx_env.split())[1])

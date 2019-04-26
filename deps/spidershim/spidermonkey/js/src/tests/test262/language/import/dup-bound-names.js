@@ -8,8 +8,10 @@ description: >
     duplicate entries.
 flags: [module]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 import { x, y as x } from 'z';

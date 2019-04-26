@@ -8,9 +8,11 @@ description: >
     argument « » is true.
 flags: [module]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 label: {
   label: 0;

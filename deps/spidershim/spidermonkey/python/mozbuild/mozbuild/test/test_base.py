@@ -31,6 +31,8 @@ from mozbuild.backend.configenvironment import ConfigEnvironment
 from buildconfig import topsrcdir, topobjdir
 import mozpack.path as mozpath
 
+from mozbuild.test.common import prepare_tmp_topsrcdir
+
 
 curdir = os.path.dirname(__file__)
 log_manager = LoggingManager()
@@ -42,7 +44,6 @@ class TestMozbuildObject(unittest.TestCase):
         self._old_env = dict(os.environ)
         os.environ.pop('MOZCONFIG', None)
         os.environ.pop('MOZ_OBJDIR', None)
-        os.environ.pop('MOZ_CURRENT_PROJECT', None)
 
     def tearDown(self):
         os.chdir(self._old_cwd)
@@ -99,10 +100,7 @@ class TestMozbuildObject(unittest.TestCase):
             os.makedirs(topobjdir)
 
             # Create a fake topsrcdir.
-            guess_path = os.path.join(d, 'build', 'autoconf', 'config.guess')
-            os.makedirs(os.path.dirname(guess_path))
-            shutil.copy(os.path.join(topsrcdir, 'build', 'autoconf',
-                'config.guess',), guess_path)
+            prepare_tmp_topsrcdir(d)
 
             mozinfo = os.path.join(topobjdir, 'mozinfo.json')
             with open(mozinfo, 'wt') as fh:
@@ -198,7 +196,7 @@ class TestMozbuildObject(unittest.TestCase):
             os.makedirs(topobjdir)
 
             topsrcdir = os.path.join(d, 'srcdir')
-            os.makedirs(topsrcdir)
+            prepare_tmp_topsrcdir(topsrcdir)
 
             mozinfo = os.path.join(topobjdir, 'mozinfo.json')
             with open(mozinfo, 'wt') as fh:
@@ -259,7 +257,7 @@ class TestMozbuildObject(unittest.TestCase):
             os.makedirs(topobjdir)
 
             topsrcdir = os.path.join(d, 'srcdir')
-            os.makedirs(topsrcdir)
+            prepare_tmp_topsrcdir(topsrcdir)
 
             mozconfig = os.path.join(d, 'mozconfig')
             with open(mozconfig, 'wt') as fh:

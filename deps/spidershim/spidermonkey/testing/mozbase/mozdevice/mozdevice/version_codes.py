@@ -7,6 +7,7 @@ VERSION CODES of the android releases.
 
 See http://developer.android.com/reference/android/os/Build.VERSION_CODES.html.
 """
+from __future__ import absolute_import
 
 # Magic version number for a current development build, which has
 # not yet turned into an official release.
@@ -55,7 +56,13 @@ KITKAT_WATCH = 20
 # Lollilop
 LOLLIPOP = 21
 LOLLIPOP_MR1 = 22
-# M
+# Marshmallow
 M = 23
-# N
+# Nougat
 N = 24
+N_MR1 = 25
+# Oreo
+O = 26
+O_MR1 = 27
+# Pie
+P = 28

@@ -12,9 +12,11 @@ info: |
     PropertyName[?Yield] ( StrictFormalParameters ) { FunctionBody }
 features: [generators, default-parameters]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 class C {
   static m(x = yield) {}

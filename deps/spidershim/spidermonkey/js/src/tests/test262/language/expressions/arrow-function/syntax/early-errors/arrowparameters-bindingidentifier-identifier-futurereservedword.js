@@ -17,7 +17,9 @@ description: >
     ReservedWord : FutureReservedWord
 
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 var af = enum => 1;

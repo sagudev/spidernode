@@ -14,20 +14,17 @@
 
 #include <stdint.h>
 #ifndef XP_WIN
-# include <pthread.h>
+#  include <pthread.h>
 #endif
 
 namespace mozilla {
 
+enum class CVStatus { NoTimeout, Timeout };
+
 namespace detail {
 
-enum class CVStatus {
-  NoTimeout,
-  Timeout
-};
-
 class ConditionVariableImpl {
-public:
+ public:
   struct PlatformData;
 
   MFBT_API ConditionVariableImpl();
@@ -39,14 +36,18 @@ public:
   // Wake all threads that are waiting on this condition.
   MFBT_API void notify_all();
 
-  // Block the current thread of execution until this condition variable is
-  // woken from another thread via notify_one or notify_all.
+  // Atomically release |lock| and sleep the current thread of execution on
+  // this condition variable.
+  // |lock| will be re-acquired before this function returns.
+  // The thread may be woken from sleep from another thread via notify_one()
+  // or notify_all(), but may also wake spuriously.  The caller should recheck
+  // its predicate after this function returns, typically in a while loop.
   MFBT_API void wait(MutexImpl& lock);
 
   MFBT_API CVStatus wait_for(MutexImpl& lock,
                              const mozilla::TimeDuration& rel_time);
 
-private:
+ private:
   ConditionVariableImpl(const ConditionVariableImpl&) = delete;
   ConditionVariableImpl& operator=(const ConditionVariableImpl&) = delete;
 
@@ -55,15 +56,15 @@ private:
 #ifndef XP_WIN
   void* platformData_[sizeof(pthread_cond_t) / sizeof(void*)];
   static_assert(sizeof(pthread_cond_t) / sizeof(void*) != 0 &&
-                sizeof(pthread_cond_t) % sizeof(void*) == 0,
+                    sizeof(pthread_cond_t) % sizeof(void*) == 0,
                 "pthread_cond_t must have pointer alignment");
 #else
   void* platformData_[4];
 #endif
 };
 
-} // namespace detail
+}  // namespace detail
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_ConditionVariable_h
+#endif  // mozilla_ConditionVariable_h

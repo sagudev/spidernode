@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,259 +10,554 @@
 #include <algorithm>
 #include <stdint.h>
 
-#include "jsbytecode.h"
 #include "jstypes.h"
+
+#include "js/ProfilingCategory.h"
 #include "js/TypeDecls.h"
 #include "js/Utility.h"
 
-struct JSRuntime;
-class JSTracer;
+#ifdef JS_BROKEN_GCC_ATTRIBUTE_WARNING
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wattributes"
+#endif  // JS_BROKEN_GCC_ATTRIBUTE_WARNING
 
-class PseudoStack;
+class JS_PUBLIC_API JSTracer;
+
+#ifdef JS_BROKEN_GCC_ATTRIBUTE_WARNING
+#  pragma GCC diagnostic pop
+#endif  // JS_BROKEN_GCC_ATTRIBUTE_WARNING
+
+class ProfilingStack;
+
+// This file defines the classes ProfilingStack and ProfilingStackFrame.
+// The ProfilingStack manages an array of ProfilingStackFrames.
+// It keeps track of the "label stack" and the JS interpreter stack.
+// The two stack types are interleaved.
+//
+// Usage:
+//
+//  ProfilingStack* profilingStack = ...;
+//
+//  // For label frames:
+//  profilingStack->pushLabelFrame(...);
+//  // Execute some code. When finished, pop the frame:
+//  profilingStack->pop();
+//
+//  // For JS stack frames:
+//  profilingStack->pushJSFrame(...);
+//  // Execute some code. When finished, pop the frame:
+//  profilingStack->pop();
+//
+//
+// Concurrency considerations
+//
+// A thread's profiling stack (and the frames inside it) is only modified by
+// that thread. However, the profiling stack can be *read* by a different
+// thread, the sampler thread: Whenever the profiler wants to sample a given
+// thread A, the following happens:
+//  (1) Thread A is suspended.
+//  (2) The sampler thread (thread S) reads the ProfilingStack of thread A,
+//      including all ProfilingStackFrames that are currently in that stack
+//      (profilingStack->frames[0..profilingStack->stackSize()]).
+//  (3) Thread A is resumed.
+//
+// Thread suspension is achieved using platform-specific APIs; refer to each
+// platform's Sampler::SuspendAndSampleAndResumeThread implementation in
+// platform-*.cpp for details.
+//
+// When the thread is suspended, the values in profilingStack->stackPointer and
+// in the stack frame range
+// profilingStack->frames[0..profilingStack->stackPointer] need to be in a
+// consistent state, so that thread S does not read partially- constructed stack
+// frames. More specifically, we have two requirements:
+//  (1) When adding a new frame at the top of the stack, its ProfilingStackFrame
+//      data needs to be put in place *before* the stackPointer is incremented,
+//      and the compiler + CPU need to know that this order matters.
+//  (2) When popping an frame from the stack and then preparing the
+//      ProfilingStackFrame data for the next frame that is about to be pushed,
+//      the decrement of the stackPointer in pop() needs to happen *before* the
+//      ProfilingStackFrame for the new frame is being popuplated, and the
+//      compiler + CPU need to know that this order matters.
+//
+// We can express the relevance of these orderings in multiple ways.
+// Option A is to make stackPointer an atomic with SequentiallyConsistent
+// memory ordering. This would ensure that no writes in thread A would be
+// reordered across any writes to stackPointer, which satisfies requirements
+// (1) and (2) at the same time. Option A is the simplest.
+// Option B is to use ReleaseAcquire memory ordering both for writes to
+// stackPointer *and* for writes to ProfilingStackFrame fields. Release-stores
+// ensure that all writes that happened *before this write in program order* are
+// not reordered to happen after this write. ReleaseAcquire ordering places no
+// requirements on the ordering of writes that happen *after* this write in
+// program order.
+// Using release-stores for writes to stackPointer expresses requirement (1),
+// and using release-stores for writes to the ProfilingStackFrame fields
+// expresses requirement (2).
+//
+// Option B is more complicated than option A, but has much better performance
+// on x86/64: In a microbenchmark run on a Macbook Pro from 2017, switching
+// from option A to option B reduced the overhead of pushing+popping a
+// ProfilingStackFrame by 10 nanoseconds.
+// On x86/64, release-stores require no explicit hardware barriers or lock
+// instructions.
+// On ARM/64, option B may be slower than option A, because the compiler will
+// generate hardware barriers for every single release-store instead of just
+// for the writes to stackPointer. However, the actual performance impact of
+// this has not yet been measured on ARM, so we're currently using option B
+// everywhere. This is something that we may want to change in the future once
+// we've done measurements.
 
 namespace js {
 
 // A call stack can be specified to the JS engine such that all JS entry/exits
-// to functions push/pop an entry to/from the specified stack.
+// to functions push/pop a stack frame to/from the specified stack.
 //
 // For more detailed information, see vm/GeckoProfiler.h.
 //
-class ProfileEntry
-{
-    // A ProfileEntry represents either a C++ profile entry or a JS one.
+class ProfilingStackFrame {
+  // A ProfilingStackFrame represents either a label frame or a JS frame.
 
-    // Descriptive label for this entry. Must be a static string! Can be an
-    // empty string, but not a null pointer.
-    const char* label_;
+  // WARNING WARNING WARNING
+  //
+  // All the fields below are Atomic<...,ReleaseAcquire>. This is needed so
+  // that writes to these fields are release-writes, which ensures that
+  // earlier writes in this thread don't get reordered after the writes to
+  // these fields. In particular, the decrement of the stack pointer in
+  // ProfilingStack::pop() is a write that *must* happen before the values in
+  // this ProfilingStackFrame are changed. Otherwise, the sampler thread might
+  // see an inconsistent state where the stack pointer still points to a
+  // ProfilingStackFrame which has already been popped off the stack and whose
+  // fields have now been partially repopulated with new values.
+  // See the "Concurrency considerations" paragraph at the top of this file
+  // for more details.
 
-    // An additional descriptive string of this entry which is combined with
-    // |label_| in profiler output. Need not be (and usually isn't) static. Can
-    // be null.
-    const char* dynamicString_;
+  // Descriptive label for this stack frame. Must be a static string! Can be
+  // an empty string, but not a null pointer.
+  mozilla::Atomic<const char*, mozilla::ReleaseAcquire,
+                  mozilla::recordreplay::Behavior::DontPreserve>
+      label_;
 
-    // Stack pointer for non-JS entries, the script pointer otherwise.
-    void* spOrScript;
+  // An additional descriptive string of this frame which is combined with
+  // |label_| in profiler output. Need not be (and usually isn't) static. Can
+  // be null.
+  mozilla::Atomic<const char*, mozilla::ReleaseAcquire,
+                  mozilla::recordreplay::Behavior::DontPreserve>
+      dynamicString_;
 
-    // Line number for non-JS entries, the bytecode offset otherwise.
-    int32_t lineOrPcOffset;
+  // Stack pointer for non-JS stack frames, the script pointer otherwise.
+  mozilla::Atomic<void*, mozilla::ReleaseAcquire,
+                  mozilla::recordreplay::Behavior::DontPreserve>
+      spOrScript;
 
-    // Bits 0..1 hold the Kind. Bits 2..3 are unused. Bits 4..12 hold the
-    // Category.
-    uint32_t kindAndCategory_;
+  // The bytecode offset for JS stack frames.
+  // Must not be used on non-JS frames; it'll contain either the default 0,
+  // or a leftover value from a previous JS stack frame that was using this
+  // ProfilingStackFrame object.
+  mozilla::Atomic<int32_t, mozilla::ReleaseAcquire,
+                  mozilla::recordreplay::Behavior::DontPreserve>
+      pcOffsetIfJS_;
 
-    static int32_t pcToOffset(JSScript* aScript, jsbytecode* aPc);
+  // Bits 0...8 hold the Flags. Bits 9...31 hold the category pair.
+  mozilla::Atomic<uint32_t, mozilla::ReleaseAcquire,
+                  mozilla::recordreplay::Behavior::DontPreserve>
+      flagsAndCategoryPair_;
 
-  public:
-    enum class Kind : uint32_t {
-        // A normal C++ frame.
-        CPP_NORMAL = 0,
+  static int32_t pcToOffset(JSScript* aScript, jsbytecode* aPc);
 
-        // A special C++ frame indicating the start of a run of JS pseudostack
-        // entries. CPP_MARKER_FOR_JS frames are ignored, except for the sp
-        // field.
-        CPP_MARKER_FOR_JS = 1,
+ public:
+  ProfilingStackFrame() = default;
+  ProfilingStackFrame& operator=(const ProfilingStackFrame& other) {
+    label_ = other.label();
+    dynamicString_ = other.dynamicString();
+    void* spScript = other.spOrScript;
+    spOrScript = spScript;
+    int32_t offsetIfJS = other.pcOffsetIfJS_;
+    pcOffsetIfJS_ = offsetIfJS;
+    uint32_t flagsAndCategory = other.flagsAndCategoryPair_;
+    flagsAndCategoryPair_ = flagsAndCategory;
+    return *this;
+  }
 
-        // A normal JS frame.
-        JS_NORMAL = 2,
+  // 9 bits for the flags.
+  // That leaves 32 - 9 = 23 bits for the category pair.
+  enum class Flags : uint32_t {
+    // The first three flags describe the kind of the frame and are
+    // mutually exclusive. (We still give them individual bits for
+    // simplicity.)
 
-        // An interpreter JS frame that has OSR-ed into baseline. JS_NORMAL
-        // frames can be converted to JS_OSR and back. JS_OSR frames are
-        // ignored.
-        JS_OSR = 3,
+    // A regular label frame. These usually come from AutoProfilerLabel.
+    IS_LABEL_FRAME = 1 << 0,
 
-        KIND_MASK = 0x3,
-    };
+    // A special frame indicating the start of a run of JS profiling stack
+    // frames. IS_SP_MARKER_FRAME frames are ignored, except for the sp
+    // field. These frames are needed to get correct ordering between JS
+    // and LABEL frames because JS frames don't carry sp information.
+    // SP is short for "stack pointer".
+    IS_SP_MARKER_FRAME = 1 << 1,
 
-    // Keep these in sync with devtools/client/performance/modules/categories.js
-    enum class Category : uint32_t {
-        OTHER    = 1u << 4,
-        CSS      = 1u << 5,
-        JS       = 1u << 6,
-        GC       = 1u << 7,
-        CC       = 1u << 8,
-        NETWORK  = 1u << 9,
-        GRAPHICS = 1u << 10,
-        STORAGE  = 1u << 11,
-        EVENTS   = 1u << 12,
+    // A JS frame.
+    IS_JS_FRAME = 1 << 2,
 
-        FIRST    = OTHER,
-        LAST     = EVENTS,
+    // An interpreter JS frame that has OSR-ed into baseline. IS_JS_FRAME
+    // frames can have this flag set and unset during their lifetime.
+    // JS_OSR frames are ignored.
+    JS_OSR = 1 << 3,
 
-        CATEGORY_MASK = ~uint32_t(Kind::KIND_MASK),
-    };
+    // The next three are mutually exclusive.
+    // By default, for profiling stack frames that have both a label and a
+    // dynamic string, the two strings are combined into one string of the
+    // form "<label> <dynamicString>" during JSON serialization. The
+    // following flags can be used to change this preset.
+    STRING_TEMPLATE_METHOD = 1 << 4,  // "<label>.<dynamicString>"
+    STRING_TEMPLATE_GETTER = 1 << 5,  // "get <label>.<dynamicString>"
+    STRING_TEMPLATE_SETTER = 1 << 6,  // "set <label>.<dynamicString>"
 
-    static_assert((uint32_t(Category::FIRST) & uint32_t(Kind::KIND_MASK)) == 0,
-                  "Category overlaps with Kind");
+    // If set, causes this stack frame to be marked as "relevantForJS" in
+    // the profile JSON, which will make it show up in the "JS only" call
+    // tree view.
+    RELEVANT_FOR_JS = 1 << 7,
 
-    bool isCpp() const
-    {
-        Kind k = kind();
-        return k == Kind::CPP_NORMAL || k == Kind::CPP_MARKER_FOR_JS;
+    // If set, causes the label on this ProfilingStackFrame to be ignored
+    // and to be replaced by the subcategory's label.
+    LABEL_DETERMINED_BY_CATEGORY_PAIR = 1 << 8,
+
+    FLAGS_BITCOUNT = 9,
+    FLAGS_MASK = (1 << FLAGS_BITCOUNT) - 1
+  };
+
+  static_assert(
+      uint32_t(JS::ProfilingCategoryPair::LAST) <=
+          (UINT32_MAX >> uint32_t(Flags::FLAGS_BITCOUNT)),
+      "Too many category pairs to fit into u32 with together with the "
+      "reserved bits for the flags");
+
+  bool isLabelFrame() const {
+    return uint32_t(flagsAndCategoryPair_) & uint32_t(Flags::IS_LABEL_FRAME);
+  }
+
+  bool isSpMarkerFrame() const {
+    return uint32_t(flagsAndCategoryPair_) &
+           uint32_t(Flags::IS_SP_MARKER_FRAME);
+  }
+
+  bool isJsFrame() const {
+    return uint32_t(flagsAndCategoryPair_) & uint32_t(Flags::IS_JS_FRAME);
+  }
+
+  bool isOSRFrame() const {
+    return uint32_t(flagsAndCategoryPair_) & uint32_t(Flags::JS_OSR);
+  }
+
+  void setIsOSRFrame(bool isOSR) {
+    if (isOSR) {
+      flagsAndCategoryPair_ =
+          uint32_t(flagsAndCategoryPair_) | uint32_t(Flags::JS_OSR);
+    } else {
+      flagsAndCategoryPair_ =
+          uint32_t(flagsAndCategoryPair_) & ~uint32_t(Flags::JS_OSR);
     }
+  }
 
-    bool isJs() const
-    {
-        Kind k = kind();
-        return k == Kind::JS_NORMAL || k == Kind::JS_OSR;
+  const char* label() const {
+    uint32_t flagsAndCategoryPair = flagsAndCategoryPair_;
+    if (flagsAndCategoryPair &
+        uint32_t(Flags::LABEL_DETERMINED_BY_CATEGORY_PAIR)) {
+      auto categoryPair = JS::ProfilingCategoryPair(
+          flagsAndCategoryPair >> uint32_t(Flags::FLAGS_BITCOUNT));
+      return JS::GetProfilingCategoryPairInfo(categoryPair).mLabel;
     }
+    return label_;
+  }
 
-    void setLabel(const char* aLabel) { label_ = aLabel; }
-    const char* label() const { return label_; }
+  const char* dynamicString() const { return dynamicString_; }
 
-    const char* dynamicString() const { return dynamicString_; }
+  void initLabelFrame(const char* aLabel, const char* aDynamicString, void* sp,
+                      JS::ProfilingCategoryPair aCategoryPair,
+                      uint32_t aFlags) {
+    label_ = aLabel;
+    dynamicString_ = aDynamicString;
+    spOrScript = sp;
+    // pcOffsetIfJS_ is not set and must not be used on label frames.
+    flagsAndCategoryPair_ =
+        uint32_t(Flags::IS_LABEL_FRAME) |
+        (uint32_t(aCategoryPair) << uint32_t(Flags::FLAGS_BITCOUNT)) | aFlags;
+    MOZ_ASSERT(isLabelFrame());
+  }
 
-    void initCppFrame(const char* aLabel, const char* aDynamicString, void* sp, uint32_t aLine,
-                      Kind aKind, Category aCategory)
-    {
-        label_ = aLabel;
-        dynamicString_ = aDynamicString;
-        spOrScript = sp;
-        lineOrPcOffset = static_cast<int32_t>(aLine);
-        kindAndCategory_ = uint32_t(aKind) | uint32_t(aCategory);
-        MOZ_ASSERT(isCpp());
-    }
+  void initSpMarkerFrame(void* sp) {
+    label_ = "";
+    dynamicString_ = nullptr;
+    spOrScript = sp;
+    // pcOffsetIfJS_ is not set and must not be used on sp marker frames.
+    flagsAndCategoryPair_ = uint32_t(Flags::IS_SP_MARKER_FRAME) |
+                            (uint32_t(JS::ProfilingCategoryPair::OTHER)
+                             << uint32_t(Flags::FLAGS_BITCOUNT));
+    MOZ_ASSERT(isSpMarkerFrame());
+  }
 
-    void initJsFrame(const char* aLabel, const char* aDynamicString, JSScript* aScript,
-                     jsbytecode* aPc)
-    {
-        label_ = aLabel;
-        dynamicString_ = aDynamicString;
-        spOrScript = aScript;
-        lineOrPcOffset = pcToOffset(aScript, aPc);
-        kindAndCategory_ = uint32_t(Kind::JS_NORMAL) | uint32_t(Category::JS);
-        MOZ_ASSERT(isJs());
-    }
+  void initJsFrame(const char* aLabel, const char* aDynamicString,
+                   JSScript* aScript, jsbytecode* aPc) {
+    label_ = aLabel;
+    dynamicString_ = aDynamicString;
+    spOrScript = aScript;
+    pcOffsetIfJS_ = pcToOffset(aScript, aPc);
+    flagsAndCategoryPair_ =
+        uint32_t(Flags::IS_JS_FRAME) | (uint32_t(JS::ProfilingCategoryPair::JS)
+                                        << uint32_t(Flags::FLAGS_BITCOUNT));
+    MOZ_ASSERT(isJsFrame());
+  }
 
-    void setKind(Kind aKind) {
-        kindAndCategory_ = uint32_t(aKind) | uint32_t(category());
-    }
+  uint32_t flags() const {
+    return uint32_t(flagsAndCategoryPair_) & uint32_t(Flags::FLAGS_MASK);
+  }
 
-    Kind kind() const {
-        return Kind(kindAndCategory_ & uint32_t(Kind::KIND_MASK));
-    }
+  JS::ProfilingCategoryPair categoryPair() const {
+    return JS::ProfilingCategoryPair(flagsAndCategoryPair_ >>
+                                     uint32_t(Flags::FLAGS_BITCOUNT));
+  }
 
-    Category category() const {
-        return Category(kindAndCategory_ & uint32_t(Category::CATEGORY_MASK));
-    }
+  void* stackAddress() const {
+    MOZ_ASSERT(!isJsFrame());
+    return spOrScript;
+  }
 
-    void* stackAddress() const {
-        MOZ_ASSERT(!isJs());
-        return spOrScript;
-    }
+  JS_PUBLIC_API JSScript* script() const;
 
-    JS_PUBLIC_API(JSScript*) script() const;
+  // Note that the pointer returned might be invalid.
+  JSScript* rawScript() const {
+    MOZ_ASSERT(isJsFrame());
+    void* script = spOrScript;
+    return static_cast<JSScript*>(script);
+  }
 
-    uint32_t line() const {
-        MOZ_ASSERT(!isJs());
-        return static_cast<uint32_t>(lineOrPcOffset);
-    }
+  // We can't know the layout of JSScript, so look in vm/GeckoProfiler.cpp.
+  JS_FRIEND_API jsbytecode* pc() const;
+  void setPC(jsbytecode* pc);
 
-    // Note that the pointer returned might be invalid.
-    JSScript* rawScript() const {
-        MOZ_ASSERT(isJs());
-        return (JSScript*)spOrScript;
-    }
+  void trace(JSTracer* trc);
 
-    // We can't know the layout of JSScript, so look in vm/GeckoProfiler.cpp.
-    JS_FRIEND_API(jsbytecode*) pc() const;
-    void setPC(jsbytecode* pc);
-
-    void trace(JSTracer* trc);
-
-    // The offset of a pc into a script's code can actually be 0, so to
-    // signify a nullptr pc, use a -1 index. This is checked against in
-    // pc() and setPC() to set/get the right pc.
-    static const int32_t NullPCOffset = -1;
+  // The offset of a pc into a script's code can actually be 0, so to
+  // signify a nullptr pc, use a -1 index. This is checked against in
+  // pc() and setPC() to set/get the right pc.
+  static const int32_t NullPCOffset = -1;
 };
 
-JS_FRIEND_API(void)
-SetContextProfilingStack(JSContext* cx, PseudoStack* pseudoStack);
+JS_FRIEND_API void SetContextProfilingStack(JSContext* cx,
+                                            ProfilingStack* profilingStack);
 
-JS_FRIEND_API(void)
-EnableContextProfilingStack(JSContext* cx, bool enabled);
+// GetContextProfilingStack also exists, but it's defined in RootingAPI.h.
 
-JS_FRIEND_API(void)
-RegisterContextProfilingEventMarker(JSContext* cx, void (*fn)(const char*));
+JS_FRIEND_API void EnableContextProfilingStack(JSContext* cx, bool enabled);
 
-} // namespace js
+JS_FRIEND_API void RegisterContextProfilingEventMarker(JSContext* cx,
+                                                       void (*fn)(const char*));
 
-// Each thread has its own PseudoStack. That thread modifies the PseudoStack,
-// pushing and popping elements as necessary.
+}  // namespace js
+
+namespace JS {
+
+typedef ProfilingStack* (*RegisterThreadCallback)(const char* threadName,
+                                                  void* stackBase);
+
+typedef void (*UnregisterThreadCallback)();
+
+JS_FRIEND_API void SetProfilingThreadCallbacks(
+    RegisterThreadCallback registerThread,
+    UnregisterThreadCallback unregisterThread);
+
+}  // namespace JS
+
+// Each thread has its own ProfilingStack. That thread modifies the
+// ProfilingStack, pushing and popping elements as necessary.
 //
-// The PseudoStack is also read periodically by the profiler's sampler thread.
-// This happens only when the thread that owns the PseudoStack is suspended. So
-// there are no genuine parallel accesses.
+// The ProfilingStack is also read periodically by the profiler's sampler
+// thread. This happens only when the thread that owns the ProfilingStack is
+// suspended. So there are no genuine parallel accesses.
 //
 // However, it is possible for pushing/popping to be interrupted by a periodic
 // sample. Because of this, we need pushing/popping to be effectively atomic.
 //
-// - When pushing a new entry, we increment the stack pointer -- making the new
-//   entry visible to the sampler thread -- only after the new entry has been
-//   fully written. The stack pointer is Atomic<> (with SequentiallyConsistent
-//   semantics) to ensure the incrementing is not reordered before the writes.
+// - When pushing a new frame, we increment the stack pointer -- making the new
+//   frame visible to the sampler thread -- only after the new frame has been
+//   fully written. The stack pointer is Atomic<uint32_t,ReleaseAcquire>, so
+//   the increment is a release-store, which ensures that this store is not
+//   reordered before the writes of the frame.
 //
-// - When popping an old entry, the only operation is the decrementing of the
+// - When popping an old frame, the only operation is the decrementing of the
 //   stack pointer, which is obviously atomic.
 //
-class PseudoStack
-{
-  public:
-    PseudoStack()
-      : stackPointer(0)
-    {}
+class ProfilingStack final {
+ public:
+  ProfilingStack() : stackPointer(0) {}
 
-    ~PseudoStack() {
-        // The label macros keep a reference to the PseudoStack to avoid a TLS
-        // access. If these are somehow not all cleared we will get a
-        // use-after-free so better to crash now.
-        MOZ_RELEASE_ASSERT(stackPointer == 0);
+  ~ProfilingStack();
+
+  void pushLabelFrame(const char* label, const char* dynamicString, void* sp,
+                      JS::ProfilingCategoryPair categoryPair,
+                      uint32_t flags = 0) {
+    // This thread is the only one that ever changes the value of
+    // stackPointer.
+    // Store the value of the atomic in a non-atomic local variable so that
+    // the compiler won't generate two separate loads from the atomic for
+    // the size check and the frames[] array indexing operation.
+    uint32_t stackPointerVal = stackPointer;
+
+    if (MOZ_UNLIKELY(stackPointerVal >= capacity)) {
+      ensureCapacitySlow();
     }
+    frames[stackPointerVal].initLabelFrame(label, dynamicString, sp,
+                                           categoryPair, flags);
 
-    void pushCppFrame(const char* label, const char* dynamicString, void* sp, uint32_t line,
-                      js::ProfileEntry::Kind kind, js::ProfileEntry::Category category) {
-        if (stackPointer < MaxEntries) {
-            entries[stackPointer].initCppFrame(label, dynamicString, sp, line, kind, category);
-        }
+    // This must happen at the end! The compiler will not reorder this
+    // update because stackPointer is Atomic<..., ReleaseAcquire>, so any
+    // the writes above will not be reordered below the stackPointer store.
+    // Do the read and the write as two separate statements, in order to
+    // make it clear that we don't need an atomic increment, which would be
+    // more expensive on x86 than the separate operations done here.
+    // However, don't use stackPointerVal here; instead, allow the compiler
+    // to turn this store into a non-atomic increment instruction which
+    // takes up less code size.
+    stackPointer = stackPointer + 1;
+  }
 
-        // This must happen at the end! The compiler will not reorder this
-        // update because stackPointer is Atomic.
-        stackPointer++;
+  void pushSpMarkerFrame(void* sp) {
+    uint32_t oldStackPointer = stackPointer;
+
+    if (MOZ_UNLIKELY(oldStackPointer >= capacity)) {
+      ensureCapacitySlow();
     }
+    frames[oldStackPointer].initSpMarkerFrame(sp);
 
-    void pushJsFrame(const char* label, const char* dynamicString, JSScript* script,
-                     jsbytecode* pc) {
-        if (stackPointer < MaxEntries) {
-            entries[stackPointer].initJsFrame(label, dynamicString, script, pc);
-        }
+    // This must happen at the end, see the comment in pushLabelFrame.
+    stackPointer = oldStackPointer + 1;
+  }
 
-        // This must happen at the end! The compiler will not reorder this
-        // update because stackPointer is Atomic.
-        stackPointer++;
+  void pushJsFrame(const char* label, const char* dynamicString,
+                   JSScript* script, jsbytecode* pc) {
+    // This thread is the only one that ever changes the value of
+    // stackPointer. Only load the atomic once.
+    uint32_t oldStackPointer = stackPointer;
+
+    if (MOZ_UNLIKELY(oldStackPointer >= capacity)) {
+      ensureCapacitySlow();
     }
+    frames[oldStackPointer].initJsFrame(label, dynamicString, script, pc);
 
-    void pop() {
-        MOZ_ASSERT(stackPointer > 0);
-        stackPointer--;
-    }
+    // This must happen at the end, see the comment in pushLabelFrame.
+    stackPointer = stackPointer + 1;
+  }
 
-    uint32_t stackSize() const { return std::min(uint32_t(stackPointer), uint32_t(MaxEntries)); }
+  void pop() {
+    MOZ_ASSERT(stackPointer > 0);
+    // Do the read and the write as two separate statements, in order to
+    // make it clear that we don't need an atomic decrement, which would be
+    // more expensive on x86 than the separate operations done here.
+    // This thread is the only one that ever changes the value of
+    // stackPointer.
+    uint32_t oldStackPointer = stackPointer;
+    stackPointer = oldStackPointer - 1;
+  }
 
-  private:
-    // No copying.
-    PseudoStack(const PseudoStack&) = delete;
-    void operator=(const PseudoStack&) = delete;
+  uint32_t stackSize() const { return stackPointer; }
+  uint32_t stackCapacity() const { return capacity; }
 
-  public:
-    static const uint32_t MaxEntries = 1024;
+ private:
+  // Out of line path for expanding the buffer, since otherwise this would get
+  // inlined in every DOM WebIDL call.
+  MOZ_COLD void ensureCapacitySlow();
 
-    // The stack entries.
-    js::ProfileEntry entries[MaxEntries];
+  // No copying.
+  ProfilingStack(const ProfilingStack&) = delete;
+  void operator=(const ProfilingStack&) = delete;
 
-    // This may exceed MaxEntries, so instead use the stackSize() method to
-    // determine the number of valid samples in entries. When this is less
-    // than MaxEntries, it refers to the first free entry past the top of the
-    // in-use stack (i.e. entries[stackPointer - 1] is the top stack entry).
-    mozilla::Atomic<uint32_t, mozilla::SequentiallyConsistent> stackPointer;
+  // No moving either.
+  ProfilingStack(ProfilingStack&&) = delete;
+  void operator=(ProfilingStack&&) = delete;
+
+  uint32_t capacity = 0;
+
+ public:
+  // The pointer to the stack frames, this is read from the profiler thread and
+  // written from the current thread.
+  //
+  // This is effectively a unique pointer.
+  mozilla::Atomic<js::ProfilingStackFrame*, mozilla::SequentiallyConsistent,
+                  mozilla::recordreplay::Behavior::DontPreserve>
+      frames{nullptr};
+
+  // This may exceed the capacity, so instead use the stackSize() method to
+  // determine the number of valid frames in stackFrames. When this is less
+  // than stackCapacity(), it refers to the first free stackframe past the top
+  // of the in-use stack (i.e. frames[stackPointer - 1] is the top stack
+  // frame).
+  //
+  // WARNING WARNING WARNING
+  //
+  // This is an atomic variable that uses ReleaseAcquire memory ordering.
+  // See the "Concurrency considerations" paragraph at the top of this file
+  // for more details.
+  mozilla::Atomic<uint32_t, mozilla::ReleaseAcquire,
+                  mozilla::recordreplay::Behavior::DontPreserve>
+      stackPointer;
 };
 
-#endif  /* js_ProfilingStack_h */
+namespace js {
+
+class AutoGeckoProfilerEntry;
+class GeckoProfilerEntryMarker;
+class GeckoProfilerBaselineOSRMarker;
+
+class GeckoProfilerThread {
+  friend class AutoGeckoProfilerEntry;
+  friend class GeckoProfilerEntryMarker;
+  friend class GeckoProfilerBaselineOSRMarker;
+
+  ProfilingStack* profilingStack_;
+
+  // Same as profilingStack_ if the profiler is currently active, otherwise
+  // null.
+  ProfilingStack* profilingStackIfEnabled_;
+
+ public:
+  GeckoProfilerThread();
+
+  uint32_t stackPointer() {
+    MOZ_ASSERT(infraInstalled());
+    return profilingStack_->stackPointer;
+  }
+  ProfilingStackFrame* stack() { return profilingStack_->frames; }
+  ProfilingStack* getProfilingStack() { return profilingStack_; }
+  ProfilingStack* getProfilingStackIfEnabled() {
+    return profilingStackIfEnabled_;
+  }
+
+  /*
+   * True if the profiler infrastructure is setup.  Should be true in builds
+   * that include profiler support except during early startup or late
+   * shutdown.  Unrelated to the presence of the Gecko Profiler addon.
+   */
+  bool infraInstalled() { return profilingStack_ != nullptr; }
+
+  void setProfilingStack(ProfilingStack* profilingStack, bool enabled);
+  void enable(bool enable) {
+    profilingStackIfEnabled_ = enable ? profilingStack_ : nullptr;
+  }
+  void trace(JSTracer* trc);
+
+  /*
+   * Functions which are the actual instrumentation to track run information
+   *
+   *   - enter: a function has started to execute
+   *   - updatePC: updates the pc information about where a function
+   *               is currently executing
+   *   - exit: this function has ceased execution, and no further
+   *           entries/exits will be made
+   */
+  bool enter(JSContext* cx, JSScript* script, JSFunction* maybeFun);
+  void exit(JSScript* script, JSFunction* maybeFun);
+  inline void updatePC(JSContext* cx, JSScript* script, jsbytecode* pc);
+};
+
+}  // namespace js
+
+#endif /* js_ProfilingStack_h */

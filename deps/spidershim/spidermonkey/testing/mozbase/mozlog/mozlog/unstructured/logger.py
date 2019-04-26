@@ -3,6 +3,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from logging import getLogger as getSysLogger
 from logging import *
 # Some of the build slave environments don't see the following when doing
@@ -148,7 +150,7 @@ class MozFormatter(Formatter):
         # this protected member is used to define the format
         # used by the base Formatter's method
         self._fmt = fmt
-        return Formatter.format(self, record)
+        return Formatter(fmt=fmt).format(record)
 
 
 def getLogger(name, handler=None):

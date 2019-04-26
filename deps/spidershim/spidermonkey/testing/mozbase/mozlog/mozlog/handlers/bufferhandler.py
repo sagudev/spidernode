@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 from .base import BaseHandler
 
 
@@ -31,7 +33,7 @@ class BufferHandler(BaseHandler):
         else:
             self._buffer = []
 
-        self.register_message_handlers("buffer", {
+        self.message_handler.register_message_handlers("buffer", {
             "on": self._enable_buffering,
             "off": self._disable_buffering,
             "flush": self._flush_buffered,

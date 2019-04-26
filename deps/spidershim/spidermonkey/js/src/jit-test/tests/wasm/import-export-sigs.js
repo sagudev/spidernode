@@ -32,7 +32,7 @@ var module = new WebAssembly.Module(wasmTextToBinary(`(module
   (import $Ii "env" "I_i" (result i64) (param i32))
   (export "I_i" $Ii)
 
-  (import $table "env" "table" (table 0 anyfunc))
+  (import $table "env" "table" (table 0 funcref))
   (export "table" (table $table))
 
   (import $fd "env" "f_d" (result f32) (param f64))
@@ -47,42 +47,4 @@ for (let desc of WebAssembly.Module.imports(module)) {
 }
 for (let desc of WebAssembly.Module.exports(module)) {
     assertEq(typeof desc.signature, 'undefined');
-}
-
-setJitCompilerOption('wasm.test-mode', 1);
-
-function shortToType(s) {
-    switch (s) {
-        case 'v': return "";
-        case 'i': return "i32";
-        case 'I': return "i64";
-        case 'f': return "f32";
-        case 'd': return "f64";
-    }
-    throw new Error("unexpected shorthand type");
-}
-
-function expectedSignature(name) {
-    let [ret, args] = name.split('_');
-
-    args = args.split('').map(shortToType).join(', ');
-    ret = shortToType(ret);
-
-    return `(${args}) -> (${ret})`;
-}
-
-for (let desc of WebAssembly.Module.imports(module)) {
-    if (desc.kind !== 'function') {
-        assertEq(typeof desc.signature, 'undefined');
-    } else {
-        assertEq(desc.signature, expectedSignature(desc.name))
-    }
-}
-
-for (let desc of WebAssembly.Module.exports(module)) {
-    if (desc.kind !== 'function') {
-        assertEq(typeof desc.signature, 'undefined');
-    } else {
-        assertEq(desc.signature, expectedSignature(desc.name))
-    }
 }

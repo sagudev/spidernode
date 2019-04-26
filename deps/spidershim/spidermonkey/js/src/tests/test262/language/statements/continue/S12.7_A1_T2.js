@@ -9,9 +9,11 @@ description: >
     Checking if single "continue" with Label but without any
     IterationStatement fails
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 LABEL : x=3.14;
 

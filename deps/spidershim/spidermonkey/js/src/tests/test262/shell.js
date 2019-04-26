@@ -1,4 +1,12 @@
+// GENERATED, DO NOT EDIT
 // file: assert.js
+// Copyright (C) 2017 Ecma International.  All rights reserved.
+// This code is governed by the BSD license found in the LICENSE file.
+/*---
+description: |
+    Collection of assertion functions used throughout test262
+---*/
+
 function assert(mustBeTrue, message) {
   if (mustBeTrue === true) {
     return;
@@ -21,7 +29,12 @@ assert._isSameValue = function (a, b) {
 };
 
 assert.sameValue = function (actual, expected, message) {
-  if (assert._isSameValue(actual, expected)) {
+  try {
+    if (assert._isSameValue(actual, expected)) {
+      return;
+    }
+  } catch (error) {
+    $ERROR(message + ' (_isSameValue operation threw) ' + error);
     return;
   }
 
@@ -81,16 +94,14 @@ assert.throws = function (expectedErrorConstructor, func, message) {
   $ERROR(message);
 };
 
-assert.throws.early = function(err, code) {
-  let wrappedCode = `function wrapperFn() { ${code} }`;
-  let ieval = eval;
-
-  assert.throws(err, () => { Function(wrappedCode); }, `Function: ${code}`);
-};
-
 // file: compareArray.js
+// Copyright (C) 2017 Ecma International.  All rights reserved.
+// This code is governed by the BSD license found in the LICENSE file.
+/*---
+description: |
+    Compare the contents of two arrays
+---*/
 
-//-----------------------------------------------------------------------------
 function compareArray(a, b) {
   if (b.length !== a.length) {
     return false;
@@ -106,10 +117,17 @@ function compareArray(a, b) {
 
 assert.compareArray = function(actual, expected, message) {
   assert(compareArray(actual, expected),
-         `Expected [${actual.join(", ")}] and [${expected.join(", ")}] to have the same contents. ${message}`);
-}
+         'Expected [' + actual.join(', ') + '] and [' + expected.join(', ') + '] to have the same contents. ' + message);
+};
 
 // file: propertyHelper.js
+// Copyright (C) 2017 Ecma International.  All rights reserved.
+// This code is governed by the BSD license found in the LICENSE file.
+/*---
+description: |
+    Collection of functions used to safely verify the correctness of
+    property descriptors.
+---*/
 
 function verifyProperty(obj, name, desc, options) {
   assert(
@@ -125,7 +143,7 @@ function verifyProperty(obj, name, desc, options) {
     assert.sameValue(
       originalDesc,
       undefined,
-      `obj['${nameStr}'] descriptor should be undefined`
+      "obj['" + nameStr + "'] descriptor should be undefined"
     );
 
     // desc and originalDesc are both undefined, problem solved;
@@ -134,45 +152,51 @@ function verifyProperty(obj, name, desc, options) {
 
   assert(
     Object.prototype.hasOwnProperty.call(obj, name),
-    `obj should have an own property ${nameStr}`
+    "obj should have an own property " + nameStr
   );
 
   assert.notSameValue(
     desc,
     null,
-    `The desc argument should be an object or undefined, null`
+    "The desc argument should be an object or undefined, null"
   );
 
   assert.sameValue(
     typeof desc,
     "object",
-    `The desc argument should be an object or undefined, ${String(desc)}`
+    "The desc argument should be an object or undefined, " + String(desc)
   );
 
   var failures = [];
 
+  if (Object.prototype.hasOwnProperty.call(desc, 'value')) {
+    if (desc.value !== originalDesc.value) {
+      failures.push("descriptor value should be " + desc.value);
+    }
+  }
+
   if (Object.prototype.hasOwnProperty.call(desc, 'enumerable')) {
     if (desc.enumerable !== originalDesc.enumerable ||
         desc.enumerable !== isEnumerable(obj, name)) {
-      failures.push(`descriptor should ${desc.enumerable ? '' : 'not '}be enumerable`);
+      failures.push('descriptor should ' + (desc.enumerable ? '' : 'not ') + 'be enumerable');
     }
   }
 
   if (Object.prototype.hasOwnProperty.call(desc, 'writable')) {
     if (desc.writable !== originalDesc.writable ||
         desc.writable !== isWritable(obj, name)) {
-      failures.push(`descriptor should ${desc.writable ? '' : 'not '}be writable`);
+      failures.push('descriptor should ' + (desc.writable ? '' : 'not ') + 'be writable');
     }
   }
 
   if (Object.prototype.hasOwnProperty.call(desc, 'configurable')) {
     if (desc.configurable !== originalDesc.configurable ||
         desc.configurable !== isConfigurable(obj, name)) {
-      failures.push(`descriptor should ${desc.configurable ? '' : 'not '}be configurable`);
+      failures.push('descriptor should ' + (desc.configurable ? '' : 'not ') + 'be configurable');
     }
   }
 
-  assert.sameValue(failures.length, 0, failures.join('; '));
+  assert(!failures.length, failures.join('; '));
 
   if (options && options.restore) {
     Object.defineProperty(obj, name, originalDesc);
@@ -239,9 +263,9 @@ function isWritable(obj, name, verifyProp, value) {
   // configurations)
   if (writeSucceeded) {
     if (hadValue) {
-    obj[name] = oldValue;
+      obj[name] = oldValue;
     } else {
-    delete obj[name];
+      delete obj[name];
     }
   }
 
@@ -308,8 +332,16 @@ function verifyNotConfigurable(obj, name) {
 }
 
 // file: sta.js
-/// Copyright (c) 2012 Ecma International.  All rights reserved.
-/// This code is governed by the BSD license found in the LICENSE file.
+// Copyright (c) 2012 Ecma International.  All rights reserved.
+// This code is governed by the BSD license found in the LICENSE file.
+/*---
+description: |
+    Provides both:
+
+    - An error class to avoid false positives when testing for thrown exceptions
+    - A function to explicitly throw an exception using the Test262Error class
+---*/
+
 
 function Test262Error(message) {
   this.message = message || "";
@@ -324,6 +356,10 @@ $ERROR = function $ERROR(message) {
   throw new Test262Error(message);
 };
 
+function $DONOTEVALUATE() {
+  throw "Test262: This statement should not be evaluated.";
+}
+
 // file: test262-host.js
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -331,18 +367,34 @@ $ERROR = function $ERROR(message) {
 
 // https://github.com/tc39/test262/blob/master/INTERPRETING.md#host-defined-functions
 ;(function createHostObject(global) {
+    "use strict";
+
+    // Save built-in functions and constructors.
     var FunctionToString = global.Function.prototype.toString;
     var ReflectApply = global.Reflect.apply;
-    var NewGlobal = global.newGlobal;
     var Atomics = global.Atomics;
+    var Error = global.Error;
     var SharedArrayBuffer = global.SharedArrayBuffer;
     var Int32Array = global.Int32Array;
+
+    // Save built-in shell functions.
+    var NewGlobal = global.newGlobal;
     var setSharedArrayBuffer = global.setSharedArrayBuffer;
     var getSharedArrayBuffer = global.getSharedArrayBuffer;
     var evalInWorker = global.evalInWorker;
+    var monotonicNow = global.monotonicNow;
+
+    var hasCreateIsHTMLDDA = "createIsHTMLDDA" in global;
     var hasThreads = ("helperThreadCount" in global ? global.helperThreadCount() > 0 : true);
-    var hasMailbox = typeof setSharedArrayBuffer == "function" && typeof getSharedArrayBuffer == "function";
-    var hasEvalInWorker = typeof evalInWorker == "function";
+    var hasMailbox = typeof setSharedArrayBuffer === "function" && typeof getSharedArrayBuffer === "function";
+    var hasEvalInWorker = typeof evalInWorker === "function";
+
+    if (!hasCreateIsHTMLDDA && !("document" in global && "all" in global.document))
+        throw new Error("no [[IsHTMLDDA]] object available for testing");
+
+    var IsHTMLDDA = hasCreateIsHTMLDDA
+                    ? global.createIsHTMLDDA()
+                    : global.document.all;
 
     // The $262.agent framework is not appropriate for browsers yet, and some
     // test cases can't work in browsers (they block the main thread).
@@ -361,6 +413,7 @@ $ERROR = function $ERROR(message) {
         detachArrayBuffer: global.detachArrayBuffer,
         evalScript: global.evaluateScript || global.evaluate,
         global,
+        IsHTMLDDA,
         agent: (function () {
 
             // SpiderMonkey complication: With run-time argument --no-threads
@@ -374,19 +427,23 @@ $ERROR = function $ERROR(message) {
             // being run at all.
 
             if (!sabTestable) {
+                let {reportCompare, quit} = global;
+
+                function notAvailable() {
+                    // See comment above.
+                    if (!hasThreads && shellCode) {
+                        reportCompare(0, 0);
+                        quit(0);
+                    }
+                    throw new Error("Agents not available");
+                }
+
                 return {
-                    _notAvailable() {
-                        // See comment above.
-                        if (!hasThreads && shellCode) {
-                            global.reportCompare(0,0);
-                            global.quit(0);
-                        }
-                        throw new Error("Agents not available");
-                    },
-                    start(script) { this._notAvailable() },
-                    broadcast(sab, id) { this._notAvailable() },
-                    getReport() { this._notAvailable() },
-                    sleep(s) { this._notAvailable() }
+                    start(script) { notAvailable() },
+                    broadcast(sab, id) { notAvailable() },
+                    getReport() { notAvailable() },
+                    sleep(s) { notAvailable() },
+                    monotonicNow,
                 }
             }
 
@@ -409,102 +466,110 @@ $ERROR = function $ERROR(message) {
 
             var _worker_prefix =
 // BEGIN WORKER PREFIX
-`if (typeof $262 == 'undefined')
+`if (typeof $262 === 'undefined')
     $262 = {};
-$262.agent = (function () {
+$262.agent = (function (global) {
+    var ReflectApply = global.Reflect.apply;
+    var StringCharCodeAt = global.String.prototype.charCodeAt;
+    var {
+        add: Atomics_add,
+        compareExchange: Atomics_compareExchange,
+        load: Atomics_load,
+        store: Atomics_store,
+        wait: Atomics_wait,
+    } = global.Atomics;
+
+    var {getSharedArrayBuffer} = global;
+
     var _ia = new Int32Array(getSharedArrayBuffer());
     var agent = {
         receiveBroadcast(receiver) {
             var k;
-            while (((k = Atomics.load(_ia, ${_MSG_LOC})) & 1) == 0)
+            while (((k = Atomics_load(_ia, ${_MSG_LOC})) & 1) === 0)
                 ;
             var received_sab = getSharedArrayBuffer();
-            var received_id = Atomics.load(_ia, ${_ID_LOC});
-            Atomics.add(_ia, ${_ACK_LOC}, 1);
-            while (Atomics.load(_ia, ${_MSG_LOC}) == k)
+            var received_id = Atomics_load(_ia, ${_ID_LOC});
+            Atomics_add(_ia, ${_ACK_LOC}, 1);
+            while (Atomics_load(_ia, ${_MSG_LOC}) === k)
                 ;
             receiver(received_sab, received_id);
         },
 
         report(msg) {
-            while (Atomics.compareExchange(_ia, ${_LOCKTXT_LOC}, 0, 1) == 1)
+            while (Atomics_compareExchange(_ia, ${_LOCKTXT_LOC}, 0, 1) === 1)
                 ;
             msg = "" + msg;
             var i = _ia[${_NEXT_LOC}];
             _ia[i++] = msg.length;
             for ( let j=0 ; j < msg.length ; j++ )
-                _ia[i++] = msg.charCodeAt(j);
+                _ia[i++] = ReflectApply(StringCharCodeAt, msg, [j]);
             _ia[${_NEXT_LOC}] = i;
-            Atomics.add(_ia, ${_NUMTXT_LOC}, 1);
-            Atomics.store(_ia, ${_LOCKTXT_LOC}, 0);
+            Atomics_add(_ia, ${_NUMTXT_LOC}, 1);
+            Atomics_store(_ia, ${_LOCKTXT_LOC}, 0);
         },
 
         sleep(s) {
-            Atomics.wait(_ia, ${_SLEEP_LOC}, 0, s);
+            Atomics_wait(_ia, ${_SLEEP_LOC}, 0, s);
         },
 
-        leaving() {}
+        leaving() {},
+
+        monotonicNow: global.monotonicNow,
     };
-    Atomics.add(_ia, ${_RDY_LOC}, 1);
+    Atomics_add(_ia, ${_RDY_LOC}, 1);
     return agent;
-})();`;
+})(this);`;
 // END WORKER PREFIX
 
+            var _numWorkers = 0;
+            var _numReports = 0;
+            var _reportPtr = _FIRST;
+            var {
+                add: Atomics_add,
+                load: Atomics_load,
+                store: Atomics_store,
+                wait: Atomics_wait,
+            } = Atomics;
+            var StringFromCharCode = global.String.fromCharCode;
+
             return {
-                _numWorkers: 0,
-                _numReports: 0,
-                _reportPtr: _FIRST,
-
-                _bailIfNotAvailable() {
-                    if (!sabTestable) {
-                        // See comment above.
-                        if (!hasThreads && shellCode) {
-                            global.reportCompare(0,0);
-                            global.quit(0);
-                        }
-                        throw new Error("Agents not available");
-                    }
-                },
-
                 start(script) {
-                    this._bailIfNotAvailable();
                     setSharedArrayBuffer(_ia.buffer);
-                    var oldrdy = Atomics.load(_ia, _RDY_LOC);
+                    var oldrdy = Atomics_load(_ia, _RDY_LOC);
                     evalInWorker(_worker_prefix + script);
-                    while (Atomics.load(_ia, _RDY_LOC) == oldrdy)
+                    while (Atomics_load(_ia, _RDY_LOC) === oldrdy)
                         ;
-                    this._numWorkers++;
+                    _numWorkers++;
                 },
 
                 broadcast(sab, id) {
-                    this._bailIfNotAvailable();
                     setSharedArrayBuffer(sab);
-                    Atomics.store(_ia, _ID_LOC, id);
-                    Atomics.store(_ia, _ACK_LOC, 0);
-                    Atomics.add(_ia, _MSG_LOC, 1);
-                    while (Atomics.load(_ia, _ACK_LOC) < this._numWorkers)
+                    Atomics_store(_ia, _ID_LOC, id);
+                    Atomics_store(_ia, _ACK_LOC, 0);
+                    Atomics_add(_ia, _MSG_LOC, 1);
+                    while (Atomics_load(_ia, _ACK_LOC) < _numWorkers)
                         ;
-                    Atomics.add(_ia, _MSG_LOC, 1);
+                    Atomics_add(_ia, _MSG_LOC, 1);
                 },
 
                 getReport() {
-                    this._bailIfNotAvailable();
-                    if (this._numReports == Atomics.load(_ia, _NUMTXT_LOC))
+                    if (_numReports === Atomics_load(_ia, _NUMTXT_LOC))
                         return null;
                     var s = "";
-                    var i = this._reportPtr;
+                    var i = _reportPtr;
                     var len = _ia[i++];
                     for ( let j=0 ; j < len ; j++ )
-                        s += String.fromCharCode(_ia[i++]);
-                    this._reportPtr = i;
-                    this._numReports++;
+                        s += StringFromCharCode(_ia[i++]);
+                    _reportPtr = i;
+                    _numReports++;
                     return s;
                 },
 
                 sleep(s) {
-                    this._bailIfNotAvailable();
-                    Atomics.wait(_ia, _SLEEP_LOC, 0, s);
+                    Atomics_wait(_ia, _SLEEP_LOC, 0, s);
                 },
+
+                monotonicNow,
             };
         })()
     };
@@ -525,4 +590,9 @@ function $DONE(failure) {
         reportFailure(failure);
     else
         reportCompare(0, 0);
+}
+
+// Some tests in test262 leave promise rejections unhandled.
+if ("ignoreUnhandledRejections" in this) {
+  ignoreUnhandledRejections();
 }

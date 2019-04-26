@@ -14,9 +14,11 @@ info: |
 features: [generators, default-parameters]
 flags: [onlyStrict]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 function *g() {
   function f(x = yield) {

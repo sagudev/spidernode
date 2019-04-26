@@ -8,10 +8,10 @@ description: >
     It is a Syntax Error if BoundNames of CatchParameter contains any duplicate
     elements.
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
 
-$ERROR('This code should not be executed.');
+$DONOTEVALUATE();
 
 try { } catch ([x, x]) {}

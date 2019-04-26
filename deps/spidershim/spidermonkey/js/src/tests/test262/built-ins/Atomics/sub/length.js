@@ -1,11 +1,13 @@
+// |reftest| skip-if(!this.hasOwnProperty('Atomics')) -- Atomics is not enabled unconditionally
 // Copyright (C) 2015 André Bargull. All rights reserved.
 // Copyright (C) 2017 Mozilla Corporation. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
+esid: sec-atomics.sub
 description: >
   Atomics.sub.length is 3.
-info: >
+info: |
   Atomics.sub ( ia, index, val )
 
   17 ECMAScript Standard Built-in Objects:
@@ -20,12 +22,14 @@ info: >
     object has the attributes { [[Writable]]: false, [[Enumerable]]: false,
     [[Configurable]]: true }.
 includes: [propertyHelper.js]
+features: [Atomics]
 ---*/
 
-assert.sameValue(Atomics.sub.length, 3);
-
-verifyNotEnumerable(Atomics.sub, "length");
-verifyNotWritable(Atomics.sub, "length");
-verifyConfigurable(Atomics.sub, "length");
+verifyProperty(Atomics.sub, 'length', {
+  value: 3,
+  enumerable: false,
+  writable: false,
+  configurable: true,
+});
 
 reportCompare(0, 0);

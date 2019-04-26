@@ -16,10 +16,13 @@ info: |
     - It is a Syntax Error if any element of the LexicallyDeclaredNames of
       ModuleItemList also occurs in the VarDeclaredNames of ModuleItemList.
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 flags: [module]
+features: [generators]
 ---*/
+
+$DONOTEVALUATE();
 
 var g;
 function* g() {}

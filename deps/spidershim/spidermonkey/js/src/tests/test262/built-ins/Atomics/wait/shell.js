@@ -1,198 +1,294 @@
+// GENERATED, DO NOT EDIT
 // file: atomicsHelper.js
-// The amount of slack allowed for testing time-related Atomics methods (i.e.
-// wait and wake). The absolute value of the difference of the observed time
-// and the expected time must be epsilon-close.
-var $ATOMICS_MAX_TIME_EPSILON = 100;
-
-// file: testTypedArray.js
-// Copyright (C) 2015 André Bargull. All rights reserved.
+// Copyright (C) 2017 Mozilla Corporation.  All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
+/*---
+description: >
+    Collection of functions used to interact with Atomics.* operations across agent boundaries.
+---*/
 
 /**
- * Array containing every typed array constructor.
+ * @return {String} A report sent from an agent.
  */
-var typedArrayConstructors = [
-  Float64Array,
-  Float32Array,
-  Int32Array,
-  Int16Array,
-  Int8Array,
-  Uint32Array,
-  Uint16Array,
-  Uint8Array,
-  Uint8ClampedArray
-];
+{
+  // This is only necessary because the original
+  // $262.agent.getReport API was insufficient.
+  //
+  // All runtimes currently have their own
+  // $262.agent.getReport which is wrong, so we
+  // will pave over it with a corrected version.
+  //
+  // Binding $262.agent is necessary to prevent
+  // breaking SpiderMonkey's $262.agent.getReport
+  let getReport = $262.agent.getReport.bind($262.agent);
 
-/**
- * The %TypedArray% intrinsic constructor function.
- */
-var TypedArray = Object.getPrototypeOf(Int8Array);
-
-/**
- * Callback for testing a typed array constructor.
- *
- * @callback typedArrayConstructorCallback
- * @param {Function} Constructor the constructor object to test with.
- */
-
-/**
- * Calls the provided function for every typed array constructor.
- *
- * @param {typedArrayConstructorCallback} f - the function to call for each typed array constructor.
- * @param {Array} selected - An optional Array with filtered typed arrays
- */
-function testWithTypedArrayConstructors(f, selected) {
-  var constructors = selected || typedArrayConstructors;
-  for (var i = 0; i < constructors.length; ++i) {
-    var constructor = constructors[i];
-    try {
-      f(constructor);
-    } catch (e) {
-      e.message += " (Testing with " + constructor.name + ".)";
-      throw e;
+  $262.agent.getReport = function() {
+    var r;
+    while ((r = getReport()) == null) {
+      $262.agent.sleep(1);
     }
-  }
+    return r;
+  };
 }
 
 /**
- * Helper for conversion operations on TypedArrays, the expected values
- * properties are indexed in order to match the respective value for each
- * TypedArray constructor
- * @param  {Function} fn - the function to call for each constructor and value.
- *                         will be called with the constructor, value, expected
- *                         value, and a initial value that can be used to avoid
- *                         a false positive with an equivalent expected value.
+ *
+ * Share a given Int32Array or BigInt64Array to all running agents. Ensure that the
+ * provided TypedArray is a "shared typed array".
+ *
+ * NOTE: Migrating all tests to this API is necessary to prevent tests from hanging
+ * indefinitely when a SAB is sent to a worker but the code in the worker attempts to
+ * create a non-sharable TypedArray (something that is not Int32Array or BigInt64Array).
+ * When that scenario occurs, an exception is thrown and the agent worker can no
+ * longer communicate with any other threads that control the SAB. If the main
+ * thread happens to be spinning in the $262.agent.waitUntil() while loop, it will never
+ * meet its termination condition and the test will hang indefinitely.
+ *
+ * Because we've defined $262.agent.broadcast(SAB) in
+ * https://github.com/tc39/test262/blob/master/INTERPRETING.md, there are host implementations
+ * that assume compatibility, which must be maintained.
+ *
+ *
+ * $262.agent.safeBroadcast(TA) should not be included in
+ * https://github.com/tc39/test262/blob/master/INTERPRETING.md
+ *
+ *
+ * @param {(Int32Array|BigInt64Array)} typedArray An Int32Array or BigInt64Array with a SharedArrayBuffer
  */
-function testTypedArrayConversions(byteConversionValues, fn) {
-  var values = byteConversionValues.values;
-  var expected = byteConversionValues.expected;
+$262.agent.safeBroadcast = function(typedArray) {
+  let Constructor = Object.getPrototypeOf(typedArray).constructor;
+  let temp = new Constructor(
+    new SharedArrayBuffer(Constructor.BYTES_PER_ELEMENT)
+  );
+  try {
+    // This will never actually wait, but that's fine because we only
+    // want to ensure that this typedArray CAN be waited on and is shareable.
+    Atomics.wait(temp, 0, Constructor === Int32Array ? 1 : BigInt(1));
+  } catch (error) {
+    $ERROR(`${Constructor.name} cannot be used as a shared typed array. (${error})`);
+  }
 
-  testWithTypedArrayConstructors(function(TA) {
-    var name = TA.name.slice(0, -5);
+  $262.agent.broadcast(typedArray.buffer);
+};
 
-    return values.forEach(function(value, index) {
-      var exp = expected[name][index];
-      var initial = 0;
-      if (exp === 0) {
-        initial = 1;
-      }
-      fn(TA, value, exp, initial);
-    });
-  });
-}
+/**
+ * With a given Int32Array or BigInt64Array, wait until the expected number of agents have
+ * reported themselves by calling:
+ *
+ *    Atomics.add(typedArray, index, 1);
+ *
+ * @param {(Int32Array|BigInt64Array)} typedArray An Int32Array or BigInt64Array with a SharedArrayBuffer
+ * @param {number} index    The index of which all agents will report.
+ * @param {number} expected The number of agents that are expected to report as active.
+ */
+$262.agent.waitUntil = function(typedArray, index, expected) {
 
-// file: testAtomics.js
-// Copyright (C) 2017 Mozilla Corporation. All rights reserved.
+  var agents = 0;
+  while ((agents = Atomics.load(typedArray, index)) !== expected) {
+    /* nothing */
+  }
+  assert.sameValue(agents, expected, "Reporting number of 'agents' equals the value of 'expected'");
+};
+
+/**
+ * Timeout values used throughout the Atomics tests. All timeouts are specified in milliseconds.
+ *
+ * @property {number} yield Used for `$262.agent.tryYield`. Must not be used in other functions.
+ * @property {number} small Used when agents will always timeout and `Atomics.wake` is not part
+ *                          of the test semantics. Must be larger than `$262.agent.timeouts.yield`.
+ * @property {number} long  Used when some agents may timeout and `Atomics.wake` is called on some
+ *                          agents. The agents are required to wait and this needs to be observable
+ *                          by the main thread.
+ * @property {number} huge  Used when `Atomics.wake` is called on all waiting agents. The waiting
+ *                          must not timeout. The agents are required to wait and this needs to be
+ *                          observable by the main thread. All waiting agents must be woken by the
+ *                          main thread.
+ *
+ * Usage for `$262.agent.timeouts.small`:
+ *   const WAIT_INDEX = 0;
+ *   const RUNNING = 1;
+ *   const TIMEOUT = $262.agent.timeouts.small;
+ *   const i32a = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2));
+ *
+ *   $262.agent.start(`
+ *     $262.agent.receiveBroadcast(function(sab) {
+ *       const i32a = new Int32Array(sab);
+ *       Atomics.add(i32a, ${RUNNING}, 1);
+ *
+ *       $262.agent.report(Atomics.wait(i32a, ${WAIT_INDEX}, 0, ${TIMEOUT}));
+ *
+ *       $262.agent.leaving();
+ *     });
+ *   `);
+ *   $262.agent.safeBroadcast(i32a.buffer);
+ *
+ *   // Wait until the agent was started and then try to yield control to increase
+ *   // the likelihood the agent has called `Atomics.wait` and is now waiting.
+ *   $262.agent.waitUntil(i32a, RUNNING, 1);
+ *   $262.agent.tryYield();
+ *
+ *   // The agent is expected to time out.
+ *   assert.sameValue($262.agent.getReport(), "timed-out");
+ *
+ *
+ * Usage for `$262.agent.timeouts.long`:
+ *   const WAIT_INDEX = 0;
+ *   const RUNNING = 1;
+ *   const NUMAGENT = 2;
+ *   const TIMEOUT = $262.agent.timeouts.long;
+ *   const i32a = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2));
+ *
+ *   for (let i = 0; i < NUMAGENT; i++) {
+ *     $262.agent.start(`
+ *       $262.agent.receiveBroadcast(function(sab) {
+ *         const i32a = new Int32Array(sab);
+ *         Atomics.add(i32a, ${RUNNING}, 1);
+ *
+ *         $262.agent.report(Atomics.wait(i32a, ${WAIT_INDEX}, 0, ${TIMEOUT}));
+ *
+ *         $262.agent.leaving();
+ *       });
+ *     `);
+ *   }
+ *   $262.agent.safeBroadcast(i32a.buffer);
+ *
+ *   // Wait until the agents were started and then try to yield control to increase
+ *   // the likelihood the agents have called `Atomics.wait` and are now waiting.
+ *   $262.agent.waitUntil(i32a, RUNNING, NUMAGENT);
+ *   $262.agent.tryYield();
+ *
+ *   // Wake exactly one agent.
+ *   assert.sameValue(Atomics.wake(i32a, WAIT_INDEX, 1), 1);
+ *
+ *   // When it doesn't matter how many agents were woken at once, a while loop
+ *   // can be used to make the test more resilient against intermittent failures
+ *   // in case even though `tryYield` was called, the agents haven't started to
+ *   // wait.
+ *   //
+ *   // // Repeat until exactly one agent was woken.
+ *   // var woken = 0;
+ *   // while ((woken = Atomics.wake(i32a, WAIT_INDEX, 1)) !== 0) ;
+ *   // assert.sameValue(woken, 1);
+ *
+ *   // One agent was woken and the other one timed out.
+ *   const reports = [$262.agent.getReport(), $262.agent.getReport()];
+ *   assert(reports.includes("ok"));
+ *   assert(reports.includes("timed-out"));
+ *
+ *
+ * Usage for `$262.agent.timeouts.huge`:
+ *   const WAIT_INDEX = 0;
+ *   const RUNNING = 1;
+ *   const NUMAGENT = 2;
+ *   const TIMEOUT = $262.agent.timeouts.huge;
+ *   const i32a = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2));
+ *
+ *   for (let i = 0; i < NUMAGENT; i++) {
+ *     $262.agent.start(`
+ *       $262.agent.receiveBroadcast(function(sab) {
+ *         const i32a = new Int32Array(sab);
+ *         Atomics.add(i32a, ${RUNNING}, 1);
+ *
+ *         $262.agent.report(Atomics.wait(i32a, ${WAIT_INDEX}, 0, ${TIMEOUT}));
+ *
+ *         $262.agent.leaving();
+ *       });
+ *     `);
+ *   }
+ *   $262.agent.safeBroadcast(i32a.buffer);
+ *
+ *   // Wait until the agents were started and then try to yield control to increase
+ *   // the likelihood the agents have called `Atomics.wait` and are now waiting.
+ *   $262.agent.waitUntil(i32a, RUNNING, NUMAGENT);
+ *   $262.agent.tryYield();
+ *
+ *   // Wake all agents.
+ *   assert.sameValue(Atomics.wake(i32a, WAIT_INDEX), NUMAGENT);
+ *
+ *   // When it doesn't matter how many agents were woken at once, a while loop
+ *   // can be used to make the test more resilient against intermittent failures
+ *   // in case even though `tryYield` was called, the agents haven't started to
+ *   // wait.
+ *   //
+ *   // // Repeat until all agents were woken.
+ *   // for (var wokenCount = 0; wokenCount < NUMAGENT; ) {
+ *   //   var woken = 0;
+ *   //   while ((woken = Atomics.wake(i32a, WAIT_INDEX)) !== 0) ;
+ *   //   // Maybe perform an action on the woken agents here.
+ *   //   wokenCount += woken;
+ *   // }
+ *
+ *   // All agents were woken and none timeout.
+ *   for (var i = 0; i < NUMAGENT; i++) {
+ *     assert($262.agent.getReport(), "ok");
+ *   }
+ */
+$262.agent.timeouts = {
+  yield: 100,
+  small: 200,
+  long: 1000,
+  huge: 10000,
+};
+
+/**
+ * Try to yield control to the agent threads.
+ *
+ * Usage:
+ *   const VALUE = 0;
+ *   const RUNNING = 1;
+ *   const i32a = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2));
+ *
+ *   $262.agent.start(`
+ *     $262.agent.receiveBroadcast(function(sab) {
+ *       const i32a = new Int32Array(sab);
+ *       Atomics.add(i32a, ${RUNNING}, 1);
+ *
+ *       Atomics.store(i32a, ${VALUE}, 1);
+ *
+ *       $262.agent.leaving();
+ *     });
+ *   `);
+ *   $262.agent.safeBroadcast(i32a.buffer);
+ *
+ *   // Wait until agent was started and then try to yield control.
+ *   $262.agent.waitUntil(i32a, RUNNING, 1);
+ *   $262.agent.tryYield();
+ *
+ *   // Note: This result is not guaranteed, but should hold in practice most of the time.
+ *   assert.sameValue(Atomics.load(i32a, VALUE), 1);
+ *
+ * The default implementation simply waits for `$262.agent.timeouts.yield` milliseconds.
+ */
+$262.agent.tryYield = function() {
+  $262.agent.sleep($262.agent.timeouts.yield);
+};
+
+/**
+ * Try to sleep the current agent for the given amount of milliseconds. It is acceptable,
+ * but not encouraged, to ignore this sleep request and directly continue execution.
+ *
+ * The default implementation calls `$262.agent.sleep(ms)`.
+ *
+ * @param {number} ms Time to sleep in milliseconds.
+ */
+$262.agent.trySleep = function(ms) {
+  $262.agent.sleep(ms);
+};
+
+// file: detachArrayBuffer.js
+// Copyright (C) 2016 the V8 project authors.  All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
+/*---
+description: |
+    A function used in the process of asserting correctness of TypedArray objects.
 
-/**
- * Calls the provided function for a each bad index that should throw a
- * RangeError when passed to an Atomics method on a SAB-backed view where
- * index 125 is out of range.
- *
- * @param f - the function to call for each bad index.
- */
-function testWithAtomicsOutOfBoundsIndices(f) {
-  var bad_indices = [
-    (view) => -1,
-    (view) => view.length,
-    (view) => view.length*2,
-    (view) => Number.POSITIVE_INFINITY,
-    (view) => Number.NEGATIVE_INFINITY,
-    (view) => ({ valueOf: () => 125 }),
-    (view) => ({ toString: () => '125', valueOf: false }) // non-callable valueOf triggers invocation of toString
-  ];
+    $262.detachArrayBuffer is defined by a host.
 
-  for (let IdxGen of bad_indices) {
-    try {
-      f(IdxGen);
-    } catch (e) {
-      e.message += " (Testing with index gen " + IdxGen + ".)";
-      throw e;
-    }
+---*/
+
+function $DETACHBUFFER(buffer) {
+  if (!$262 || typeof $262.detachArrayBuffer !== "function") {
+    throw new Test262Error("No method available to detach an ArrayBuffer");
   }
-}
-
-/**
- * Calls the provided function for each good index that should not throw when
- * passed to an Atomics method on a SAB-backed view.
- *
- * The view must have length greater than zero.
- *
- * @param f - the function to call for each good index.
- */
-function testWithAtomicsInBoundsIndices(f) {
-  // Most of these are eventually coerced to +0 by ToIndex.
-  var good_indices = [
-    (view) => 0/-1,
-    (view) => '-0',
-    (view) => undefined,
-    (view) => NaN,
-    (view) => 0.5,
-    (view) => '0.5',
-    (view) => -0.9,
-    (view) => ({ password: "qumquat" }),
-    (view) => view.length - 1,
-    (view) => ({ valueOf: () => 0 }),
-    (view) => ({ toString: () => '0', valueOf: false }) // non-callable valueOf triggers invocation of toString
-  ];
-
-  for (let IdxGen of good_indices) {
-    try {
-      f(IdxGen);
-    } catch (e) {
-      e.message += " (Testing with index gen " + IdxGen + ".)";
-      throw e;
-    }
-  }
-}
-
-/**
- * Calls the provided function for each value that should throw a TypeError
- * when passed to an Atomics method as a view.
- *
- * @param f - the function to call for each non-view value.
- */
-
-function testWithAtomicsNonViewValues(f) {
-  var values = [
-    null,
-    undefined,
-    true,
-    false,
-    new Boolean(true),
-    10,
-    3.14,
-    new Number(4),
-    "Hi there",
-    new Date,
-    /a*utomaton/g,
-    { password: "qumquat" },
-    new DataView(new ArrayBuffer(10)),
-    new ArrayBuffer(128),
-    new SharedArrayBuffer(128),
-    new Error("Ouch"),
-    [1,1,2,3,5,8],
-    ((x) => -x),
-    new Map(),
-    new Set(),
-    new WeakMap(),
-    new WeakSet(),
-    Symbol("halleluja"),
-    // TODO: Proxy?
-    Object,
-    Int32Array,
-    Date,
-    Math,
-    Atomics
-  ];
-
-  for (let nonView of values) {
-    try {
-      f(nonView);
-    } catch (e) {
-      e.message += " (Testing with non-view value " + nonView + ".)";
-      throw e;
-    }
-  }
+  $262.detachArrayBuffer(buffer);
 }

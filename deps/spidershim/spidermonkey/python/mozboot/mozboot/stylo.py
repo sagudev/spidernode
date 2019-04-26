@@ -2,8 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import print_function, unicode_literals
+from __future__ import absolute_import, print_function, unicode_literals
 
-WINDOWS = 'browser/config/tooltool-manifests/win64/clang.manifest'
-OSX = 'browser/config/tooltool-manifests/macosx64/releng.manifest'
-LINUX = 'browser/config/tooltool-manifests/linux64/clang.manifest'
+WINDOWS_CLANG = 'win64-clang-cl'
+WINDOWS_CBINDGEN = 'win64-cbindgen'
+LINUX_CLANG = 'linux64-clang'
+LINUX_CBINDGEN = 'linux64-cbindgen'
+MACOS_CLANG = 'macosx64-clang'
+MACOS_CBINDGEN = 'macosx64-cbindgen'

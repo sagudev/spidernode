@@ -24,8 +24,10 @@ info: |
     StatementListItem[~Yield, ~Return]
 flags: [module]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 yield;

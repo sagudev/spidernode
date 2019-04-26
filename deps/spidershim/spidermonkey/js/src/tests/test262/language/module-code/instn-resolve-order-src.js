@@ -5,10 +5,12 @@
 description: Modules dependencies are resolved in source text order
 esid: sec-moduledeclarationinstantiation
 negative:
-  phase: early
+  phase: resolution
   type: ReferenceError
 flags: [module]
 ---*/
+
+$DONOTEVALUATE();
 
 import './instn-resolve-order-src-valid_FIXTURE.js';
 import './instn-resolve-order-src-reference_FIXTURE.js';

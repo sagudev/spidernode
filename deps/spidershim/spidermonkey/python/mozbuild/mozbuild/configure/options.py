@@ -54,9 +54,28 @@ class OptionValue(tuple):
         return '%s=%s' % (option, ','.join(self))
 
     def __eq__(self, other):
-        if type(other) != type(self):
+        # This is to catch naive comparisons against strings and other
+        # types in moz.configure files, as it is really easy to write
+        # value == 'foo'. We only raise a TypeError for instances that
+        # have content, because value-less instances (like PositiveOptionValue
+        # and NegativeOptionValue) are common and it is trivial to
+        # compare these.
+        if not isinstance(other, tuple) and len(self):
+            raise TypeError('cannot compare a populated %s against an %s; '
+                            'OptionValue instances are tuples - did you mean to '
+                            'compare against member elements using [x]?' % (
+                                type(other).__name__, type(self).__name__))
+
+        # Allow explicit tuples to be compared.
+        if type(other) == tuple:
+            return tuple.__eq__(self, other)
+        elif isinstance(other, bool):
+            return bool(self) == other
+        # Else we're likely an OptionValue class.
+        elif type(other) != type(self):
             return False
-        return super(OptionValue, self).__eq__(other)
+        else:
+            return super(OptionValue, self).__eq__(other)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -64,6 +83,22 @@ class OptionValue(tuple):
     def __repr__(self):
         return '%s%s' % (self.__class__.__name__,
                          super(OptionValue, self).__repr__())
+
+    @staticmethod
+    def from_(value):
+        if isinstance(value, OptionValue):
+            return value
+        elif value is True:
+            return PositiveOptionValue()
+        elif value is False or value == ():
+            return NegativeOptionValue()
+        elif isinstance(value, types.StringTypes):
+            return PositiveOptionValue((value,))
+        elif isinstance(value, tuple):
+            return PositiveOptionValue(value)
+        else:
+            raise TypeError("Unexpected type: '%s'"
+                            % type(value).__name__)
 
 
 class PositiveOptionValue(OptionValue):
@@ -259,7 +294,7 @@ class Option(object):
                     'Option must start with two dashes instead of one')
             if name.islower():
                 raise InvalidOptionError(
-                    'Environment variable name must be all uppercase')
+                    'Environment variable name "%s" must be all uppercase' % name)
         return '', name, values
 
     @staticmethod
@@ -371,8 +406,7 @@ class Option(object):
         return values
 
     def __repr__(self):
-        return '<%s.%s [%s]>' % (self.__class__.__module__,
-                                 self.__class__.__name__, self.option)
+        return '<%s [%s]>' % (self.__class__.__name__, self.option)
 
 
 class CommandLineHelper(object):

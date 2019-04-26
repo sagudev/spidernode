@@ -8,8 +8,10 @@ description: >
     SyntaxError expected: reserved words used as Identifier
     Names in UTF8: for
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 var f\u{6f}r = 123;

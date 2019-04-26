@@ -2,9 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import print_function, unicode_literals
+from __future__ import absolute_import, print_function, unicode_literals
 
-import errno
 import hashlib
 import os
 import re
@@ -133,44 +132,38 @@ but you may be able to get a recent enough version from a software install
 tool or package manager on your system, or directly from https://rust-lang.org/
 '''
 
-STYLO_MOZCONFIG = '''
-To enable Stylo in your builds, paste the lines between the chevrons
-(>>> and <<<) into your mozconfig file:
-
-<<<
-ac_add_options --enable-stylo
-
-export LLVM_CONFIG=%s/clang/bin/llvm-config
->>>
-'''
-
 BROWSER_ARTIFACT_MODE_MOZCONFIG = '''
-Paste the lines between the chevrons (>>> and <<<) into your mozconfig file:
+Paste the lines between the chevrons (>>> and <<<) into your
+$topsrcdir/mozconfig file, or create the file if it does not exist:
 
-<<<
+>>>
 # Automatically download and use compiled C++ components:
 ac_add_options --enable-artifact-builds
->>>
+<<<
 '''
 
 # Upgrade Mercurial older than this.
 # This should match OLDEST_NON_LEGACY_VERSION from
 # the hg setup wizard in version-control-tools.
-MODERN_MERCURIAL_VERSION = LooseVersion('3.7.3')
+MODERN_MERCURIAL_VERSION = LooseVersion('4.3.3')
 
 # Upgrade Python older than this.
 MODERN_PYTHON_VERSION = LooseVersion('2.7.3')
 
 # Upgrade rust older than this.
-MODERN_RUST_VERSION = LooseVersion('1.18.0')
+MODERN_RUST_VERSION = LooseVersion('1.32.0')
+
+# Upgrade nasm older than this.
+MODERN_NASM_VERSION = LooseVersion('2.14')
+
 
 class BaseBootstrapper(object):
     """Base class for system bootstrappers."""
 
-    def __init__(self, no_interactive=False):
+    def __init__(self, no_interactive=False, no_system_changes=False):
         self.package_manager_updated = False
         self.no_interactive = no_interactive
-        self.stylo = False
+        self.no_system_changes = no_system_changes
         self.state_dir = None
 
     def install_system_packages(self):
@@ -199,8 +192,7 @@ class BaseBootstrapper(object):
         Firefox for Desktop can in simple cases determine its build environment
         entirely from configure.
         '''
-        if self.stylo:
-            print(STYLO_MOZCONFIG % self.state_dir)
+        pass
 
     def install_browser_artifact_mode_packages(self):
         '''
@@ -227,7 +219,7 @@ class BaseBootstrapper(object):
         Install packages required to build Firefox for Android (application
         'mobile/android', also known as Fennec).
         '''
-        raise NotImplementedError('Cannot bootstrap Firefox for Android: '
+        raise NotImplementedError('Cannot bootstrap GeckoView/Firefox for Android: '
                                   '%s does not yet implement install_mobile_android_packages()'
                                   % __name__)
 
@@ -236,7 +228,7 @@ class BaseBootstrapper(object):
         Print a message to the console detailing what the user's mozconfig
         should contain.
 
-        Firefox for Android needs an application and an ABI set, and it needs
+        GeckoView/Firefox for Android needs an application and an ABI set, and it needs
         paths to the Android SDK and NDK.
         '''
         raise NotImplementedError('%s does not yet implement suggest_mobile_android_mozconfig()' %
@@ -244,11 +236,11 @@ class BaseBootstrapper(object):
 
     def install_mobile_android_artifact_mode_packages(self):
         '''
-        Install packages required to build Firefox for Android (application
+        Install packages required to build GeckoView/Firefox for Android (application
         'mobile/android', also known as Fennec) in Artifact Mode.
         '''
         raise NotImplementedError(
-            'Cannot bootstrap Firefox for Android Artifact Mode: '
+            'Cannot bootstrap GeckoView/Firefox for Android Artifact Mode: '
             '%s does not yet implement install_mobile_android_artifact_mode_packages()'
             % __name__)
 
@@ -257,11 +249,19 @@ class BaseBootstrapper(object):
         Print a message to the console detailing what the user's mozconfig
         should contain.
 
-        Firefox for Android Artifact Mode needs an application and an ABI set,
+        GeckoView/Firefox for Android Artifact Mode needs an application and an ABI set,
         and it needs paths to the Android SDK.
         '''
         raise NotImplementedError(
             '%s does not yet implement suggest_mobile_android_artifact_mode_mozconfig()'
+            % __name__)
+
+    def ensure_clang_static_analysis_package(self, state_dir, checkout_root):
+        '''
+        Install the clang static analysis package
+        '''
+        raise NotImplementedError(
+            '%s does not yet implement ensure_clang_static_analysis_package()'
             % __name__)
 
     def ensure_stylo_packages(self, state_dir, checkout_root):
@@ -272,10 +272,30 @@ class BaseBootstrapper(object):
             '%s does not yet implement ensure_stylo_packages()'
             % __name__)
 
-    def install_tooltool_clang_package(self, state_dir, checkout_root, manifest_file):
-        abs_manifest_file = os.path.join(checkout_root, manifest_file)
+    def ensure_nasm_packages(self, state_dir, checkout_root):
+        '''
+        Install nasm.
+        '''
+        raise NotImplementedError(
+            '%s does not yet implement ensure_nasm_packages()'
+            % __name__)
 
+    def ensure_node_packages(self, state_dir, checkout_root):
+        '''
+        Install any necessary packages needed to supply NodeJS'''
+        raise NotImplementedError(
+            '%s does not yet implement ensure_node_packages()'
+            % __name__)
+
+    def install_toolchain_static_analysis(self, state_dir, checkout_root, toolchain_job):
+        clang_tools_path = os.path.join(state_dir, 'clang-tools')
+        if not os.path.exists(clang_tools_path):
+            os.mkdir(clang_tools_path)
+        self.install_toolchain_artifact(clang_tools_path, checkout_root, toolchain_job)
+
+    def install_toolchain_artifact(self, state_dir, checkout_root, toolchain_job):
         mach_binary = os.path.join(checkout_root, 'mach')
+        mach_binary = os.path.abspath(mach_binary)
         if not os.path.exists(mach_binary):
             raise ValueError("mach not found at %s" % mach_binary)
 
@@ -286,19 +306,21 @@ class BaseBootstrapper(object):
             raise ValueError("cannot determine path to Python executable")
 
         cmd = [sys.executable, mach_binary, 'artifact', 'toolchain',
-               '--tooltool-manifest', abs_manifest_file,
-               'clang']
+               '--from-build', toolchain_job]
 
         subprocess.check_call(cmd, cwd=state_dir)
 
-    def which(self, name):
+    def which(self, name, *extra_search_dirs):
         """Python implementation of which.
 
         It returns the path of an executable or None if it couldn't be found.
         """
-        for path in os.environ['PATH'].split(os.pathsep):
+        search_dirs = os.environ['PATH'].split(os.pathsep)
+        search_dirs.extend(extra_search_dirs)
+
+        for path in search_dirs:
             test = os.path.join(path, name)
-            if os.path.exists(test) and os.access(test, os.X_OK):
+            if os.path.isfile(test) and os.access(test, os.X_OK):
                 return test
 
         return None
@@ -411,6 +433,20 @@ class BaseBootstrapper(object):
         else:
             raise Exception("Error! Reached max attempts of entering option.")
 
+    def prompt_yesno(self, prompt):
+        ''' Prompts the user with prompt and requires a yes/no answer.'''
+        valid = False
+        while not valid:
+            choice = raw_input(prompt + ' (Yn): ').strip().lower()[:1]
+            if choice == '':
+                choice = 'y'
+            if choice not in ('y', 'n'):
+                print('ERROR! Please enter y or n!')
+            else:
+                valid = True
+
+        return choice == 'y'
+
     def _ensure_package_manager_updated(self):
         if self.package_manager_updated:
             return
@@ -424,7 +460,7 @@ class BaseBootstrapper(object):
         This should be defined in child classes.
         """
 
-    def _parse_version(self, path, name=None, env=None):
+    def _parse_version_impl(self, path, name, env, version_param):
         '''Execute the given path, returning the version.
 
         Invokes the path argument with the --version switch
@@ -444,7 +480,7 @@ class BaseBootstrapper(object):
         if name.endswith('.exe'):
             name = name[:-4]
 
-        info = self.check_output([path, '--version'],
+        info = self.check_output([path, version_param],
                                  env=env,
                                  stderr=subprocess.STDOUT)
         match = re.search(name + ' ([a-z0-9\.]+)', info)
@@ -454,15 +490,26 @@ class BaseBootstrapper(object):
 
         return LooseVersion(match.group(1))
 
-    def _hgplain_env(self):
+    def _parse_version(self, path, name=None, env=None):
+        return self._parse_version_impl(path, name, env, "--version")
+
+    def _parse_version_short(self, path, name=None, env=None):
+        return self._parse_version_impl(path, name, env, "-v")
+
+    def _hg_cleanenv(self, load_hgrc=False):
         """ Returns a copy of the current environment updated with the HGPLAIN
-        environment variable.
+        and HGRCPATH environment variables.
 
         HGPLAIN prevents Mercurial from applying locale variations to the output
         making it suitable for use in scripts.
+
+        HGRCPATH controls the loading of hgrc files. Setting it to the empty
+        string forces that no user or system hgrc file is used.
         """
         env = os.environ.copy()
         env[b'HGPLAIN'] = b'1'
+        if not load_hgrc:
+            env[b'HGRCPATH'] = b''
 
         return env
 
@@ -472,7 +519,7 @@ class BaseBootstrapper(object):
             print(NO_MERCURIAL)
             return False, False, None
 
-        our = self._parse_version(hg, 'version', self._hgplain_env())
+        our = self._parse_version(hg, 'version', self._hg_cleanenv())
         if not our:
             return True, False, None
 
@@ -559,13 +606,22 @@ class BaseBootstrapper(object):
         """
         print(PYTHON_UNABLE_UPGRADE % (current, MODERN_PYTHON_VERSION))
 
-    def is_rust_modern(self):
-        rustc = self.which('rustc')
+    def is_nasm_modern(self):
+        nasm = self.which('nasm')
+        if not nasm:
+            return False
+
+        our = self._parse_version_short(nasm, 'version')
+        if not our:
+            return False
+
+        return our >= MODERN_NASM_VERSION
+
+    def is_rust_modern(self, cargo_bin):
+        rustc = self.which('rustc', cargo_bin)
         if not rustc:
             print('Could not find a Rust compiler.')
             return False, None
-
-        cargo = self.which('cargo')
 
         our = self._parse_version(rustc)
         if not our:
@@ -575,7 +631,7 @@ class BaseBootstrapper(object):
 
     def cargo_home(self):
         cargo_home = os.environ.get('CARGO_HOME',
-                os.path.expanduser(os.path.join('~', '.cargo')))
+                                    os.path.expanduser(os.path.join('~', '.cargo')))
         cargo_bin = os.path.join(cargo_home, 'bin')
         return cargo_home, cargo_bin
 
@@ -606,30 +662,20 @@ class BaseBootstrapper(object):
         })
 
     def ensure_rust_modern(self):
-        modern, version = self.is_rust_modern()
+        cargo_home, cargo_bin = self.cargo_home()
+        modern, version = self.is_rust_modern(cargo_bin)
 
         if modern:
             print('Your version of Rust (%s) is new enough.' % version)
-            rustup = self.which('rustup')
+            rustup = self.which('rustup', cargo_bin)
             if rustup:
-                self.ensure_rust_targets(rustup)
+                self.ensure_rust_targets(rustup, version)
             return
 
-        if not version:
-            # Rust wasn't in PATH. Check the standard location.
-            cargo_home, cargo_bin = self.cargo_home()
-            try_rustc = os.path.join(cargo_bin, 'rustc' + rust.exe_suffix())
-            try_cargo = os.path.join(cargo_bin, 'cargo' + rust.exe_suffix())
-            have_rustc = os.path.exists(try_rustc)
-            have_cargo = os.path.exists(try_cargo)
-            if have_rustc or have_cargo:
-                self.print_rust_path_advice(RUST_NOT_IN_PATH,
-                        cargo_home, cargo_bin)
-                sys.exit(1)
-        else:
+        if version:
             print('Your version of Rust (%s) is too old.' % version)
 
-        rustup = self.which('rustup')
+        rustup = self.which('rustup', cargo_bin)
         if rustup:
             rustup_version = self._parse_version(rustup)
             if not rustup_version:
@@ -638,7 +684,7 @@ class BaseBootstrapper(object):
             print('Found rustup. Will try to upgrade.')
             self.upgrade_rust(rustup)
 
-            modern, after = self.is_rust_modern()
+            modern, after = self.is_rust_modern(cargo_bin)
             if not modern:
                 print(RUST_UPGRADE_FAILED % (MODERN_RUST_VERSION, after))
                 sys.exit(1)
@@ -647,18 +693,32 @@ class BaseBootstrapper(object):
             print('Will try to install Rust.')
             self.install_rust()
 
-    def ensure_rust_targets(self, rustup):
+    def ensure_rust_targets(self, rustup, rust_version):
         """Make sure appropriate cross target libraries are installed."""
-        target_list =  subprocess.check_output([rustup, 'target', 'list'])
+        target_list = subprocess.check_output([rustup, 'target', 'list'])
         targets = [line.split()[0] for line in target_list.splitlines()
-                if 'installed' in line or 'default' in line]
+                   if 'installed' in line or 'default' in line]
         print('Rust supports %s targets.' % ', '.join(targets))
 
         # Support 32-bit Windows on 64-bit Windows.
         win32 = 'i686-pc-windows-msvc'
         win64 = 'x86_64-pc-windows-msvc'
-        if rust.platform() == win64 and not win32 in targets:
+        if rust.platform() == win64 and win32 not in targets:
             subprocess.check_call([rustup, 'target', 'add', win32])
+
+        if 'mobile_android' in self.application:
+            # Let's add the most common targets.
+            if rust_version < LooseVersion('1.33'):
+                arm_target = 'armv7-linux-androideabi'
+            else:
+                arm_target = 'thumbv7neon-linux-androideabi'
+            android_targets = (arm_target,
+                               'aarch64-linux-android',
+                               'i686-linux-android',
+                               'x86_64-linux-android', )
+            for target in android_targets:
+                if target not in targets:
+                    subprocess.check_call([rustup, 'target', 'add', target])
 
     def upgrade_rust(self, rustup):
         """Upgrade Rust.
@@ -687,12 +747,11 @@ class BaseBootstrapper(object):
             print('Ok')
             print('Running rustup-init...')
             subprocess.check_call([rustup_init, '-y',
-                '--default-toolchain', 'stable',
-                '--default-host', platform,
-            ])
+                                   '--default-toolchain', 'stable',
+                                   '--default-host', platform, ])
             cargo_home, cargo_bin = self.cargo_home()
             self.print_rust_path_advice(RUST_INSTALL_COMPLETE,
-                    cargo_home, cargo_bin)
+                                        cargo_home, cargo_bin)
         finally:
             try:
                 os.remove(rustup_init)
@@ -718,3 +777,57 @@ class BaseBootstrapper(object):
         if h.hexdigest() != hexhash:
             os.remove(dest)
             raise ValueError('Hash of downloaded file does not match expected hash')
+
+    def ensure_java(self, extra_search_dirs=()):
+        """Verify the presence of java.
+
+        Note that we currently require a JDK (not just a JRE) because we
+        use `jarsigner` in local builds.
+
+        Soon we won't require Java 1.8 to build (after Bug 1515248 and
+        we use Android-Gradle plugin 3.2.1), but the Android
+        `sdkmanager` tool still requires exactly 1.8.  Sigh.  Note that
+        we no longer require javac explicitly; it's fetched by
+        Gradle.
+        """
+
+        if 'JAVA_HOME' in os.environ:
+            extra_search_dirs += (os.path.join(os.environ['JAVA_HOME'], 'bin'),)
+        java = self.which('java', extra_search_dirs)
+
+        if not java:
+            raise Exception('You need to have Java version 1.8 installed. '
+                            'Please visit http://www.java.com/en/download '
+                            'to get version 1.8.')
+
+        try:
+            output = subprocess.check_output([java,
+                                              '-XshowSettings:properties',
+                                              '-version'],
+                                             stderr=subprocess.STDOUT).rstrip()
+
+            # -version strings are pretty free-form, like: 'java version
+            # "1.8.0_192"' or 'openjdk version "11.0.1" 2018-10-16', but the
+            # -XshowSettings:properties gives the information (to stderr, sigh)
+            # like 'java.specification.version = 8'.  That flag is non-standard
+            # but has been around since at least 2011.
+            version = [line for line in output.splitlines()
+                       if 'java.specification.version' in line]
+            if not len(version) == 1:
+                raise Exception('You need to have Java version 1.8 installed '
+                                '(found {} but could not parse version "{}"). '
+                                'Check the JAVA_HOME environment variable. '
+                                'Please visit http://www.java.com/en/download '
+                                'to get version 1.8.'.format(java, output))
+
+            version = version[0].split(' = ')[-1]
+            if version not in ['1.8', '8']:
+                raise Exception('You need to have Java version 1.8 installed '
+                                '(found {} with version "{}"). '
+                                'Check the JAVA_HOME environment variable. '
+                                'Please visit http://www.java.com/en/download '
+                                'to get version 1.8.'.format(java, version))
+        except subprocess.CalledProcessError as e:
+            raise Exception('Failed to get java version from {}: {}'.format(java, e.output))
+
+        print('Your version of Java ({}) is at least 1.8 ({}).'.format(java, version))

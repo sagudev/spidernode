@@ -17,8 +17,10 @@ info: |
         RegExpUnicodeEscapeSequence[?U]
         IdentityEscape[?U]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 /\1/u;

@@ -9,13 +9,15 @@ description: >
     Using "case" that has no Expresson after it. "CaseClause: case
     Expression : [StatementList]"
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
 
+$DONOTEVALUATE();
+
 function SwitchTest(value){
   var result = 0;
-  
+
   switch(value) {
     case:
       result += 2;
@@ -23,7 +25,7 @@ function SwitchTest(value){
       result += 32;
       break;
   }
-  
+
   return result;
 }
 

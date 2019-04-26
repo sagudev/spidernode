@@ -1,11 +1,13 @@
+// |reftest| skip-if(!this.hasOwnProperty('Atomics')) -- Atomics is not enabled unconditionally
 // Copyright (C) 2015 André Bargull. All rights reserved.
 // Copyright (C) 2017 Mozilla Corporation. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
+esid: sec-atomics.wait
 description: >
   Atomics.wait.length is 4.
-info: >
+info: |
   Atomics.wait ( ia, index, expect, timeout )
 
   17 ECMAScript Standard Built-in Objects:
@@ -20,12 +22,14 @@ info: >
     object has the attributes { [[Writable]]: false, [[Enumerable]]: false,
     [[Configurable]]: true }.
 includes: [propertyHelper.js]
+features: [Atomics]
 ---*/
 
-assert.sameValue(Atomics.wait.length, 4);
-
-verifyNotEnumerable(Atomics.wait, "length");
-verifyNotWritable(Atomics.wait, "length");
-verifyConfigurable(Atomics.wait, "length");
+verifyProperty(Atomics.wait, 'length', {
+  value: 4,
+  enumerable: false,
+  writable: false,
+  configurable: true,
+});
 
 reportCompare(0, 0);

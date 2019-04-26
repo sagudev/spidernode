@@ -4,10 +4,12 @@
 /*---
 es6id: 13.1
 description: >
-    let declarations without initialisers in statement positions: 
+    let declarations without initialisers in statement positions:
     while ( Expression ) Statement
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 while (false) let x;

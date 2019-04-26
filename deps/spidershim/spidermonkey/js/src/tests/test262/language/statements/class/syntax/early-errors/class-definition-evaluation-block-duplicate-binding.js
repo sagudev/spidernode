@@ -8,9 +8,11 @@ description: >
 
     It is a Syntax Error if the LexicallyDeclaredNames of StatementList contains any duplicate entries.
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 {
   class A {}
   class A {}

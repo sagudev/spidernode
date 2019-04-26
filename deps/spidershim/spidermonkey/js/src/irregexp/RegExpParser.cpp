@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99: */
+ * vim: set ts=8 sts=2 et sw=2 tw=80: */
 
 // Copyright 2012 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
@@ -31,17 +31,27 @@
 #include "irregexp/RegExpParser.h"
 
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/Casting.h"
 #include "mozilla/Move.h"
+#include "mozilla/Range.h"
 
 #include "frontend/TokenStream.h"
+#include "gc/GC.h"
+#include "irregexp/RegExpCharacters.h"
+#include "js/RegExpFlags.h"  // JS::RegExpFlag, JS::RegExpFlags
+#include "util/StringBuffer.h"
+#include "util/Text.h"
+#include "util/Unicode.h"
 #include "vm/ErrorReporting.h"
-#include "vm/StringBuffer.h"
 
 using namespace js;
 using namespace js::irregexp;
 
-using mozilla::Move;
+using mozilla::AssertedCast;
 using mozilla::PointerRangeSize;
+
+using JS::RegExpFlag;
+using JS::RegExpFlags;
 
 // ----------------------------------------------------------------------------
 // RegExpBuilder
@@ -128,6 +138,12 @@ void
 RegExpBuilder::AddAssertion(RegExpTree* assert)
 {
     FlushText();
+    if (terms_.length() > 0 && terms_.last()->IsAssertion()) {
+        // Omit repeated assertions of the same type.
+        RegExpAssertion* last = terms_.last()->AsAssertion();
+        RegExpAssertion* next = assert->AsAssertion();
+        if (last->assertion_type() == next->assertion_type()) return;
+    }
     terms_.Add(alloc, assert);
 #ifdef DEBUG
     last_added_ = ADD_ASSERT;
@@ -228,9 +244,9 @@ RegExpBuilder::AddQuantifierToAtom(int min, int max,
 // RegExpParser
 
 template <typename CharT>
-RegExpParser<CharT>::RegExpParser(frontend::TokenStream& ts, LifoAlloc* alloc,
-                                  const CharT* chars, const CharT* end, bool multiline_mode,
-                                  bool unicode, bool ignore_case)
+RegExpParser<CharT>::RegExpParser(frontend::TokenStreamAnyChars& ts,
+                                  LifoAlloc* alloc, RegExpFlags flags,
+                                  const CharT* chars, const CharT* end)
   : ts(ts),
     alloc(alloc),
     captures_(nullptr),
@@ -240,14 +256,26 @@ RegExpParser<CharT>::RegExpParser(frontend::TokenStream& ts, LifoAlloc* alloc,
     current_(kEndMarker),
     capture_count_(0),
     has_more_(true),
-    multiline_(multiline_mode),
-    unicode_(unicode),
-    ignore_case_(ignore_case),
+    multiline_(flags.multiline()),
+    unicode_(flags.unicode()),
+    ignore_case_(flags.ignoreCase()),
     simple_(false),
     contains_anchor_(false),
     is_scanned_for_captures_(false)
 {
     Advance();
+}
+
+static size_t ComputeColumn(const Latin1Char* begin, const Latin1Char* end) {
+  return PointerRangeSize(begin, end);
+}
+
+static size_t ComputeColumn(const char16_t* begin, const char16_t* end) {
+#if JS_COLUMN_DIMENSION_IS_CODE_POINTS
+  return unicode::CountCodePoints(begin, end);
+#else
+  return PointerRangeSize(begin, end);
+#endif
 }
 
 template <typename CharT>
@@ -256,7 +284,19 @@ RegExpParser<CharT>::SyntaxError(unsigned errorNumber, ...)
 {
     ErrorMetadata err;
 
-    ts.fillExcludingContext(&err, ts.currentToken().pos.begin);
+    // Ordinarily this indicates whether line-of-context information can be
+    // added, but we entirely ignore that here because we create a
+    // a line of context based on the expression source.
+    uint32_t location = ts.currentToken().pos.begin;
+    if (ts.fillExceptingContext(&err, location)) {
+      // Line breaks are not significant in pattern text in the same way as
+      // in source text, so act as though pattern text is a single line, then
+      // compute a column based on "code point" count (treating a lone
+      // surrogate as a "code point" in UTF-16).  Gak.
+      err.lineNumber = 1;
+      err.columnNumber =
+          AssertedCast<uint32_t>(ComputeColumn(start_, next_pos_ - 1));
+    }
 
     // For most error reporting, the line of context derives from the token
     // stream.  So when location information doesn't come from the token
@@ -298,7 +338,7 @@ RegExpParser<CharT>::SyntaxError(unsigned errorNumber, ...)
     va_list args;
     va_start(args, errorNumber);
 
-    ReportCompileError(ts.context(), Move(err), nullptr, JSREPORT_ERROR, errorNumber, args);
+    ReportCompileError(ts.context(), std::move(err), nullptr, JSREPORT_ERROR, errorNumber, &args);
 
     va_end(args);
 }
@@ -321,6 +361,7 @@ RegExpParser<CharT>::Advance()
         next_pos_++;
     } else {
         current_ = kEndMarker;
+        next_pos_ = end_ + 1;
         has_more_ = false;
     }
 }
@@ -1418,11 +1459,9 @@ UnicodeEverythingAtom(LifoAlloc* alloc)
     // everything except \x0a, \x0d, \u2028 and \u2029
 
     CharacterRangeVector* ranges = alloc->newInfallible<CharacterRangeVector>(*alloc);
-    ranges->append(CharacterRange::Range(0x0, 0x09));
-    ranges->append(CharacterRange::Range(0x0b, 0x0c));
-    ranges->append(CharacterRange::Range(0x0e, 0x2027));
-    ranges->append(CharacterRange::Range(0x202A, unicode::LeadSurrogateMin - 1));
-    ranges->append(CharacterRange::Range(unicode::TrailSurrogateMax + 1, unicode::UTF16Max));
+    AddClassNegated(kLineTerminatorAndSurrogateRanges,
+                    kLineTerminatorAndSurrogateRangeCount,
+                    ranges);
     builder->AddAtom(alloc->newInfallible<RegExpCharacterClass>(ranges, false));
 
     builder->NewAlternative();
@@ -1815,7 +1854,7 @@ RegExpParser<CharT>::ParseDisjunction()
             break;
           case '{': {
             if (unicode_)
-                return ReportError(JSMSG_RAW_BRACE_IN_REGEP);
+                return ReportError(JSMSG_RAW_BRACE_IN_REGEXP);
             int dummy;
             if (ParseIntervalQuantifier(&dummy, &dummy))
                 return ReportError(JSMSG_NOTHING_TO_REPEAT);
@@ -1833,9 +1872,9 @@ RegExpParser<CharT>::ParseDisjunction()
                     else if (unicode::IsTrailSurrogate(c))
                         builder->AddAtom(TrailSurrogateAtom(alloc, c));
                     else if (c == ']')
-                        return ReportError(JSMSG_RAW_BRACKET_IN_REGEP);
+                        return ReportError(JSMSG_RAW_BRACKET_IN_REGEXP);
                     else if (c == '}')
-                        return ReportError(JSMSG_RAW_BRACE_IN_REGEP);
+                        return ReportError(JSMSG_RAW_BRACE_IN_REGEXP);
                     else
                         builder->AddCharacter(c);
                     Advance();
@@ -1895,13 +1934,13 @@ template class irregexp::RegExpParser<char16_t>;
 
 template <typename CharT>
 static bool
-ParsePattern(frontend::TokenStream& ts, LifoAlloc& alloc, const CharT* chars, size_t length,
-             bool multiline, bool match_only, bool unicode, bool ignore_case,
-             bool global, bool sticky, RegExpCompileData* data)
+ParsePattern(frontend::TokenStreamAnyChars& ts, LifoAlloc& alloc,
+             const CharT* chars, size_t length, bool match_only,
+             RegExpFlags flags, RegExpCompileData* data)
 {
     // We shouldn't strip pattern for exec, or test with global/sticky,
     // to reflect correct match position and lastIndex.
-    if (match_only && !global && !sticky) {
+    if (match_only && !flags.global() && !flags.sticky()) {
         // Try to strip a leading '.*' from the RegExp, but only if it is not
         // followed by a '?' (which will affect how the .* is parsed). This
         // pattern will affect the captures produced by the RegExp, but not
@@ -1922,7 +1961,7 @@ ParsePattern(frontend::TokenStream& ts, LifoAlloc& alloc, const CharT* chars, si
         }
     }
 
-    RegExpParser<CharT> parser(ts, &alloc, chars, chars + length, multiline, unicode, ignore_case);
+    RegExpParser<CharT> parser(ts, &alloc, flags, chars, chars + length);
     data->tree = parser.ParsePattern();
     if (!data->tree)
         return false;
@@ -1934,31 +1973,30 @@ ParsePattern(frontend::TokenStream& ts, LifoAlloc& alloc, const CharT* chars, si
 }
 
 bool
-irregexp::ParsePattern(frontend::TokenStream& ts, LifoAlloc& alloc, JSAtom* str,
-                       bool multiline, bool match_only, bool unicode, bool ignore_case,
-                       bool global, bool sticky, RegExpCompileData* data)
+irregexp::ParsePattern(frontend::TokenStreamAnyChars& ts, LifoAlloc& alloc,
+                       JSAtom* str, bool match_only, RegExpFlags flags,
+                       RegExpCompileData* data)
 {
     JS::AutoCheckCannotGC nogc;
     return str->hasLatin1Chars()
            ? ::ParsePattern(ts, alloc, str->latin1Chars(nogc), str->length(),
-                            multiline, match_only, unicode, ignore_case, global, sticky, data)
+                            match_only, flags, data)
            : ::ParsePattern(ts, alloc, str->twoByteChars(nogc), str->length(),
-                            multiline, match_only, unicode, ignore_case, global, sticky, data);
+                            match_only, flags, data);
 }
 
 template <typename CharT>
 static bool
-ParsePatternSyntax(frontend::TokenStream& ts, LifoAlloc& alloc, const CharT* chars, size_t length,
-                   bool unicode)
+ParsePatternSyntax(frontend::TokenStreamAnyChars& ts, LifoAlloc& alloc,
+                   const CharT* chars, size_t length, bool unicode)
 {
-    LifoAllocScope scope(&alloc);
-
-    RegExpParser<CharT> parser(ts, &alloc, chars, chars + length, false, unicode, false);
+    RegExpParser<CharT> parser(ts, &alloc, unicode ? RegExpFlag::Unicode : 0,
+                               chars, chars + length);
     return parser.ParsePattern() != nullptr;
 }
 
 bool
-irregexp::ParsePatternSyntax(frontend::TokenStream& ts, LifoAlloc& alloc, JSAtom* str,
+irregexp::ParsePatternSyntax(frontend::TokenStreamAnyChars& ts, LifoAlloc& alloc, JSAtom* str,
                              bool unicode)
 {
     JS::AutoCheckCannotGC nogc;
@@ -1968,7 +2006,7 @@ irregexp::ParsePatternSyntax(frontend::TokenStream& ts, LifoAlloc& alloc, JSAtom
 }
 
 bool
-irregexp::ParsePatternSyntax(frontend::TokenStream& ts, LifoAlloc& alloc,
+irregexp::ParsePatternSyntax(frontend::TokenStreamAnyChars& ts, LifoAlloc& alloc,
                              const mozilla::Range<const char16_t> chars, bool unicode)
 {
     return ::ParsePatternSyntax(ts, alloc, chars.begin().get(), chars.length(), unicode);

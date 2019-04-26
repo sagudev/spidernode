@@ -20,7 +20,9 @@ description: >
     No duplicates
 
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 var af = ({y: x, x}) => 1;

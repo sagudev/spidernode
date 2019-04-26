@@ -8,9 +8,11 @@ description: >
     with arguments « » and « » is true.
 flags: [module]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 while (false) {
   continue undef;

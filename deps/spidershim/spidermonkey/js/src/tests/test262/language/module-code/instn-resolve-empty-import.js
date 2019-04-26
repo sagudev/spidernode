@@ -37,9 +37,11 @@ info: |
         { ImportsList }
         { ImportsList , }
 negative:
-  phase: early
+  phase: resolution
   type: ReferenceError
 flags: [module]
 ---*/
+
+$DONOTEVALUATE();
 
 import {} from './instn-resolve-empty-import_FIXTURE.js';

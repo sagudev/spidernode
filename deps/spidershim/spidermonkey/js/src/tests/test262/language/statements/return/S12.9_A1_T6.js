@@ -9,9 +9,11 @@ description: >
     Checking if execution of "return" with no function, placed into a
     loop, fails
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 //////////////////////////////////////////////////////////////////////////////
 //CHECK#1

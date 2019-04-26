@@ -8,7 +8,7 @@ esid: sec-function-definitions-runtime-semantics-instantiatefunctionobject
 features: [default-parameters]
 flags: [generated]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 info: |
     FunctionDeclaration :
@@ -56,6 +56,7 @@ info: |
       elements.
 
 ---*/
+$DONOTEVALUATE();
 
 function f(x = 0, x) {
   

@@ -24,8 +24,10 @@ info: |
 
     IdentifierReference[?Yield] Initializer[+In, ?Yield]
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 ({ a = 1 });

@@ -33,18 +33,19 @@
 
 #include "mozilla/Vector.h"
 
-#include "jsalloc.h"
-
 #include "jit/arm64/vixl/Assembler-vixl.h"
 #include "jit/arm64/vixl/Disasm-vixl.h"
 #include "jit/arm64/vixl/Globals-vixl.h"
 #include "jit/arm64/vixl/Instructions-vixl.h"
 #include "jit/arm64/vixl/Instrument-vixl.h"
+#include "jit/arm64/vixl/MozCachingDecoder.h"
 #include "jit/arm64/vixl/Simulator-Constants-vixl.h"
 #include "jit/arm64/vixl/Utils-vixl.h"
 #include "jit/IonTypes.h"
+#include "js/AllocPolicy.h"
 #include "vm/MutexIDs.h"
 #include "vm/PosixNSPR.h"
+#include "wasm/WasmSignalHandlers.h"
 
 namespace vixl {
 
@@ -697,13 +698,16 @@ class Redirection;
 
 class Simulator : public DecoderVisitor {
  public:
-  explicit Simulator(JSContext* cx, Decoder* decoder, FILE* stream = stdout);
+#ifdef JS_CACHE_SIMULATOR_ARM64
+  using Decoder = CachingDecoder;
+#endif
+  explicit Simulator(Decoder* decoder, FILE* stream = stdout);
   ~Simulator();
 
   // Moz changes.
   void init(Decoder* decoder, FILE* stream);
   static Simulator* Current();
-  static Simulator* Create(JSContext* cx);
+  static Simulator* Create();
   static void Destroy(Simulator* sim);
   uintptr_t stackLimit() const;
   uintptr_t* addressOfStackLimit();
@@ -715,10 +719,19 @@ class Simulator : public DecoderVisitor {
   void setGPR64Result(int64_t result);
   void setFP32Result(float result);
   void setFP64Result(double result);
+#ifdef JS_CACHE_SIMULATOR_ARM64
+  void FlushICache();
+#endif
   void VisitCallRedirection(const Instruction* instr);
-  static inline uintptr_t StackLimit() {
+  static uintptr_t StackLimit() {
     return Simulator::Current()->stackLimit();
   }
+  static bool supportsAtomics() {
+    return true;
+  }
+  template<typename T> T Read(uintptr_t address);
+  template <typename T> void Write(uintptr_t address_, T value);
+  JS::ProfilingFrameIterator::RegisterState registerState();
 
   void ResetState();
 
@@ -729,6 +742,9 @@ class Simulator : public DecoderVisitor {
   // Simulation helpers.
   const Instruction* pc() const { return pc_; }
   const Instruction* get_pc() const { return pc_; }
+  int64_t get_sp() const { return xreg(31, Reg31IsStackPointer); }
+  int64_t get_lr() const { return xreg(30); }
+  int64_t get_fp() const { return xreg(29); }
 
   template <typename T>
   T get_pc_as() const { return reinterpret_cast<T>(const_cast<Instruction*>(pc())); }
@@ -738,8 +754,21 @@ class Simulator : public DecoderVisitor {
     pc_modified_ = true;
   }
 
-  void trigger_wasm_interrupt();
-  void handle_wasm_interrupt();
+  // Handle any wasm faults, returning true if the fault was handled.
+  // This method is rather hot so inline the normal (no-wasm) case.
+  bool MOZ_ALWAYS_INLINE handle_wasm_seg_fault(uintptr_t addr, unsigned numBytes) {
+    if (MOZ_LIKELY(!js::wasm::CodeExists)) {
+      return false;
+    }
+
+    uint8_t* newPC;
+    if (!js::wasm::MemoryAccessTraps(registerState(), (uint8_t*)addr, numBytes, &newPC)) {
+      return false;
+    }
+
+    set_pc((Instruction*)newPC);
+    return true;
+  }
 
   void increment_pc() {
     if (!pc_modified_) {
@@ -752,7 +781,7 @@ class Simulator : public DecoderVisitor {
   void ExecuteInstruction();
 
   // Declare all Visitor functions.
-  #define DECLARE(A) virtual void Visit##A(const Instruction* instr);
+  #define DECLARE(A) virtual void Visit##A(const Instruction* instr) override;
   VISITOR_LIST_THAT_RETURN(DECLARE)
   VISITOR_LIST_THAT_DONT_RETURN(DECLARE)
   #undef DECLARE
@@ -2510,8 +2539,6 @@ class Simulator : public DecoderVisitor {
 
   // Processor state ---------------------------------------
 
-  JSContext* const cx_;
-
   // Simulated monitors for exclusive access instructions.
   SimExclusiveLocalMonitor local_monitor_;
   SimExclusiveGlobalMonitor global_monitor_;
@@ -2564,7 +2591,7 @@ class Simulator : public DecoderVisitor {
 
   // Stack
   byte* stack_;
-  static const int stack_protection_size_ = 128 * KBytes;
+  static const int stack_protection_size_ = 512 * KBytes;
   static const int stack_size_ = (2 * MBytes) + (2 * stack_protection_size_);
   byte* stack_limit_;
 
@@ -2573,7 +2600,6 @@ class Simulator : public DecoderVisitor {
   // automatically incremented.
   bool pc_modified_;
   const Instruction* pc_;
-  bool wasm_interrupt_;
 
   static const char* xreg_names[];
   static const char* wreg_names[];
@@ -2679,6 +2705,26 @@ class SimulatorProcess
   js::Mutex lock_;
   vixl::Redirection* redirection_;
 
+#ifdef JS_CACHE_SIMULATOR_ARM64
+  // For each simulator, record what other thread registered as instruction
+  // being invalidated.
+  struct ICacheFlush {
+    void* start;
+    size_t length;
+  };
+  using ICacheFlushes = mozilla::Vector<ICacheFlush, 2>;
+  struct SimFlushes {
+    Simulator* thread;
+    ICacheFlushes records;
+  };
+  mozilla::Vector<SimFlushes, 1> pendingFlushes_;
+
+  static void recordICacheFlush(void* start, size_t length);
+  static ICacheFlushes& getICacheFlushes(Simulator* sim);
+  static MOZ_MUST_USE bool registerSimulator(Simulator* sim);
+  static void unregisterSimulator(Simulator* sim);
+#endif
+
   static void setRedirection(vixl::Redirection* redirection) {
     MOZ_ASSERT(singleton_->lock_.ownedByCurrentThread());
     singleton_->redirection_ = redirection;
@@ -2696,6 +2742,18 @@ class SimulatorProcess
   static void destroy() {
     js_delete(singleton_);
     singleton_ = nullptr;
+  }
+};
+
+// Protects the icache and redirection properties of the simulator.
+class AutoLockSimulatorCache : public js::LockGuard<js::Mutex>
+{
+  using Base = js::LockGuard<js::Mutex>;
+
+ public:
+  explicit AutoLockSimulatorCache()
+    : Base(SimulatorProcess::singleton_->lock_)
+  {
   }
 };
 

@@ -7,8 +7,10 @@ description: >
     for declaration:
     disallow multiple lexical bindings
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 for (let x, y in {}) { }
 

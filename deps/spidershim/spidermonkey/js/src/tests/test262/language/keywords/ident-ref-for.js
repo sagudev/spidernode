@@ -12,8 +12,10 @@ info: |
   It is a Syntax Error if StringValue of IdentifierName is the same String
   value as the StringValue of any ReservedWord except for yield.
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
+
+$DONOTEVALUATE();
 
 for = 1;

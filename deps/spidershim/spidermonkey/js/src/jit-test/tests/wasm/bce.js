@@ -1,5 +1,3 @@
-// |jit-test| test-also-wasm-check-bce
-
 mem='\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f'+
     '\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9\xfa\xfb\xfc\xfd\xfe\xff'+
     '\x00'.repeat(65488) +
@@ -69,12 +67,12 @@ function loadTwiceModule(type, ext, offset, align) {
          (drop (${type}.load${ext}
           offset=${offset}
           ${align != 0 ? 'align=' + align : ''}
-          (get_local 0)
+          (local.get 0)
          ))
          (${type}.load${ext}
           offset=${offset}
           ${align != 0 ? 'align=' + align : ''}
-          (get_local 1)
+          (local.get 1)
          )
        ) (export "" 0))`
     ).exports[""];
@@ -91,12 +89,12 @@ function loadTwiceSameBasePlusConstModule(type, ext, offset, align, addConst) {
          (drop (${type}.load${ext}
           offset=${offset}
           ${align != 0 ? 'align=' + align : ''}
-          (get_local 0)
+          (local.get 0)
          ))
          (${type}.load${ext}
           offset=${offset}
           ${align != 0 ? 'align=' + align : ''}
-          (i32.add (get_local 0) (i32.const ${addConst}))
+          (i32.add (local.get 0) (i32.const ${addConst}))
          )
        ) (export "" 0))`
     ).exports[""];
@@ -113,12 +111,12 @@ function loadTwiceSameBasePlusNonConstModule(type, ext, offset, align) {
          (drop (${type}.load${ext}
           offset=${offset}
           ${align != 0 ? 'align=' + align : ''}
-          (get_local 0)
+          (local.get 0)
          ))
          (${type}.load${ext}
           offset=${offset}
           ${align != 0 ? 'align=' + align : ''}
-          (i32.add (get_local 0) (get_local 1))
+          (i32.add (local.get 0) (local.get 1))
          )
        ) (export "" 0))`
     ).exports[""];
@@ -134,10 +132,7 @@ function testOOB(mod, args) {
 }
 
 function testOk(mod, args, expected, expectedType) {
-    if (expectedType === 'i64')
-        assertEqI64(mod(...args), createI64(expected));
-    else
-        assertEq(mod(...args), expected);
+    assertEq(mod(...args), expected);
 }
 
 // TODO: It would be nice to verify how many BCs are eliminated on positive tests.

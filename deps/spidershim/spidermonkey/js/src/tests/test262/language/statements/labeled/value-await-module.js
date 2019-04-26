@@ -11,9 +11,11 @@ info: |
 
   It is a Syntax Error if the goal symbol of the syntactic grammar is Module.
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 flags: [module]
 ---*/
+
+$DONOTEVALUATE();
 
 await: 1;

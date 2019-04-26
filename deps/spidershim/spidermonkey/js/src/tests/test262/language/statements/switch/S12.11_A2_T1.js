@@ -7,13 +7,15 @@ info: There can be only one DefaultClause
 es5id: 12.11_A2_T1
 description: Duplicate DefaultClause
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 ---*/
 
+$DONOTEVALUATE();
+
 function SwitchTest(value){
   var result = 0;
-  
+
   switch(value) {
     case 0:
       result += 2;
@@ -24,7 +26,7 @@ function SwitchTest(value){
       result += 32;
       break;
   }
-  
+
   return result;
 }
 

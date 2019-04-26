@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import multiprocessing
 import time
 import unittest
@@ -148,7 +150,7 @@ class TestResourceMonitor(unittest.TestCase):
         monitor.stop()
 
         v = monitor.min_memory_available()
-        self.assertIsInstance(v, long)
+        self.assertIsInstance(v, (long, int))
 
         v = monitor.max_memory_percent()
         self.assertIsInstance(v, float)

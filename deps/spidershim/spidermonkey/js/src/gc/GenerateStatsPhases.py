@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+# flake8: noqa: F821
+
 # Generate graph structures for GC statistics recording.
 #
 # Stats phases are nested and form a directed acyclic graph starting
@@ -50,15 +52,16 @@
 #            +---+   +---+
 
 import re
-import sys
 import collections
 
+
 class PhaseKind():
-    def __init__(self, name, descr, bucket, children = []):
+    def __init__(self, name, descr, bucket, children=[]):
         self.name = name
         self.descr = descr
         self.bucket = bucket
         self.children = children
+
 
 # The root marking phase appears in several places in the graph.
 MarkRootsPhaseKind = PhaseKind("MARK_ROOTS", "Mark Roots", 48, [
@@ -71,9 +74,14 @@ MarkRootsPhaseKind = PhaseKind("MARK_ROOTS", "Mark Roots", 48, [
 
 JoinParallelTasksPhaseKind = PhaseKind("JOIN_PARALLEL_TASKS", "Join Parallel Tasks", 67)
 
+UnmarkGrayPhaseKind = PhaseKind("UNMARK_GRAY", "Unmark gray", 56)
+
 PhaseKindGraphRoots = [
     PhaseKind("MUTATOR", "Mutator Running", 0),
     PhaseKind("GC_BEGIN", "Begin Callback", 1),
+    PhaseKind("EVICT_NURSERY_FOR_MAJOR_GC", "Evict Nursery For Major GC", 70, [
+        MarkRootsPhaseKind,
+    ]),
     PhaseKind("WAIT_BACKGROUND_THREAD", "Wait Background Thread", 2),
     PhaseKind("PREPARE", "Prepare For Collection", 69, [
         PhaseKind("UNMARK", "Unmark", 7),
@@ -81,18 +89,25 @@ PhaseKindGraphRoots = [
         PhaseKind("MARK_DISCARD_CODE", "Mark Discard Code", 3),
         PhaseKind("RELAZIFY_FUNCTIONS", "Relazify Functions", 4),
         PhaseKind("PURGE", "Purge", 5),
-        PhaseKind("PURGE_SHAPE_TABLES", "Purge ShapeTables", 60),
+        PhaseKind("PURGE_SHAPE_CACHES", "Purge ShapeCaches", 60),
         JoinParallelTasksPhaseKind
-        ]),
+    ]),
     PhaseKind("MARK", "Mark", 6, [
         MarkRootsPhaseKind,
-        PhaseKind("MARK_DELAYED", "Mark Delayed", 8)
+        UnmarkGrayPhaseKind,
+        PhaseKind("MARK_DELAYED", "Mark Delayed", 8, [
+            UnmarkGrayPhaseKind,
         ]),
+    ]),
     PhaseKind("SWEEP", "Sweep", 9, [
         PhaseKind("SWEEP_MARK", "Mark During Sweeping", 10, [
-            PhaseKind("SWEEP_MARK_TYPES", "Mark Types During Sweeping", 11),
-            PhaseKind("SWEEP_MARK_INCOMING_BLACK", "Mark Incoming Black Pointers", 12),
-            PhaseKind("SWEEP_MARK_WEAK", "Mark Weak", 13),
+            UnmarkGrayPhaseKind,
+            PhaseKind("SWEEP_MARK_INCOMING_BLACK", "Mark Incoming Black Pointers", 12, [
+                UnmarkGrayPhaseKind,
+            ]),
+            PhaseKind("SWEEP_MARK_WEAK", "Mark Weak", 13, [
+                UnmarkGrayPhaseKind,
+            ]),
             PhaseKind("SWEEP_MARK_INCOMING_GRAY", "Mark Incoming Gray Pointers", 14),
             PhaseKind("SWEEP_MARK_GRAY", "Mark Gray", 15),
             PhaseKind("SWEEP_MARK_GRAY_WEAK", "Mark Gray and Weak", 16)
@@ -130,11 +145,10 @@ PhaseKindGraphRoots = [
         PhaseKind("SWEEP_SCOPE", "Sweep Scope", 59),
         PhaseKind("SWEEP_REGEXP_SHARED", "Sweep RegExpShared", 61),
         PhaseKind("SWEEP_SHAPE", "Sweep Shape", 36),
-        PhaseKind("SWEEP_JITCODE", "Sweep JIT code", 37),
         PhaseKind("FINALIZE_END", "Finalize End Callback", 38),
         PhaseKind("DESTROY", "Deallocate", 39),
         JoinParallelTasksPhaseKind
-        ]),
+    ]),
     PhaseKind("COMPACT", "Compact", 40, [
         PhaseKind("COMPACT_MOVE", "Compact Move", 41),
         PhaseKind("COMPACT_UPDATE", "Compact Update", 42, [
@@ -154,15 +168,15 @@ PhaseKindGraphRoots = [
         MarkRootsPhaseKind,
     ]),
     PhaseKind("BARRIER", "Barriers", 55, [
-        PhaseKind("UNMARK_GRAY", "Unmark gray", 56),
+        UnmarkGrayPhaseKind
     ])
 ]
 
-# Make a linear list of all unique phases by performing a depth first
-# search on the phase graph starting at the roots.  This will be used to
-# generate the PhaseKind enum.
 
 def findAllPhaseKinds():
+    # Make a linear list of all unique phases by performing a depth first
+    # search on the phase graph starting at the roots.  This will be used to
+    # generate the PhaseKind enum.
     phases = []
     seen = set()
 
@@ -178,12 +192,13 @@ def findAllPhaseKinds():
         dfs(phase)
     return phases
 
+
 AllPhaseKinds = findAllPhaseKinds()
 
-# Expand the DAG into a tree, duplicating phases which have more than
-# one parent.
 
 class Phase:
+    # Expand the DAG into a tree, duplicating phases which have more than
+    # one parent.
     def __init__(self, phaseKind, parent):
         self.phaseKind = phaseKind
         self.parent = parent
@@ -195,6 +210,7 @@ class Phase:
         self.path = re.sub(r'\W+', '_', phaseKind.name.lower())
         if parent is not None:
             self.path = parent.path + '.' + self.path
+
 
 def expandPhases():
     phases = []
@@ -222,6 +238,7 @@ def expandPhases():
 
     return phases, phasesForKind
 
+
 AllPhases, PhasesForPhaseKind = expandPhases()
 
 # Name phases based on phase kind name and index if there are multiple phases
@@ -241,16 +258,19 @@ MaxPhaseNesting = max(phase.depth for phase in AllPhases) + 1
 
 # Generate code.
 
+
 def writeList(out, items):
     if items:
         out.write(",\n".join("  " + item for item in items) + "\n")
 
+
 def writeEnumClass(out, name, type, items, extraItems):
-    items = [ "FIRST" ] + items + [ "LIMIT" ] + extraItems
+    items = ["FIRST"] + items + ["LIMIT"] + extraItems
     items[1] += " = " + items[0]
-    out.write("enum class %s : %s {\n" % (name, type));
+    out.write("enum class %s : %s {\n" % (name, type))
     writeList(out, items)
     out.write("};\n")
+
 
 def generateHeader(out):
     #
@@ -282,11 +302,12 @@ def generateHeader(out):
     #
     out.write("static const size_t MAX_PHASE_NESTING = %d;\n" % MaxPhaseNesting)
 
+
 def generateCpp(out):
     #
     # Generate the PhaseKindInfo table.
     #
-    out.write("static const PhaseKindTable phaseKinds = {\n")
+    out.write("static constexpr PhaseKindTable phaseKinds = {\n")
     for phaseKind in AllPhaseKinds:
         phase = PhasesForPhaseKind[phaseKind][0]
         out.write("    /* PhaseKind::%s */ PhaseKindInfo { Phase::%s, %d },\n" %
@@ -300,11 +321,11 @@ def generateCpp(out):
     def name(phase):
         return "Phase::" + phase.name if phase else "Phase::NONE"
 
-    out.write("static const PhaseTable phases = {\n")
+    out.write("static constexpr PhaseTable phases = {\n")
     for phase in AllPhases:
         firstChild = phase.children[0] if phase.children else None
         phaseKind = phase.phaseKind
-        out.write("    /* %s */ PhaseInfo { %s, %s, %s, %s, PhaseKind::%s, %d, \"%s\", \"%s\" },\n" %
+        out.write("    /* %s */ PhaseInfo { %s, %s, %s, %s, PhaseKind::%s, %d, \"%s\", \"%s\" },\n" %  # NOQA: E501
                   (name(phase),
                    name(phase.parent),
                    name(firstChild),

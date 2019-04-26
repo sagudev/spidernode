@@ -7,6 +7,10 @@
 
 #include <string.h>
 
+#if defined(LINUX)
+#include <sys/un.h>
+#endif
+
 /*
  * On Unix, the error code for gethostbyname() and gethostbyaddr()
  * is returned in the global variable h_errno, instead of the usual
@@ -1366,7 +1370,17 @@ PRUintn _PR_NetAddrSize(const PRNetAddr* addr)
 #endif
 #if defined(XP_UNIX) || defined(XP_OS2)
     else if (AF_UNIX == addr->raw.family)
-        addrsize = sizeof(addr->local);
+    {
+#if defined(LINUX)
+        if (addr->local.path[0] == 0)
+            /* abstract socket address is supported on Linux only */
+            addrsize = strnlen(addr->local.path + 1,
+                               sizeof(addr->local.path)) +
+                       offsetof(struct sockaddr_un, sun_path) + 1;
+        else
+#endif
+            addrsize = sizeof(addr->local);
+    }
 #endif
     else addrsize = 0;
 
@@ -1483,18 +1497,20 @@ PR_IsNetAddrType(const PRNetAddr *addr, PRNetAddrValue val)
         if (val == PR_IpAddrAny) {
 			if (_PR_IN6_IS_ADDR_UNSPECIFIED((PRIPv6Addr *)&addr->ipv6.ip)) {
             	return PR_TRUE;
-			} else if (_PR_IN6_IS_ADDR_V4MAPPED((PRIPv6Addr *)&addr->ipv6.ip)
-					&& _PR_IN6_V4MAPPED_TO_IPADDR((PRIPv6Addr *)&addr->ipv6.ip)
-							== htonl(INADDR_ANY)) {
-            	return PR_TRUE;
+			}
+            if (_PR_IN6_IS_ADDR_V4MAPPED((PRIPv6Addr *)&addr->ipv6.ip)
+                && _PR_IN6_V4MAPPED_TO_IPADDR((PRIPv6Addr *)&addr->ipv6.ip)
+                == htonl(INADDR_ANY)) {
+                return PR_TRUE;
 			}
         } else if (val == PR_IpAddrLoopback) {
             if (_PR_IN6_IS_ADDR_LOOPBACK((PRIPv6Addr *)&addr->ipv6.ip)) {
             	return PR_TRUE;
-			} else if (_PR_IN6_IS_ADDR_V4MAPPED((PRIPv6Addr *)&addr->ipv6.ip)
-					&& _PR_IN6_V4MAPPED_TO_IPADDR((PRIPv6Addr *)&addr->ipv6.ip)
-							== htonl(INADDR_LOOPBACK)) {
-            	return PR_TRUE;
+			}
+            if (_PR_IN6_IS_ADDR_V4MAPPED((PRIPv6Addr *)&addr->ipv6.ip)
+                && _PR_IN6_V4MAPPED_TO_IPADDR((PRIPv6Addr *)&addr->ipv6.ip)
+                == htonl(INADDR_LOOPBACK)) {
+                return PR_TRUE;
 			}
         } else if (val == PR_IpAddrV4Mapped
                 && _PR_IN6_IS_ADDR_V4MAPPED((PRIPv6Addr *)&addr->ipv6.ip)) {
@@ -1504,8 +1520,9 @@ PR_IsNetAddrType(const PRNetAddr *addr, PRNetAddrValue val)
         if (addr->raw.family == AF_INET) {
             if (val == PR_IpAddrAny && addr->inet.ip == htonl(INADDR_ANY)) {
                 return PR_TRUE;
-            } else if (val == PR_IpAddrLoopback
-                    && addr->inet.ip == htonl(INADDR_LOOPBACK)) {
+            }
+            if (val == PR_IpAddrLoopback
+                && addr->inet.ip == htonl(INADDR_LOOPBACK)) {
                 return PR_TRUE;
             }
         }

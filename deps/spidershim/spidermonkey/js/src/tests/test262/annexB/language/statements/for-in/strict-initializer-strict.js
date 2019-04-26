@@ -7,10 +7,11 @@ esid: sec-initializers-in-forin-statement-heads
 description: >
     for-in initializers in strict mode are prohibited
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 flags: [onlyStrict]
 ---*/
-throw NotEarlyError;
-for (var a = 0 in {});
 
+$DONOTEVALUATE();
+
+for (var a = 0 in {});

@@ -7,11 +7,16 @@
 FINAL_LIBRARY = 'mozglue'
 
 EXPORTS.mozilla += [
+    'AutoProfilerLabel.h',
     'PlatformConditionVariable.h',
     'PlatformMutex.h',
     'Printf.h',
     'StackWalk.h',
     'TimeStamp.h',
+]
+
+EXPORTS.mozilla.glue += [
+    'Debug.h',
 ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
@@ -21,6 +26,7 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     ]
 
 SOURCES += [
+    'AutoProfilerLabel.cpp',
     'Printf.cpp',
     'StackWalk.cpp',
     'TimeStamp.cpp',
@@ -31,8 +37,23 @@ OS_LIBS += CONFIG['REALTIME_LIBS']
 DEFINES['IMPL_MFBT'] = True
 
 if CONFIG['OS_ARCH'] == 'WINNT':
+    DIRS += [
+        'interceptor',
+    ]
+    EXPORTS += [
+        'nsWindowsDllInterceptor.h',
+    ]
+    EXPORTS.mozilla += [
+        'DynamicallyLinkedFunctionPtr.h',
+        'ImportDir.h',
+        'NativeNt.h',
+        'WindowsMapRemoteView.h',
+        'WindowsProcessMitigations.h',
+    ]
     SOURCES += [
         'TimeStamp_windows.cpp',
+        'WindowsMapRemoteView.cpp',
+        'WindowsProcessMitigations.cpp',
     ]
     OS_LIBS += ['dbghelp']
 elif CONFIG['HAVE_CLOCK_MONOTONIC']:

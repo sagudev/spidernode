@@ -1,13 +1,8 @@
+// |jit-test| skip-if: !isAsmJSCompilationAvailable() || !getBuildConfiguration()['arm-simulator']
+// Single-step profiling currently only works in the ARM simulator
+
 load(libdir + "asm.js");
 load(libdir + "asserts.js");
-
-// Run test only for asm.js
-if (!isAsmJSCompilationAvailable())
-    quit();
-
-// Single-step profiling currently only works in the ARM simulator
-if (!getBuildConfiguration()["arm-simulator"])
-    quit();
 
 function checkSubSequence(got, expect)
 {
@@ -37,10 +32,10 @@ function assertStackContainsSeq(got, expect)
         for (var j = 0; j < parts.length; j++) {
             var frame = parts[j];
             frame = frame.replace(/ \([^\)]*\)/g, "");
-            frame = frame.replace(/fast FFI trampoline to native/g, "N");
+            frame = frame.replace(/fast exit trampoline to native/g, "N");
             frame = frame.replace(/^call to( asm.js)? native .*\(in wasm\)$/g, "N");
-            frame = frame.replace(/(fast|slow) FFI trampoline/g, "<");
-            frame = frame.replace(/entry trampoline/g, ">");
+            frame = frame.replace(/(fast|slow) exit trampoline/g, "<");
+            frame = frame.replace(/(fast|slow) entry trampoline/g, ">");
             frame = frame.replace(/(\/[^\/,<]+)*\/testProfiling.js/g, "");
             frame = frame.replace(/testBuiltinD2D/g, "");
             frame = frame.replace(/testBuiltinF2F/g, "");
@@ -200,26 +195,15 @@ assertStackContainsSeq(stacks, ">,f1,>,<,f1,>,>,<,f1,>,f2,>,<,f1,>,<,f2,>,<,f1,>
 
 
 // Ion FFI exit
-for (var i = 0; i < 20; i++)
-    assertEq(f1(), 32);
-enableSingleStepProfiling();
-assertEq(f1(), 32);
-var stacks = disableSingleStepProfiling();
-assertStackContainsSeq(stacks, ">,f1,>,<,f1,>,>,<,f1,>,f2,>,<,f1,>,<,f2,>,<,f1,>,f2,>,<,f1,>,>,<,f1,>,<,f1,>,f1,>,>");
-
-
-if (isSimdAvailable() && typeof SIMD !== 'undefined') {
-    // SIMD out-of-bounds exit
-    var buf = new ArrayBuffer(0x10000);
-    var f = asmLink(asmCompile('g','ffi','buf', USE_ASM + 'var f4=g.SIMD.float32x4; var f4l=f4.load; var u8=new g.Uint8Array(buf); function f(i) { i=i|0; return f4l(u8, 0xFFFF + i | 0); } return f'), this, {}, buf);
+var jitOptions = getJitCompilerOptions();
+if (jitOptions['baseline.enable']) {
+    for (var i = 0; i < 20; i++)
+        assertEq(f1(), 32);
     enableSingleStepProfiling();
-    assertThrowsInstanceOf(() => f(4), RangeError);
+    assertEq(f1(), 32);
     var stacks = disableSingleStepProfiling();
-    // TODO check that expected is actually the correctly expected string, when
-    // SIMD is implemented on ARM.
-    assertStackContainsSeq(stacks, ">,f,>,inline stub,f,>");
+    assertStackContainsSeq(stacks, ">,f1,>,<,f1,>,>,<,f1,>,f2,>,<,f1,>,<,f2,>,<,f1,>,f2,>,<,f1,>,>,<,f1,>,<,f1,>,f1,>,>");
 }
-
 
 // Thunks
 setJitCompilerOption("jump-threshold", 0);

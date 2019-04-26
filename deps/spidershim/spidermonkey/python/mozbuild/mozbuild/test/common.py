@@ -4,6 +4,12 @@
 
 from __future__ import unicode_literals
 
+import errno
+import os
+import shutil
+
+from buildconfig import topsrcdir
+
 from mach.logging import LoggingManager
 
 from mozbuild.util import ReadOnlyDict
@@ -14,6 +20,24 @@ import mozpack.path as mozpath
 # By including this module, tests get structured logging.
 log_manager = LoggingManager()
 log_manager.add_terminal_logging()
+
+
+def prepare_tmp_topsrcdir(path):
+    for p in (
+        'build/autoconf/config.guess',
+        'build/autoconf/config.sub',
+        'build/moz.configure/checks.configure',
+        'build/moz.configure/init.configure',
+        'build/moz.configure/util.configure',
+    ):
+        file_path = os.path.join(path, p)
+        try:
+            os.makedirs(os.path.dirname(file_path))
+        except OSError as e:
+            if e.errno != errno.EEXIST:
+                raise
+        shutil.copy(os.path.join(topsrcdir, p), file_path)
+
 
 # mozconfig is not a reusable type (it's actually a module) so, we
 # have to mock it.
@@ -35,8 +59,13 @@ class MockConfig(object):
             'DLL_SUFFIX': '.so'
         }, **extra_substs)
 
-        self.substs_unicode = ReadOnlyDict({k.decode('utf-8'): v.decode('utf-8',
-            'replace') for k, v in self.substs.items()})
+        def decode_value(value):
+            if isinstance(value, list):
+                return [v.decode('utf-8', 'replace') for v in value]
+            return value.decode('utf-8', 'replace')
+
+        self.substs_unicode = ReadOnlyDict({k.decode('utf-8'): decode_value(v)
+                                            for k, v in self.substs.items()})
 
         self.defines = self.substs
 

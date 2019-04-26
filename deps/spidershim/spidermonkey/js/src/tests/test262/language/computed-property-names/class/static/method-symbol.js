@@ -5,6 +5,7 @@ es6id: 12.2.5
 description: >
     In a class, static computed property method names can be a symbol
 includes: [compareArray.js]
+features: [Symbol]
 ---*/
 var sym1 = Symbol();
 var sym2 = Symbol();
@@ -23,8 +24,8 @@ assert(
   "`compareArray(Object.keys(C), [])` returns `true`"
 );
 assert(
-  compareArray(Object.getOwnPropertyNames(C), ['length', 'prototype', 'a', 'c', 'name']),
-  "`compareArray(Object.getOwnPropertyNames(C), ['length', 'prototype', 'a', 'c', 'name'])` returns `true`"
+  compareArray(Object.getOwnPropertyNames(C), ['length', 'prototype', 'name', 'a', 'c']),
+  "`compareArray(Object.getOwnPropertyNames(C), ['length', 'prototype', 'name', 'a', 'c'])` returns `true`"
 );
 assert(
   compareArray(Object.getOwnPropertySymbols(C), [sym1, sym2]),

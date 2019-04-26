@@ -34,13 +34,13 @@
 # NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION
 # WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, unicode_literals, print_function
 
-import sys
 import subprocess
-
+import sys
 from ctypes import c_void_p, POINTER, sizeof, Structure, windll, WinError, WINFUNCTYPE, c_ulong
 from ctypes.wintypes import BOOL, BYTE, DWORD, HANDLE, LPCWSTR, LPWSTR, UINT, WORD
+
 from .qijo import QueryInformationJobObject
 
 LPVOID = c_void_p
@@ -85,6 +85,7 @@ def ErrCheckHandle(result, func, args):
         raise WinError()
     return AutoHANDLE(result)
 
+
 # PROCESS_INFORMATION structure
 
 
@@ -99,7 +100,9 @@ class PROCESS_INFORMATION(Structure):
 
         self.cb = sizeof(self)
 
+
 LPPROCESS_INFORMATION = POINTER(PROCESS_INFORMATION)
+
 
 # STARTUPINFO structure
 
@@ -124,6 +127,8 @@ class STARTUPINFO(Structure):
                 ("hStdOutput", HANDLE),
                 ("hStdError", HANDLE)
                 ]
+
+
 LPSTARTUPINFO = POINTER(STARTUPINFO)
 
 SW_HIDE = 0
@@ -138,6 +143,7 @@ STARTF_FORCEONFEEDBACK = 0x40
 STARTF_FORCEOFFFEEDBACK = 0x80
 STARTF_USESTDHANDLES = 0x100
 
+
 # EnvironmentBlock
 
 
@@ -151,7 +157,7 @@ class EnvironmentBlock:
         else:
             values = []
             fs_encoding = sys.getfilesystemencoding() or 'mbcs'
-            for k, v in env.iteritems():
+            for k, v in env.items():
                 if isinstance(k, bytes):
                     k = k.decode(fs_encoding, 'replace')
                 if isinstance(v, bytes):
@@ -160,8 +166,14 @@ class EnvironmentBlock:
             values.append("")
             self._as_parameter_ = LPCWSTR("\0".join(values))
 
+
 # Error Messages we need to watch for go here
-# See: http://msdn.microsoft.com/en-us/library/ms681388%28v=vs.85%29.aspx
+
+# https://msdn.microsoft.com/en-us/library/windows/desktop/ms681382(v=vs.85).aspx (0 - 499)
+ERROR_ACCESS_DENIED = 5
+ERROR_INVALID_PARAMETER = 87
+
+# http://msdn.microsoft.com/en-us/library/ms681388%28v=vs.85%29.aspx (500 - 999)
 ERROR_ABANDONED_WAIT_0 = 735
 
 # GetLastError()
@@ -171,16 +183,16 @@ GetLastError = GetLastErrorProto(("GetLastError", windll.kernel32), GetLastError
 
 # CreateProcess()
 
-CreateProcessProto = WINFUNCTYPE(BOOL,                  # Return type
-                                 LPCWSTR,               # lpApplicationName
-                                 LPWSTR,                # lpCommandLine
-                                 LPVOID,                # lpProcessAttributes
-                                 LPVOID,                # lpThreadAttributes
-                                 BOOL,                  # bInheritHandles
-                                 DWORD,                 # dwCreationFlags
-                                 LPVOID,                # lpEnvironment
-                                 LPCWSTR,               # lpCurrentDirectory
-                                 LPSTARTUPINFO,         # lpStartupInfo
+CreateProcessProto = WINFUNCTYPE(BOOL,  # Return type
+                                 LPCWSTR,  # lpApplicationName
+                                 LPWSTR,  # lpCommandLine
+                                 LPVOID,  # lpProcessAttributes
+                                 LPVOID,  # lpThreadAttributes
+                                 BOOL,  # bInheritHandles
+                                 DWORD,  # dwCreationFlags
+                                 LPVOID,  # lpEnvironment
+                                 LPCWSTR,  # lpCurrentDirectory
+                                 LPSTARTUPINFO,  # lpStartupInfo
                                  LPPROCESS_INFORMATION  # lpProcessInformation
                                  )
 
@@ -201,6 +213,7 @@ def ErrCheckCreateProcess(result, func, args):
     # return a tuple (hProcess, hThread, dwProcessID, dwThreadID)
     pi = args[9]
     return AutoHANDLE(pi.hProcess), AutoHANDLE(pi.hThread), pi.dwProcessID, pi.dwThreadID
+
 
 CreateProcess = CreateProcessProto(("CreateProcessW", windll.kernel32),
                                    CreateProcessFlags)
@@ -228,6 +241,7 @@ COMPKEY_JOBOBJECT = c_ulong(1)
 # see http://msdn.microsoft.com/en-us/library/ms684147%28VS.85%29.aspx
 JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x00000800
 JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK = 0x00001000
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 
 # Flags for Job Object Completion Port Message IDs from winnt.h
 # See also: http://msdn.microsoft.com/en-us/library/ms684141%28v=vs.85%29.aspx
@@ -246,15 +260,44 @@ DEBUG_ONLY_THIS_PROCESS = 0x00000002
 DEBUG_PROCESS = 0x00000001
 DETACHED_PROCESS = 0x00000008
 
+# OpenProcess -
+# https://msdn.microsoft.com/en-us/library/windows/desktop/ms684320(v=vs.85).aspx
+PROCESS_QUERY_INFORMATION = 0x0400
+PROCESS_VM_READ = 0x0010
+
+OpenProcessProto = WINFUNCTYPE(
+    HANDLE,  # Return type
+    DWORD,  # dwDesiredAccess
+    BOOL,  # bInheritHandle
+    DWORD,  # dwProcessId
+)
+
+OpenProcessFlags = (
+    (1, "dwDesiredAccess", 0),
+    (1, "bInheritHandle", False),
+    (1, "dwProcessId", 0),
+)
+
+
+def ErrCheckOpenProcess(result, func, args):
+    ErrCheckBool(result, func, args)
+
+    return AutoHANDLE(result)
+
+
+OpenProcess = OpenProcessProto(("OpenProcess", windll.kernel32),
+                               OpenProcessFlags)
+OpenProcess.errcheck = ErrCheckOpenProcess
+
 # GetQueuedCompletionPortStatus -
 # http://msdn.microsoft.com/en-us/library/aa364986%28v=vs.85%29.aspx
-GetQueuedCompletionStatusProto = WINFUNCTYPE(BOOL,         # Return Type
-                                             HANDLE,       # Completion Port
-                                             LPDWORD,      # Msg ID
-                                             LPULONG,      # Completion Key
+GetQueuedCompletionStatusProto = WINFUNCTYPE(BOOL,  # Return Type
+                                             HANDLE,  # Completion Port
+                                             LPDWORD,  # Msg ID
+                                             LPULONG,  # Completion Key
                                              # PID Returned from the call (may be null)
                                              LPULONG,
-                                             DWORD)        # milliseconds to wait
+                                             DWORD)  # milliseconds to wait
 GetQueuedCompletionStatusFlags = ((1, "CompletionPort", INVALID_HANDLE_VALUE),
                                   (1, "lpNumberOfBytes", None),
                                   (1, "lpCompletionKey", None),
@@ -266,11 +309,11 @@ GetQueuedCompletionStatus = GetQueuedCompletionStatusProto(("GetQueuedCompletion
 
 # CreateIOCompletionPort
 # Note that the completion key is just a number, not a pointer.
-CreateIoCompletionPortProto = WINFUNCTYPE(HANDLE,      # Return Type
-                                          HANDLE,      # File Handle
-                                          HANDLE,      # Existing Completion Port
-                                          c_ulong,     # Completion Key
-                                          DWORD)       # Number of Threads
+CreateIoCompletionPortProto = WINFUNCTYPE(HANDLE,  # Return Type
+                                          HANDLE,  # File Handle
+                                          HANDLE,  # Existing Completion Port
+                                          c_ulong,  # Completion Key
+                                          DWORD)  # Number of Threads
 
 CreateIoCompletionPortFlags = ((1, "FileHandle", INVALID_HANDLE_VALUE),
                                (1, "ExistingCompletionPort", 0),
@@ -282,11 +325,11 @@ CreateIoCompletionPort = CreateIoCompletionPortProto(("CreateIoCompletionPort",
 CreateIoCompletionPort.errcheck = ErrCheckHandle
 
 # SetInformationJobObject
-SetInformationJobObjectProto = WINFUNCTYPE(BOOL,      # Return Type
-                                           HANDLE,    # Job Handle
-                                           DWORD,     # Type of Class next param is
-                                           LPVOID,    # Job Object Class
-                                           DWORD)     # Job Object Class Length
+SetInformationJobObjectProto = WINFUNCTYPE(BOOL,  # Return Type
+                                           HANDLE,  # Job Handle
+                                           DWORD,  # Type of Class next param is
+                                           LPVOID,  # Job Object Class
+                                           DWORD)  # Job Object Class Length
 
 SetInformationJobObjectProtoFlags = ((1, "hJob", None),
                                      (1, "JobObjectInfoClass", None),
@@ -298,9 +341,9 @@ SetInformationJobObject = SetInformationJobObjectProto(("SetInformationJobObject
 SetInformationJobObject.errcheck = ErrCheckBool
 
 # CreateJobObject()
-CreateJobObjectProto = WINFUNCTYPE(HANDLE,             # Return type
-                                   LPVOID,             # lpJobAttributes
-                                   LPCWSTR             # lpName
+CreateJobObjectProto = WINFUNCTYPE(HANDLE,  # Return type
+                                   LPVOID,  # lpJobAttributes
+                                   LPCWSTR  # lpName
                                    )
 
 CreateJobObjectFlags = ((1, "lpJobAttributes", None),
@@ -312,9 +355,9 @@ CreateJobObject.errcheck = ErrCheckHandle
 
 # AssignProcessToJobObject()
 
-AssignProcessToJobObjectProto = WINFUNCTYPE(BOOL,      # Return type
-                                            HANDLE,    # hJob
-                                            HANDLE     # hProcess
+AssignProcessToJobObjectProto = WINFUNCTYPE(BOOL,  # Return type
+                                            HANDLE,  # hJob
+                                            HANDLE  # hProcess
                                             )
 AssignProcessToJobObjectFlags = ((1, "hJob"),
                                  (1, "hProcess"))
@@ -325,7 +368,7 @@ AssignProcessToJobObject.errcheck = ErrCheckBool
 
 # GetCurrentProcess()
 # because os.getPid() is way too easy
-GetCurrentProcessProto = WINFUNCTYPE(HANDLE    # Return type
+GetCurrentProcessProto = WINFUNCTYPE(HANDLE  # Return type
                                      )
 GetCurrentProcessFlags = ()
 GetCurrentProcess = GetCurrentProcessProto(
@@ -335,10 +378,10 @@ GetCurrentProcess.errcheck = ErrCheckHandle
 
 # IsProcessInJob()
 try:
-    IsProcessInJobProto = WINFUNCTYPE(BOOL,     # Return type
-                                      HANDLE,   # Process Handle
-                                      HANDLE,   # Job Handle
-                                      LPBOOL      # Result
+    IsProcessInJobProto = WINFUNCTYPE(BOOL,  # Return type
+                                      HANDLE,  # Process Handle
+                                      HANDLE,  # Job Handle
+                                      LPBOOL  # Result
                                       )
     IsProcessInJobFlags = ((1, "ProcessHandle"),
                            (1, "JobHandle", HANDLE(0)),
@@ -361,8 +404,9 @@ def ErrCheckResumeThread(result, func, args):
 
     return args
 
-ResumeThreadProto = WINFUNCTYPE(DWORD,      # Return type
-                                HANDLE      # hThread
+
+ResumeThreadProto = WINFUNCTYPE(DWORD,  # Return type
+                                HANDLE  # hThread
                                 )
 ResumeThreadFlags = ((1, "hThread"),)
 ResumeThread = ResumeThreadProto(("ResumeThread", windll.kernel32),
@@ -371,9 +415,9 @@ ResumeThread.errcheck = ErrCheckResumeThread
 
 # TerminateProcess()
 
-TerminateProcessProto = WINFUNCTYPE(BOOL,    # Return type
+TerminateProcessProto = WINFUNCTYPE(BOOL,  # Return type
                                     HANDLE,  # hProcess
-                                    UINT     # uExitCode
+                                    UINT  # uExitCode
                                     )
 TerminateProcessFlags = ((1, "hProcess"),
                          (1, "uExitCode", 127))
@@ -384,9 +428,9 @@ TerminateProcess.errcheck = ErrCheckBool
 
 # TerminateJobObject()
 
-TerminateJobObjectProto = WINFUNCTYPE(BOOL,    # Return type
+TerminateJobObjectProto = WINFUNCTYPE(BOOL,  # Return type
                                       HANDLE,  # hJob
-                                      UINT     # uExitCode
+                                      UINT  # uExitCode
                                       )
 TerminateJobObjectFlags = ((1, "hJob"),
                            (1, "uExitCode", 127))
@@ -397,9 +441,9 @@ TerminateJobObject.errcheck = ErrCheckBool
 
 # WaitForSingleObject()
 
-WaitForSingleObjectProto = WINFUNCTYPE(DWORD,   # Return type
+WaitForSingleObjectProto = WINFUNCTYPE(DWORD,  # Return type
                                        HANDLE,  # hHandle
-                                       DWORD,   # dwMilliseconds
+                                       DWORD,  # dwMilliseconds
                                        )
 WaitForSingleObjectFlags = ((1, "hHandle"),
                             (1, "dwMilliseconds", -1))
@@ -421,8 +465,8 @@ ERROR_CONTROL_C_EXIT = 0x23c
 
 # GetExitCodeProcess()
 
-GetExitCodeProcessProto = WINFUNCTYPE(BOOL,     # Return type
-                                      HANDLE,   # hProcess
+GetExitCodeProcessProto = WINFUNCTYPE(BOOL,  # Return type
+                                      HANDLE,  # hProcess
                                       LPDWORD,  # lpExitCode
                                       )
 GetExitCodeProcessFlags = ((1, "hProcess"),
@@ -443,37 +487,38 @@ def CanCreateJobObject():
     else:
         return True
 
+
 # testing functions
 
 
 def parent():
-    print 'Starting parent'
+    print('Starting parent')
     currentProc = GetCurrentProcess()
     if IsProcessInJob(currentProc):
-        print >> sys.stderr, "You should not be in a job object to test"
+        print("You should not be in a job object to test", file=sys.stderr)
         sys.exit(1)
     assert CanCreateJobObject()
-    print 'File: %s' % __file__
+    print('File: %s' % __file__)
     command = [sys.executable, __file__, '-child']
-    print 'Running command: %s' % command
+    print('Running command: %s' % command)
     process = subprocess.Popen(command)
     process.kill()
     code = process.returncode
-    print 'Child code: %s' % code
+    print('Child code: %s' % code)
     assert code == 127
 
 
 def child():
-    print 'Starting child'
+    print('Starting child')
     currentProc = GetCurrentProcess()
     injob = IsProcessInJob(currentProc)
-    print "Is in a job?: %s" % injob
+    print("Is in a job?: %s" % injob)
     can_create = CanCreateJobObject()
-    print 'Can create job?: %s' % can_create
+    print('Can create job?: %s' % can_create)
     process = subprocess.Popen('c:\\windows\\notepad.exe')
     assert process._job
     jobinfo = QueryInformationJobObject(process._job, 'JobObjectExtendedLimitInformation')
-    print 'Job info: %s' % jobinfo
+    print('Job info: %s' % jobinfo)
     limitflags = jobinfo['BasicLimitInformation']['LimitFlags']
-    print 'LimitFlags: %s' % limitflags
+    print('LimitFlags: %s' % limitflags)
     process.kill()

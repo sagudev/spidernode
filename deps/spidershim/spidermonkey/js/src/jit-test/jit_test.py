@@ -5,7 +5,15 @@
 
 from __future__ import print_function, unicode_literals
 
-import math, os, platform, posixpath, shlex, shutil, subprocess, sys, traceback
+import math
+import os
+import platform
+import posixpath
+import shlex
+import subprocess
+import sys
+import traceback
+
 
 def add_libdir_to_path():
     from os.path import dirname, exists, join, realpath
@@ -14,13 +22,14 @@ def add_libdir_to_path():
     sys.path.insert(0, join(js_src_dir, 'lib'))
     sys.path.insert(0, join(js_src_dir, 'tests', 'lib'))
 
+
 add_libdir_to_path()
 
 import jittests
 from tests import get_jitflags, valid_jitflags, get_cpu_count, get_environment_overlay, \
-                  change_env
+    change_env
 
-# Python 3.3 added shutil.which, but we can't use that yet.
+
 def which(name):
     if name.find(os.path.sep) != -1:
         return os.path.abspath(name)
@@ -31,6 +40,7 @@ def which(name):
             return os.path.abspath(full)
 
     return name
+
 
 def choose_item(jobs, max_items, display):
     job_count = len(jobs)
@@ -51,6 +61,7 @@ def choose_item(jobs, max_items, display):
         raise Exception('Unrecognized input')
 
     return jobs[item - 1]
+
 
 def main(argv):
     # The [TESTS] optional arguments are paths of test files relative
@@ -93,8 +104,12 @@ def main(argv):
                   choices=['automation', 'none'],
                   help='Output format. Either automation or none'
                   ' (default %default).')
-    op.add_option('--args', dest='shell_args', default='',
+    op.add_option('--args', dest='shell_args', metavar='ARGS', default='',
                   help='extra args to pass to the JS shell')
+    op.add_option('--feature-args', dest='feature_args', metavar='ARGS',
+                  default='',
+                  help='even more args to pass to the JS shell '
+                       '(for compatibility with jstests.py)')
     op.add_option('-w', '--write-failures', dest='write_failures',
                   metavar='FILE',
                   help='Write a list of failed tests to [FILE]')
@@ -164,6 +179,11 @@ def main(argv):
     op.add_option('--test-reflect-stringify', dest="test_reflect_stringify",
                   help="instead of running tests, use them to test the "
                   "Reflect.stringify code in specified file")
+    op.add_option('--run-binast', action='store_true',
+                  dest="run_binast",
+                  help="By default BinAST testcases encoded from JS "
+                  "testcases are skipped. If specified, BinAST testcases "
+                  "are also executed.")
 
     options, args = op.parse_args(argv)
     if len(args) < 1:
@@ -176,7 +196,7 @@ def main(argv):
         if (platform.system() != 'Windows' or
             os.path.isfile(js_shell) or not
             os.path.isfile(js_shell + ".exe") or not
-            os.access(js_shell + ".exe", os.X_OK)):
+                os.access(js_shell + ".exe", os.X_OK)):
             op.error('shell is not executable: ' + js_shell)
 
     if jittests.stdio_might_be_broken():
@@ -196,24 +216,20 @@ def main(argv):
     test_list = []
     read_all = True
 
-    # No point in adding in noasmjs and wasm-baseline variants if the
-    # jitflags forbid asmjs in the first place. (This is to avoid getting a
-    # wasm-baseline run when requesting --jitflags=interp, but the test
-    # contains test-also-noasmjs.)
-    test_flags = get_jitflags(options.jitflags)
-    options.asmjs_enabled = True
-    options.wasm_enabled = True
-    if all(['--no-asmjs' in flags for flags in test_flags]):
-        options.asmjs_enabled = False
-        options.wasm_enabled = False
-    if all(['--no-wasm' in flags for flags in test_flags]):
-        options.asmjs_enabled = False
-        options.wasm_enabled = False
+    if options.run_binast:
+        code = 'print(getBuildConfiguration().binast)'
+        is_binast_enabled = subprocess.check_output([js_shell, '-e', code])
+        if not is_binast_enabled.startswith('true'):
+            print("While --run-binast is specified, BinAST is not enabled.",
+                  file=sys.stderr)
+            print("BinAST testcases will be skipped.",
+                  file=sys.stderr)
+            options.run_binast = False
 
     if test_args:
         read_all = False
         for arg in test_args:
-            test_list += jittests.find_tests(arg)
+            test_list += jittests.find_tests(arg, run_binast=options.run_binast)
 
     if options.read_tests:
         read_all = False
@@ -233,38 +249,41 @@ def main(argv):
                 sys.stderr.write('---\n')
 
     if read_all:
-        test_list = jittests.find_tests()
+        test_list = jittests.find_tests(run_binast=options.run_binast)
 
     # Exclude tests when code coverage is enabled.
     # This part is equivalent to:
-    # skip-if = coverage
+    # skip-if = ccov
     if os.getenv('GCOV_PREFIX') is not None:
-        # GCOV errors.
-        options.exclude += ['asm.js/testSIMD.js']               # Bug 1347245
-
         # JSVM errors.
-        options.exclude += ['basic/functionnames.js']           # Bug 1369783
-        options.exclude += ['debug/Debugger-findScripts-23.js']
-        options.exclude += ['debug/bug1160182.js']
-        options.exclude += ['xdr/incremental-encoder.js']
-        options.exclude += ['xdr/bug1186973.js']                # Bug 1369785
-        options.exclude += ['basic/werror.js']
+        options.exclude += [os.path.join('basic', 'functionnames.js')]           # Bug 1369783
+        options.exclude += [os.path.join('debug', 'Debugger-findScripts-23.js')]
+        options.exclude += [os.path.join('debug', 'bug1160182.js')]
+        options.exclude += [os.path.join('xdr', 'incremental-encoder.js')]
+        options.exclude += [os.path.join('xdr', 'bug1186973.js')]                # Bug 1369785
+        options.exclude += [os.path.join('xdr', 'relazify.js')]
+        options.exclude += [os.path.join('basic', 'werror.js')]
 
         # Prevent code coverage test that expects coverage
         # to be off when it starts.
-        options.exclude += ['debug/Script-getOffsetsCoverage-02.js']
+        options.exclude += [os.path.join('debug', 'Script-getOffsetsCoverage-02.js')]
+
+        # These tests expect functions to be parsed lazily, but lazy parsing
+        # is disabled on coverage build.
+        options.exclude += [os.path.join('debug', 'Debugger-findScripts-uncompleted-01.js')]
+        options.exclude += [os.path.join('debug', 'Debugger-findScripts-uncompleted-02.js')]
 
     if options.exclude_from:
         with open(options.exclude_from) as fh:
             for line in fh:
-                line = line.strip()
-                if not line.startswith("#") and len(line):
-                    options.exclude.append(line)
+                line_exclude = line.strip()
+                if not line_exclude.startswith("#") and len(line_exclude):
+                    options.exclude.append(line_exclude)
 
     if options.exclude:
         exclude_list = []
         for exclude in options.exclude:
-            exclude_list += jittests.find_tests(exclude)
+            exclude_list += jittests.find_tests(exclude, run_binast=options.run_binast)
         test_list = [test for test in test_list
                      if test not in set(exclude_list)]
 
@@ -297,6 +316,8 @@ def main(argv):
         sys.exit(0)
 
     # The full test list is ready. Now create copies for each JIT configuration.
+    test_flags = get_jitflags(options.jitflags)
+
     test_list = [_ for test in test_list for _ in test.copy_variants(test_flags)]
 
     job_list = (test for test in test_list)
@@ -310,24 +331,28 @@ def main(argv):
         read_all = False
         try:
             with open(options.ignore_timeouts) as f:
-                options.ignore_timeouts = set(
-                    [line.strip('\n') for line in f.readlines()])
+                ignore = set()
+                for line in f.readlines():
+                    path = line.strip('\n')
+                    ignore.add(path)
+
+                    binjs_path = path.replace('.js', '.binjs')
+                    # Do not use os.path.join to always use '/'.
+                    ignore.add('binast/nonlazy/{}'.format(binjs_path))
+                    ignore.add('binast/lazy/{}'.format(binjs_path))
+                options.ignore_timeouts = ignore
         except IOError:
             sys.exit("Error reading file: " + options.ignore_timeouts)
     else:
         options.ignore_timeouts = set()
 
-    prefix = [js_shell] + shlex.split(options.shell_args)
+    prefix = [js_shell] + shlex.split(options.shell_args) + shlex.split(options.feature_args)
     prologue = os.path.join(jittests.LIB_DIR, 'prologue.js')
     if options.remote:
         prologue = posixpath.join(options.remote_test_root,
-                                'jit-tests', 'jit-tests', 'lib', 'prologue.js')
+                                  'jit-tests', 'jit-tests', 'lib', 'prologue.js')
 
     prefix += ['-f', prologue]
-
-    # Clean up any remnants from previous crashes etc
-    shutil.rmtree(jittests.JS_CACHE_DIR, ignore_errors=True)
-    os.mkdir(jittests.JS_CACHE_DIR)
 
     if options.debugger:
         if job_count > 1:
@@ -358,15 +383,19 @@ def main(argv):
             debug_cmd = options.debugger.split()
 
         with change_env(test_environment):
-            subprocess.call(debug_cmd + tc.command(prefix, jittests.LIB_DIR, jittests.MODULE_DIR))
             if options.debugger == 'rr':
-                subprocess.call(['rr', 'replay'])
+                subprocess.call(debug_cmd +
+                                tc.command(prefix, jittests.LIB_DIR, jittests.MODULE_DIR))
+                os.execvp('rr', ['rr', 'replay'])
+            else:
+                os.execvp(debug_cmd[0], debug_cmd +
+                          tc.command(prefix, jittests.LIB_DIR, jittests.MODULE_DIR))
         sys.exit()
 
     try:
         ok = None
         if options.remote:
-            ok = jittests.run_tests_remote(job_list, job_count, prefix, options)
+            ok = jittests.run_tests(job_list, job_count, prefix, options, remote=True)
         else:
             with change_env(test_environment):
                 ok = jittests.run_tests(job_list, job_count, prefix, options)
@@ -379,6 +408,7 @@ def main(argv):
             sys.exit(1)
         else:
             raise
+
 
 if __name__ == '__main__':
     main(sys.argv[1:])

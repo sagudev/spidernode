@@ -6,8 +6,11 @@ description: Generator declaration not allowed in statement position
 esid: sec-do-while-statement
 es6id: 13.7.2
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
+features: [generators]
 ---*/
+
+$DONOTEVALUATE();
 
 do function* g() {} while (false)

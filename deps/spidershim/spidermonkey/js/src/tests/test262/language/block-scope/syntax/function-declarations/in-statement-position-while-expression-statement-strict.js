@@ -8,9 +8,11 @@ description: >
     function declarations in statement position in strict mode:
     while ( Expression ) Statement
 negative:
-  phase: early
+  phase: parse
   type: SyntaxError
 flags: [onlyStrict]
 ---*/
+
+$DONOTEVALUATE();
 while (false) function g() {}
 
