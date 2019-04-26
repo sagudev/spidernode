@@ -52,6 +52,28 @@ The repository is based on [node-chakracore](https://github.com/nodejs/node-chak
 
 ### How to update SpiderMonkey from upstream
 
+(Based on servo/mozjs)
+
+1. Find the mozilla-release commit for the desired version of SpiderMonkey, at
+   https://treeherder.mozilla.org/#/jobs?repo=mozilla-release&filter-searchStr=spidermonkey%20pkg.
+   You are looking for an SM(pkg)
+   Take a note of the commit number to the left (a hex number such as ac4fbb7aaca0).
+
+2. Click on the SM(pkg) link, which will open a panel with details of the
+   commit, including an artefact uploaded link, with a name of the form
+   mozjs-*version*.tar.bz2. Download it and save it locally.
+
+3. Run:
+```bash
+cd path/to/spidernode/
+cd deps/spidershim/
+scripts/update-sm.sh path/to/tarball "commit"
+```
+
+4. Build and test the bindings as above, then submit a PR!
+
+### How to update SpiderMonkey from upstream (old)
+
 To update to a newer version of SpiderMonkey, clone [mozilla-central](https://hg.mozilla.org/mozilla-central/)
 using [git-cinnabar](https://github.com/glandium/git-cinnabar) (or clone the [mozilla/gecko](https://github.com/mozilla/gecko) mirror of mozilla/central, which is maintained using git-cinnabar) and check out the Gecko revision to which you'd like to update:
 
