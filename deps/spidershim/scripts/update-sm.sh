@@ -7,7 +7,7 @@ if ! test -f "$1"; then
   exit 1
 fi
 
-if ! test -f "$2"; then
+if [ -z "$2" ]; then
   >&2 echo 'Please pass in the commit of Spidermonkey.'
   exit 1
 fi
