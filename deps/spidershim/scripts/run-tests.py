@@ -27,6 +27,7 @@ def main():
         config = 'Debug' if node.find('node_g') > 0 else 'Release'
         env = ({lib_path: '%s/dist/bin' % (external_sm[config])}) if external_sm[config] else None
         ran, success = run_test([node, '-e', 'console.log("hello, world")'], env)
+        run_test([node, '-e', 'console.log(process.versions)'], env)
         if not success:
             return 1
         ran_test = ran or ran_test
