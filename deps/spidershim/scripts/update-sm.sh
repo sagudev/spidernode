@@ -41,6 +41,8 @@ git rm -r `git ls-files --deleted spidermonkey` || true
 # The following will fail if there are no added files, so || with true.
 git add -f `git ls-files --others spidermonkey` || true
 
-scripts/build-spidermonkey-files.py && sed -i '/spaces.bat/d' ./spidermonkey-files.gypi && git add spidermonkey-files.gypi
+scripts/build-spidermonkey-files.py
 sed -i '/spaces.bat/d' ./spidermonkey-files.gypi
+sed -i -e "\$aNO_EXPAND_LIBS = True" ./spidermonkey/mozglue/build/moz.build # to fix libmozglue.a not found
+git add spidermonkey-files.gypi
 git commit -m "Sync SpiderMonkey from $2"
