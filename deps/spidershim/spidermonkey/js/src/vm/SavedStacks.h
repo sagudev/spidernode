@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +9,8 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/FastBernoulliTrial.h"
-#include "mozilla/Maybe.h"
+
+#include "jsmath.h"
 
 #include "js/HashTable.h"
 #include "js/Wrapper.h"
@@ -161,18 +162,20 @@ class SavedStacks {
         bernoulli(1.0, 0x59fdad7f6b4cc573, 0x91adf38db96a9354),
         creatingSavedFrame(false) {}
 
+  MOZ_MUST_USE bool init();
+  bool initialized() const { return frames.initialized(); }
   MOZ_MUST_USE bool saveCurrentStack(
       JSContext* cx, MutableHandleSavedFrame frame,
       JS::StackCapture&& capture = JS::StackCapture(JS::AllFrames()));
   MOZ_MUST_USE bool copyAsyncStack(JSContext* cx, HandleObject asyncStack,
                                    HandleString asyncCause,
                                    MutableHandleSavedFrame adoptedStack,
-                                   const mozilla::Maybe<size_t>& maxFrameCount);
+                                   const Maybe<size_t>& maxFrameCount);
   void sweep();
   void trace(JSTracer* trc);
   uint32_t count();
   void clear();
-  void chooseSamplingProbability(JS::Realm* realm);
+  void chooseSamplingProbability(JSCompartment*);
 
   // Set the sampling random number generator's state to |state0| and
   // |state1|. One or the other must be non-zero. See the comments for
@@ -218,15 +221,16 @@ class SavedStacks {
 
   MOZ_MUST_USE bool insertFrames(JSContext* cx, MutableHandleSavedFrame frame,
                                  JS::StackCapture&& capture);
-  MOZ_MUST_USE bool adoptAsyncStack(
-      JSContext* cx, MutableHandleSavedFrame asyncStack, HandleAtom asyncCause,
-      const mozilla::Maybe<size_t>& maxFrameCount);
-  MOZ_MUST_USE bool checkForEvalInFramePrev(
-      JSContext* cx, MutableHandle<SavedFrame::Lookup> lookup);
+  MOZ_MUST_USE bool adoptAsyncStack(JSContext* cx,
+                                    MutableHandleSavedFrame asyncStack,
+                                    HandleAtom asyncCause,
+                                    const Maybe<size_t>& maxFrameCount);
+  MOZ_MUST_USE bool checkForEvalInFramePrev(JSContext* cx,
+                                            SavedFrame::HandleLookup lookup);
   SavedFrame* getOrCreateSavedFrame(JSContext* cx,
-                                    Handle<SavedFrame::Lookup> lookup);
+                                    SavedFrame::HandleLookup lookup);
   SavedFrame* createFrameFromLookup(JSContext* cx,
-                                    Handle<SavedFrame::Lookup> lookup);
+                                    SavedFrame::HandleLookup lookup);
 
   // Cache for memoizing PCToLineNumber lookups.
 
@@ -243,10 +247,9 @@ class SavedStacks {
 
  public:
   struct LocationValue {
-    LocationValue() : source(nullptr), sourceId(0), line(0), column(0) {}
-    LocationValue(JSAtom* source, uint32_t sourceId, size_t line,
-                  uint32_t column)
-        : source(source), sourceId(sourceId), line(line), column(column) {}
+    LocationValue() : source(nullptr), line(0), column(0) {}
+    LocationValue(JSAtom* source, size_t line, uint32_t column)
+        : source(source), line(line), column(column) {}
 
     void trace(JSTracer* trc) {
       TraceNullableEdge(trc, &source, "SavedStacks::LocationValue::source");
@@ -262,7 +265,6 @@ class SavedStacks {
     }
 
     HeapPtr<JSAtom*> source;
-    uint32_t sourceId;
     size_t line;
     uint32_t column;
   };
@@ -301,7 +303,6 @@ class SavedStacks {
 template <typename Wrapper>
 struct WrappedPtrOperations<SavedStacks::LocationValue, Wrapper> {
   JSAtom* source() const { return loc().source; }
-  uint32_t sourceId() const { return loc().sourceId; }
   size_t line() const { return loc().line; }
   uint32_t column() const { return loc().column; }
 
@@ -315,7 +316,6 @@ template <typename Wrapper>
 struct MutableWrappedPtrOperations<SavedStacks::LocationValue, Wrapper>
     : public WrappedPtrOperations<SavedStacks::LocationValue, Wrapper> {
   void setSource(JSAtom* v) { loc().source = v; }
-  void setSourceId(uint32_t v) { loc().sourceId = v; }
   void setLine(size_t v) { loc().line = v; }
   void setColumn(uint32_t v) { loc().column = v; }
 
@@ -325,10 +325,7 @@ struct MutableWrappedPtrOperations<SavedStacks::LocationValue, Wrapper>
   }
 };
 
-JS::UniqueChars BuildUTF8StackString(JSContext* cx, JSPrincipals* principals,
-                                     HandleObject stack);
-
-uint32_t FixupColumnForDisplay(uint32_t column);
+UTF8CharsZ BuildUTF8StackString(JSContext* cx, HandleObject stack);
 
 } /* namespace js */
 

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,8 +12,6 @@
 
 namespace js {
 
-class GlobalObject;
-
 class SymbolObject : public NativeObject {
   /* Stores this Symbol object's [[PrimitiveValue]]. */
   static const unsigned PRIMITIVE_VALUE_SLOT = 0;
@@ -23,7 +21,7 @@ class SymbolObject : public NativeObject {
 
   static const Class class_;
 
-  static JSObject* initClass(JSContext* cx, Handle<GlobalObject*> global,
+  static JSObject* initClass(JSContext* cx, js::HandleObject obj,
                              bool defineMembers);
 
   /*
@@ -54,21 +52,14 @@ class SymbolObject : public NativeObject {
   static MOZ_MUST_USE bool valueOf(JSContext* cx, unsigned argc, Value* vp);
   static MOZ_MUST_USE bool toPrimitive(JSContext* cx, unsigned argc, Value* vp);
 
-  // Properties defined on Symbol.prototype.
-  static MOZ_MUST_USE bool descriptionGetter_impl(JSContext* cx,
-                                                  const CallArgs& args);
-  static MOZ_MUST_USE bool descriptionGetter(JSContext* cx, unsigned argc,
-                                             Value* vp);
-
   static const JSPropertySpec properties[];
   static const JSFunctionSpec methods[];
   static const JSFunctionSpec staticMethods[];
 };
 
-extern JSObject* InitSymbolClass(JSContext* cx, Handle<GlobalObject*> global);
+extern JSObject* InitSymbolClass(JSContext* cx, HandleObject obj);
 
-extern JSObject* InitBareSymbolCtor(JSContext* cx,
-                                    Handle<GlobalObject*> global);
+extern JSObject* InitBareSymbolCtor(JSContext* cx, HandleObject obj);
 
 } /* namespace js */
 

@@ -9,17 +9,17 @@ es5id: 12.6.1_A4_T5
 description: Using labeled "break" in order to continue a loop
 ---*/
 
-var i = 0;
+//CHECK#1
+var i=0;
 woohoo:{
-  do {
+  do{
     i++;
-    if ( i == 10 ) {
+    if ( ! (i < 10) ) {
       break woohoo;
-      throw new Test262Error('#1.1: "break woohoo" must break loop');
+      $ERROR('#1.1: "break woohoo" must break loop');
     }
   } while ( true );
-  throw new Test262Error('This code should be unreacheable');
+  if (i!==10) $ERROR('#1.2: i===10. Actual:  i==='+ i );
 }
-assert.sameValue(i, 10);
 
 reportCompare(0, 0);

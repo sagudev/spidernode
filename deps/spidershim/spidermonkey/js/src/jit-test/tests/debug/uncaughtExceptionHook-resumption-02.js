@@ -1,7 +1,7 @@
 // uncaughtExceptionHook resumption value other than undefined causes further
 // hooks to be skipped.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var log;
 
 function makeDebug(g, name) {

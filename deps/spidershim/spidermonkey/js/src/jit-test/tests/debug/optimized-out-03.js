@@ -6,7 +6,7 @@ if (!jitTogglesMatch(Opts_IonEagerNoOffthreadCompilation))
   quit(0);
 
 withJitOptions(Opts_IonEagerNoOffthreadCompilation, function() {
-  var dbgGlobal = newGlobal({newCompartment: true});
+  var dbgGlobal = newGlobal();
   var dbg = new dbgGlobal.Debugger();
   dbg.addDebuggee(this);
 

@@ -385,8 +385,7 @@ UnicodeString Win32DateFormat::setTimeZoneInfo(TIME_ZONE_INFORMATION *tzi, const
             for (int z = 0; z < ec; z += 1) {
                 UnicodeString equiv = TimeZone::getEquivalentID(icuid, z);
 
-                found = uprv_getWindowsTimeZoneInfo(tzi, equiv.getBuffer(), equiv.length());
-                if (found) {
+                if (found = uprv_getWindowsTimeZoneInfo(tzi, equiv.getBuffer(), equiv.length())) {
                     break;
                 }
             }

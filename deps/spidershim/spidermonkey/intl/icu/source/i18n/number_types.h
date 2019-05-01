@@ -3,7 +3,7 @@
 
 #include "unicode/utypes.h"
 
-#if !UCONFIG_NO_FORMATTING
+#if !UCONFIG_NO_FORMATTING && !UPRV_INCOMPLETE_CPP11_SUPPORT
 #ifndef __NUMBER_TYPES_H__
 #define __NUMBER_TYPES_H__
 
@@ -15,19 +15,14 @@
 #include "unicode/utf16.h"
 #include "uassert.h"
 #include "unicode/platform.h"
-#include "unicode/uniset.h"
-#include "standardplural.h"
 
-U_NAMESPACE_BEGIN namespace number {
+U_NAMESPACE_BEGIN
+namespace number {
 namespace impl {
 
 // Typedef several enums for brevity and for easier comparison to Java.
 
-// Convention: bottom 4 bits for field, top 4 bits for field category.
-// Field category 0 implies the number category so that the number field
-// literals can be directly passed as a Field type.
-// See the helper functions in "NumFieldUtils" in number_utils.h
-typedef uint8_t Field;
+typedef UNumberFormatFields Field;
 
 typedef UNumberFormatRoundingMode RoundingMode;
 
@@ -36,7 +31,7 @@ typedef UNumberFormatPadPosition PadPosition;
 typedef UNumberCompactStyle CompactStyle;
 
 // ICU4J Equivalent: RoundingUtils.MAX_INT_FRAC_SIG
-static constexpr int32_t kMaxIntFracSig = 999;
+static constexpr int32_t kMaxIntFracSig = 100;
 
 // ICU4J Equivalent: RoundingUtils.DEFAULT_ROUNDING_MODE
 static constexpr RoundingMode kDefaultMode = RoundingMode::UNUM_FOUND_HALFEVEN;
@@ -44,13 +39,19 @@ static constexpr RoundingMode kDefaultMode = RoundingMode::UNUM_FOUND_HALFEVEN;
 // ICU4J Equivalent: Padder.FALLBACK_PADDING_STRING
 static constexpr char16_t kFallbackPaddingString[] = u" ";
 
+// ICU4J Equivalent: NumberFormatterImpl.DEFAULT_CURRENCY
+static constexpr char16_t kDefaultCurrency[] = u"XXX";
+
+// FIXME: New error codes:
+static constexpr UErrorCode U_NUMBER_DIGIT_WIDTH_OUTOFBOUNDS_ERROR = U_ILLEGAL_ARGUMENT_ERROR;
+static constexpr UErrorCode U_NUMBER_PADDING_WIDTH_OUTOFBOUNDS_ERROR = U_ILLEGAL_ARGUMENT_ERROR;
+
 // Forward declarations:
 
 class Modifier;
 class MutablePatternModifier;
 class DecimalQuantity;
 class NumberStringBuilder;
-class ModifierStore;
 struct MicroProps;
 
 
@@ -90,9 +91,34 @@ enum AffixPatternType {
 };
 
 enum CompactType {
-    TYPE_DECIMAL, TYPE_CURRENCY
+    TYPE_DECIMAL,
+    TYPE_CURRENCY
 };
 
+
+// TODO: Should this be moved somewhere else, maybe where other ICU classes can use it?
+// Exported as U_I18N_API because it is a base class for other exported types
+class U_I18N_API CharSequence {
+public:
+    virtual ~CharSequence() = default;
+
+    virtual int32_t length() const = 0;
+
+    virtual char16_t charAt(int32_t index) const = 0;
+
+    virtual UChar32 codePointAt(int32_t index) const {
+        // Default implementation; can be overridden with a more efficient version
+        char16_t leading = charAt(index);
+        if (U16_IS_LEAD(leading) && length() > index + 1) {
+            char16_t trailing = charAt(index + 1);
+            return U16_GET_SUPPLEMENTARY(leading, trailing);
+        } else {
+            return leading;
+        }
+    }
+
+    virtual UnicodeString toUnicodeString() const = 0;
+};
 
 class U_I18N_API AffixPatternProvider {
   public:
@@ -101,19 +127,11 @@ class U_I18N_API AffixPatternProvider {
     static const int32_t AFFIX_NEGATIVE_SUBPATTERN = 0x200;
     static const int32_t AFFIX_PADDING = 0x400;
 
-    // Convenience compound flags
-    static const int32_t AFFIX_POS_PREFIX = AFFIX_PREFIX;
-    static const int32_t AFFIX_POS_SUFFIX = 0;
-    static const int32_t AFFIX_NEG_PREFIX = AFFIX_PREFIX | AFFIX_NEGATIVE_SUBPATTERN;
-    static const int32_t AFFIX_NEG_SUFFIX = AFFIX_NEGATIVE_SUBPATTERN;
-
-    virtual ~AffixPatternProvider();
+    virtual ~AffixPatternProvider() = default;
 
     virtual char16_t charAt(int flags, int i) const = 0;
 
     virtual int length(int flags) const = 0;
-
-    virtual UnicodeString getString(int flags) const = 0;
 
     virtual bool hasCurrencySign() const = 0;
 
@@ -123,30 +141,22 @@ class U_I18N_API AffixPatternProvider {
 
     virtual bool negativeHasMinusSign() const = 0;
 
-    virtual bool containsSymbolType(AffixPatternType, UErrorCode&) const = 0;
-
-    /**
-     * True if the pattern has a number placeholder like "0" or "#,##0.00"; false if the pattern does not
-     * have one. This is used in cases like compact notation, where the pattern replaces the entire
-     * number instead of rendering the number.
-     */
-    virtual bool hasBody() const = 0;
+    virtual bool containsSymbolType(AffixPatternType, UErrorCode &) const = 0;
 };
-
 
 /**
  * A Modifier is an object that can be passed through the formatting pipeline until it is finally applied to the string
  * builder. A Modifier usually contains a prefix and a suffix that are applied, but it could contain something else,
  * like a {@link com.ibm.icu.text.SimpleFormatter} pattern.
  *
- * A Modifier is usually immutable, except in cases such as {@link MutablePatternModifier}, which are mutable for performance
+ * A Modifier is usually immutable, except in cases such as {@link MurkyModifier}, which are mutable for performance
  * reasons.
  *
  * Exported as U_I18N_API because it is a base class for other exported types
  */
 class U_I18N_API Modifier {
   public:
-    virtual ~Modifier();
+    virtual ~Modifier() = default;
 
     /**
      * Apply this Modifier to the string builder.
@@ -160,8 +170,8 @@ class U_I18N_API Modifier {
      *            formatted.
      * @return The number of characters (UTF-16 code units) that were added to the string builder.
      */
-    virtual int32_t apply(NumberStringBuilder& output, int leftIndex, int rightIndex,
-                          UErrorCode& status) const = 0;
+    virtual int32_t
+    apply(NumberStringBuilder &output, int leftIndex, int rightIndex, UErrorCode &status) const = 0;
 
     /**
      * Gets the length of the prefix. This information can be used in combination with {@link #apply} to extract the
@@ -169,12 +179,12 @@ class U_I18N_API Modifier {
      *
      * @return The number of characters (UTF-16 code units) in the prefix.
      */
-    virtual int32_t getPrefixLength() const = 0;
+    virtual int32_t getPrefixLength(UErrorCode& status) const = 0;
 
     /**
      * Returns the number of code points in the modifier, prefix plus suffix.
      */
-    virtual int32_t getCodePointCount() const = 0;
+    virtual int32_t getCodePointCount(UErrorCode &status) const = 0;
 
     /**
      * Whether this modifier is strong. If a modifier is strong, it should always be applied immediately and not allowed
@@ -184,56 +194,7 @@ class U_I18N_API Modifier {
      * @return Whether the modifier is strong.
      */
     virtual bool isStrong() const = 0;
-
-    /**
-     * Whether the modifier contains at least one occurrence of the given field.
-     */
-    virtual bool containsField(UNumberFormatFields field) const = 0;
-
-    /**
-     * A fill-in for getParameters(). obj will always be set; if non-null, the other
-     * two fields are also safe to read.
-     */
-    struct U_I18N_API Parameters {
-        const ModifierStore* obj = nullptr;
-        int8_t signum;
-        StandardPlural::Form plural;
-
-        Parameters();
-        Parameters(const ModifierStore* _obj, int8_t _signum, StandardPlural::Form _plural);
-    };
-
-    /**
-     * Gets a set of "parameters" for this Modifier.
-     *
-     * TODO: Make this return a `const Parameters*` more like Java?
-     */
-    virtual void getParameters(Parameters& output) const = 0;
-
-    /**
-     * Returns whether this Modifier is *semantically equivalent* to the other Modifier;
-     * in many cases, this is the same as equal, but parameters should be ignored.
-     */
-    virtual bool semanticallyEquivalent(const Modifier& other) const = 0;
 };
-
-
-/**
- * This is *not* a modifier; rather, it is an object that can return modifiers
- * based on given parameters.
- *
- * Exported as U_I18N_API because it is a base class for other exported types.
- */
-class U_I18N_API ModifierStore {
-  public:
-    virtual ~ModifierStore();
-
-    /**
-     * Returns a Modifier with the given parameters (best-effort).
-     */
-    virtual const Modifier* getModifier(int8_t signum, StandardPlural::Form plural) const = 0;
-};
-
 
 /**
  * This interface is used when all number formatting settings, including the locale, are known, except for the quantity
@@ -255,7 +216,7 @@ class U_I18N_API ModifierStore {
  */
 class U_I18N_API MicroPropsGenerator {
   public:
-    virtual ~MicroPropsGenerator();
+    virtual ~MicroPropsGenerator() = default;
 
     /**
      * Considers the given {@link DecimalQuantity}, optionally mutates it, and returns a {@link MicroProps}.
@@ -266,25 +227,13 @@ class U_I18N_API MicroPropsGenerator {
      *            The MicroProps instance to populate.
      * @return A MicroProps instance resolved for the quantity.
      */
-    virtual void processQuantity(DecimalQuantity& quantity, MicroProps& micros,
-                                 UErrorCode& status) const = 0;
+    virtual void processQuantity(DecimalQuantity& quantity, MicroProps& micros, UErrorCode& status) const = 0;
 };
 
-/**
- * An interface used by compact notation and scientific notation to choose a multiplier while rounding.
- */
 class MultiplierProducer {
   public:
-    virtual ~MultiplierProducer();
+    virtual ~MultiplierProducer() = default;
 
-    /**
-     * Maps a magnitude to a multiplier in powers of ten. For example, in compact notation in English, a magnitude of 5
-     * (e.g., 100,000) should return a multiplier of -3, since the number is displayed in thousands.
-     *
-     * @param magnitude
-     *            The power of ten of the input number.
-     * @return The shift in powers of ten.
-     */
     virtual int32_t getMultiplier(int32_t magnitude) const = 0;
 };
 
@@ -292,31 +241,24 @@ class MultiplierProducer {
 template<typename T>
 class U_I18N_API NullableValue {
   public:
-    NullableValue()
-            : fNull(true) {}
+    NullableValue() : fNull(true) {}
 
-    NullableValue(const NullableValue<T>& other) = default;
+    NullableValue(const NullableValue<T> &other) = default;
 
-    explicit NullableValue(const T& other) {
+    explicit NullableValue(const T &other) {
         fValue = other;
         fNull = false;
     }
 
-    NullableValue<T>& operator=(const NullableValue<T>& other) {
-        fNull = other.fNull;
-        if (!fNull) {
-            fValue = other.fValue;
-        }
-        return *this;
-    }
+    NullableValue<T> &operator=(const NullableValue<T> &other) = default;
 
-    NullableValue<T>& operator=(const T& other) {
+    NullableValue<T> &operator=(const T &other) {
         fValue = other;
         fNull = false;
         return *this;
     }
 
-    bool operator==(const NullableValue& other) const {
+    bool operator==(const NullableValue &other) const {
         // "fValue == other.fValue" returns UBool, not bool (causes compiler warnings)
         return fNull ? other.fNull : (other.fNull ? false : static_cast<bool>(fValue == other.fValue));
     }
@@ -330,26 +272,17 @@ class U_I18N_API NullableValue {
         return fNull;
     }
 
-    T get(UErrorCode& status) const {
+    T get(UErrorCode &status) const {
         if (fNull) {
             status = U_UNDEFINED_VARIABLE;
         }
         return fValue;
     }
 
-    T getNoError() const {
-        return fValue;
-    }
-
-    T getOrDefault(T defaultValue) const {
-        return fNull ? defaultValue : fValue;
-    }
-
   private:
     bool fNull;
     T fValue;
 };
-
 
 } // namespace impl
 } // namespace number

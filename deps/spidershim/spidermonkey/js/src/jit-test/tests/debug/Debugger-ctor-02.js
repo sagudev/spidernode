@@ -2,7 +2,7 @@
 
 load(libdir + 'asserts.js');
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.debuggeeGlobal = this;
 g.eval("var dbg = new Debugger(debuggeeGlobal);");
 assertEq(g.eval("dbg instanceof Debugger"), true);

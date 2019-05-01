@@ -1,4 +1,7 @@
-// |jit-test| slow; skip-if: !('oomTest' in this)
+// |jit-test| slow
+if (!('oomTest' in this))
+    quit();
+
 function f(x) {
     new Int32Array(x);
 }

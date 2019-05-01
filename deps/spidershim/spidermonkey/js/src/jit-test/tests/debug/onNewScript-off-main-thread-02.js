@@ -1,6 +1,7 @@
-// |jit-test| skip-if: helperThreadCount() === 0
+if (helperThreadCount() === 0)
+  quit(0);
 
-var global = newGlobal({newCompartment: true});
+var global = newGlobal();
 var dbg = new Debugger(global);
 
 dbg.onNewScript = function (s) {

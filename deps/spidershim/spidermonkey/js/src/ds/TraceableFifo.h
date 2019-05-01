@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,19 +36,19 @@ class TraceableFifo : public js::Fifo<T, MinInlineCapacity, AllocPolicy> {
  public:
   explicit TraceableFifo(AllocPolicy alloc = AllocPolicy()) : Base(alloc) {}
 
-  TraceableFifo(TraceableFifo&& rhs) : Base(std::move(rhs)) {}
-  TraceableFifo& operator=(TraceableFifo&& rhs) = default;
+  TraceableFifo(TraceableFifo&& rhs) : Base(mozilla::Move(rhs)) {}
+  TraceableFifo& operator=(TraceableFifo&& rhs) {
+    return Base::operator=(mozilla::Move(rhs));
+  }
 
   TraceableFifo(const TraceableFifo&) = delete;
   TraceableFifo& operator=(const TraceableFifo&) = delete;
 
   void trace(JSTracer* trc) {
-    for (size_t i = 0; i < this->front_.length(); ++i) {
+    for (size_t i = 0; i < this->front_.length(); ++i)
       JS::GCPolicy<T>::trace(trc, &this->front_[i], "fifo element");
-    }
-    for (size_t i = 0; i < this->rear_.length(); ++i) {
+    for (size_t i = 0; i < this->rear_.length(); ++i)
       JS::GCPolicy<T>::trace(trc, &this->rear_[i], "fifo element");
-    }
   }
 };
 
@@ -76,11 +76,11 @@ class MutableWrappedPtrOperations<TraceableFifo<T, Capacity, AllocPolicy>,
 
   template <typename U>
   bool pushBack(U&& u) {
-    return fifo().pushBack(std::forward<U>(u));
+    return fifo().pushBack(mozilla::Forward<U>(u));
   }
   template <typename... Args>
   bool emplaceBack(Args&&... args) {
-    return fifo().emplaceBack(std::forward<Args...>(args...));
+    return fifo().emplaceBack(mozilla::Forward<Args...>(args...));
   }
 
   void popFront() { fifo().popFront(); }

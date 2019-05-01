@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * Copyright 2015 Mozilla Foundation
  *
@@ -19,8 +19,6 @@
 #ifndef wasm_serialize_h
 #define wasm_serialize_h
 
-#include <type_traits>
-
 #include "js/Vector.h"
 
 namespace js {
@@ -31,26 +29,20 @@ namespace wasm {
 
 static inline uint8_t* WriteBytes(uint8_t* dst, const void* src,
                                   size_t nbytes) {
-  if (nbytes) {
-    memcpy(dst, src, nbytes);
-  }
+  if (nbytes) memcpy(dst, src, nbytes);
   return dst + nbytes;
 }
 
 static inline const uint8_t* ReadBytes(const uint8_t* src, void* dst,
                                        size_t nbytes) {
-  if (nbytes) {
-    memcpy(dst, src, nbytes);
-  }
+  if (nbytes) memcpy(dst, src, nbytes);
   return src + nbytes;
 }
 
 static inline const uint8_t* ReadBytesChecked(const uint8_t* src,
                                               size_t* remain, void* dst,
                                               size_t nbytes) {
-  if (*remain < nbytes) {
-    return nullptr;
-  }
+  if (*remain < nbytes) return nullptr;
   memcpy(dst, src, nbytes);
   *remain -= nbytes;
   return src + nbytes;
@@ -71,9 +63,7 @@ static inline const uint8_t* ReadScalar(const uint8_t* src, T* dst) {
 template <class T>
 static inline const uint8_t* ReadScalarChecked(const uint8_t* src,
                                                size_t* remain, T* dst) {
-  if (*remain < sizeof(*dst)) {
-    return nullptr;
-  }
+  if (*remain < sizeof(*dst)) return nullptr;
   memcpy(dst, src, sizeof(*dst));
   *remain -= sizeof(*dst);
   return src + sizeof(*dst);
@@ -83,9 +73,7 @@ template <class T, size_t N>
 static inline size_t SerializedVectorSize(
     const mozilla::Vector<T, N, SystemAllocPolicy>& vec) {
   size_t size = sizeof(uint32_t);
-  for (size_t i = 0; i < vec.length(); i++) {
-    size += vec[i].serializedSize();
-  }
+  for (size_t i = 0; i < vec.length(); i++) size += vec[i].serializedSize();
   return size;
 }
 
@@ -93,9 +81,7 @@ template <class T, size_t N>
 static inline uint8_t* SerializeVector(
     uint8_t* cursor, const mozilla::Vector<T, N, SystemAllocPolicy>& vec) {
   cursor = WriteScalar<uint32_t>(cursor, vec.length());
-  for (size_t i = 0; i < vec.length(); i++) {
-    cursor = vec[i].serialize(cursor);
-  }
+  for (size_t i = 0; i < vec.length(); i++) cursor = vec[i].serialize(cursor);
   return cursor;
 }
 
@@ -104,13 +90,9 @@ static inline const uint8_t* DeserializeVector(
     const uint8_t* cursor, mozilla::Vector<T, N, SystemAllocPolicy>* vec) {
   uint32_t length;
   cursor = ReadScalar<uint32_t>(cursor, &length);
-  if (!vec->resize(length)) {
-    return nullptr;
-  }
+  if (!vec->resize(length)) return nullptr;
   for (size_t i = 0; i < vec->length(); i++) {
-    if (!(cursor = (*vec)[i].deserialize(cursor))) {
-      return nullptr;
-    }
+    if (!(cursor = (*vec)[i].deserialize(cursor))) return nullptr;
   }
   return cursor;
 }
@@ -120,9 +102,7 @@ static inline size_t SizeOfVectorExcludingThis(
     const mozilla::Vector<T, N, SystemAllocPolicy>& vec,
     MallocSizeOf mallocSizeOf) {
   size_t size = vec.sizeOfExcludingThis(mallocSizeOf);
-  for (const T& t : vec) {
-    size += t.sizeOfExcludingThis(mallocSizeOf);
-  }
+  for (const T& t : vec) size += t.sizeOfExcludingThis(mallocSizeOf);
   return size;
 }
 
@@ -148,9 +128,7 @@ static inline const uint8_t* DeserializePodVector(
     const uint8_t* cursor, mozilla::Vector<T, N, SystemAllocPolicy>* vec) {
   uint32_t length;
   cursor = ReadScalar<uint32_t>(cursor, &length);
-  if (!vec->initLengthUninitialized(length)) {
-    return nullptr;
-  }
+  if (!vec->initLengthUninitialized(length)) return nullptr;
   cursor = ReadBytes(cursor, vec->begin(), length * sizeof(T));
   return cursor;
 }
@@ -161,35 +139,9 @@ static inline const uint8_t* DeserializePodVectorChecked(
     mozilla::Vector<T, N, SystemAllocPolicy>* vec) {
   uint32_t length;
   cursor = ReadScalarChecked<uint32_t>(cursor, remain, &length);
-  if (!cursor || !vec->initLengthUninitialized(length)) {
-    return nullptr;
-  }
+  if (!cursor || !vec->initLengthUninitialized(length)) return nullptr;
   cursor = ReadBytesChecked(cursor, remain, vec->begin(), length * sizeof(T));
   return cursor;
-}
-
-template <class T>
-inline size_t SerializableRefPtr<T>::serializedSize() const {
-  return (*this)->serializedSize();
-}
-
-template <class T>
-inline uint8_t* SerializableRefPtr<T>::serialize(uint8_t* cursor) const {
-  return (*this)->serialize(cursor);
-}
-
-template <class T>
-inline const uint8_t* SerializableRefPtr<T>::deserialize(
-    const uint8_t* cursor) {
-  auto* t = js_new<std::remove_const_t<T>>();
-  *this = t;
-  return t->deserialize(cursor);
-}
-
-template <class T>
-inline size_t SerializableRefPtr<T>::sizeOfExcludingThis(
-    mozilla::MallocSizeOf mallocSizeOf) const {
-  return (*this)->sizeOfExcludingThis(mallocSizeOf);
 }
 
 }  // namespace wasm

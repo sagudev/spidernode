@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !('oomTest' in this)
+if (!('oomTest' in this))
+    quit();
 
 function f(s) {
     s + "x";

@@ -1,7 +1,7 @@
 // Copyright (C) 2014 the V8 project authors. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
-esid: sec-makesuperpropertyreference
+es6id: 14.5
 description: >
     class super in static methods
 ---*/
@@ -20,5 +20,4 @@ class C extends B {
   }
 }
 assert.sameValue(C.method(), 1, "`C.method()` returns `1`");
-
 reportCompare(0, 0);

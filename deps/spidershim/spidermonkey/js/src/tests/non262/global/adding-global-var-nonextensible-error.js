@@ -1,4 +1,4 @@
-// |reftest| skip-if(!xulRuntime.shell) -- preventExtensions on global
+// |reftest| skip
 // Any copyright is dedicated to the Public Domain.
 // http://creativecommons.org/licenses/publicdomain/
 

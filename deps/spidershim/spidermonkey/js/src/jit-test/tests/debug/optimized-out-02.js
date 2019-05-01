@@ -1,6 +1,6 @@
 // Test that prevUpToDate on frames are cleared.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 
 g.eval(`

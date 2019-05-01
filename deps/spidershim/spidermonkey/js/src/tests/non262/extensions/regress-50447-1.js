@@ -99,18 +99,19 @@ function test2()
      test file and assumes the path to the test case
      is a subdirectory of the directory containing jsDriver.pl
   */
-  var expectedLine = 106;
+  var expectedLine = 109;
   var expectedFileName = 'non262/extensions/regress-50447-1.js';
-  var expectedSource = /\(new InternalError\("msg", "([^"]+)", ([0-9]+)\)\)/;
-
+  if (typeof document != "undefined") {
+    expectedFileName = document.location.href.
+      replace(/[^\/]*(\?.*)$/, '') +
+      expectedFileName;
+  }
   var e = new InternalError ("msg");
-
-  var actual = expectedSource.exec(e.toSource());
-  reportCompare (normalize(actual[1]).endsWith(expectedFileName), true,
-		 "toSource() returned unexpected result (filename).");
-  reportCompare (actual[2], String(expectedLine),
-		 "toSource() returned unexpected result (line).");
-  reportCompare (normalize(e.fileName).endsWith(expectedFileName), true,
+  reportCompare ("(new InternalError(\"msg\", \"" +
+		 expectedFileName + "\", " + expectedLine + "))",
+		 normalize(e.toSource()),
+		 "toSource() returned unexpected result.");
+  reportCompare (expectedFileName, normalize(e.fileName),
 		 "fileName property returned unexpected value.");
   reportCompare (expectedLine, e.lineNumber,
 		 "lineNumber property returned unexpected value.");
@@ -130,21 +131,22 @@ function test3()
 
 
 
-  var expectedLine = 10;
   var expectedFileName = 'non262/extensions/regress-50447-1.js';
-  var expectedSource = /\(new InternalError\("msg", "([^"]+)", ([0-9]+)\)\)/;
+  if (typeof document != "undefined") {
+    expectedFileName = document.location.href.
+      replace(/[^\/]*(\?.*)$/, '') +
+      expectedFileName;
+  }
 
   var e = new InternalError ("msg");
-  e.lineNumber = expectedLine;
-
-  var actual = expectedSource.exec(e.toSource());
-  reportCompare (normalize(actual[1]).endsWith(expectedFileName), true,
-		 "toSource() returned unexpected result (filename).");
-  reportCompare (actual[2], String(expectedLine),
-		 "toSource() returned unexpected result (line).");
-  reportCompare (normalize(e.fileName).endsWith(expectedFileName), true,
+  e.lineNumber = 10;
+  reportCompare ("(new InternalError(\"msg\", \"" +
+		 expectedFileName + "\", 10))",
+		 normalize(e.toSource()),
+		 "toSource() returned unexpected result.");
+  reportCompare (expectedFileName, normalize(e.fileName),
 		 "fileName property returned unexpected value.");
-  reportCompare (expectedLine, e.lineNumber,
+  reportCompare (10, e.lineNumber,
 		 "lineNumber property returned unexpected value.");
 
 
@@ -156,7 +158,7 @@ function test4()
   /* generate an error with only msg and filename properties */
 
 
-  var expectedLine = 161;
+  var expectedLine = 163;
 
   var e = new InternalError ("msg", "file");
   reportCompare ("(new InternalError(\"msg\", \"file\", " + expectedLine + "))",

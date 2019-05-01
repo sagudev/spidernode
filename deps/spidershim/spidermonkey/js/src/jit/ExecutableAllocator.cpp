@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * Copyright (C) 2008 Apple Inc. All rights reserved.
  *
@@ -27,16 +27,14 @@
 
 #include "jit/ExecutableAllocator.h"
 
-#include "jit/JitRealm.h"
+#include "jit/JitCompartment.h"
 #include "js/MemoryMetrics.h"
 
 using namespace js::jit;
 
 ExecutablePool::~ExecutablePool() {
 #ifdef DEBUG
-  for (size_t bytes : m_codeBytes) {
-    MOZ_ASSERT(bytes == 0);
-  }
+  for (size_t bytes : m_codeBytes) MOZ_ASSERT(bytes == 0);
 #endif
 
   MOZ_ASSERT(!isMarked());
@@ -47,9 +45,7 @@ ExecutablePool::~ExecutablePool() {
 void ExecutablePool::release(bool willDestroy) {
   MOZ_ASSERT(m_refCount != 0);
   MOZ_ASSERT_IF(willDestroy, m_refCount == 1);
-  if (--m_refCount == 0) {
-    js_delete(this);
-  }
+  if (--m_refCount == 0) js_delete(this);
 }
 
 void ExecutablePool::release(size_t n, CodeKind kind) {
@@ -75,7 +71,6 @@ void* ExecutablePool::alloc(size_t n, CodeKind kind) {
 
   m_codeBytes[kind] += n;
 
-  MOZ_MAKE_MEM_UNDEFINED(result, n);
   return result;
 }
 
@@ -84,13 +79,16 @@ size_t ExecutablePool::available() const {
   return m_end - m_freePtr;
 }
 
+ExecutableAllocator::ExecutableAllocator(JSRuntime* rt) : rt_(rt) {
+  MOZ_ASSERT(m_smallPools.empty());
+}
+
 ExecutableAllocator::~ExecutableAllocator() {
-  for (size_t i = 0; i < m_smallPools.length(); i++) {
+  for (size_t i = 0; i < m_smallPools.length(); i++)
     m_smallPools[i]->release(/* willDestroy = */ true);
-  }
 
   // If this asserts we have a pool leak.
-  MOZ_ASSERT_IF(TlsContext.get()->runtime()->gc.shutdownCollectedEverything(),
+  MOZ_ASSERT_IF(m_pools.initialized() && rt_->gc.shutdownCollectedEverything(),
                 m_pools.empty());
 }
 
@@ -104,9 +102,8 @@ ExecutablePool* ExecutableAllocator::poolForSize(size_t n) {
   for (size_t i = 0; i < m_smallPools.length(); i++) {
     ExecutablePool* pool = m_smallPools[i];
     if (n <= pool->available() &&
-        (!minPool || pool->available() < minPool->available())) {
+        (!minPool || pool->available() < minPool->available()))
       minPool = pool;
-    }
   }
   if (minPool) {
     minPool->addRef();
@@ -114,30 +111,23 @@ ExecutablePool* ExecutableAllocator::poolForSize(size_t n) {
   }
 
   // If the request is large, we just provide a unshared allocator
-  if (n > ExecutableCodePageSize) {
-    return createPool(n);
-  }
+  if (n > ExecutableCodePageSize) return createPool(n);
 
   // Create a new allocator
   ExecutablePool* pool = createPool(ExecutableCodePageSize);
-  if (!pool) {
-    return nullptr;
-  }
+  if (!pool) return nullptr;
   // At this point, local |pool| is the owner.
 
   if (m_smallPools.length() < maxSmallPools) {
     // We haven't hit the maximum number of live pools; add the new pool.
     // If append() OOMs, we just return an unshared allocator.
-    if (m_smallPools.append(pool)) {
-      pool->addRef();
-    }
+    if (m_smallPools.append(pool)) pool->addRef();
   } else {
     // Find the pool with the least space.
     int iMin = 0;
     for (size_t i = 1; i < m_smallPools.length(); i++) {
-      if (m_smallPools[i]->available() < m_smallPools[iMin]->available()) {
+      if (m_smallPools[i]->available() < m_smallPools[iMin]->available())
         iMin = i;
-      }
     }
 
     // If the new allocator will result in more free space than the small
@@ -154,12 +144,10 @@ ExecutablePool* ExecutableAllocator::poolForSize(size_t n) {
   return pool;
 }
 
-/* static */
-size_t ExecutableAllocator::roundUpAllocationSize(size_t request,
-                                                  size_t granularity) {
-  if ((std::numeric_limits<size_t>::max() - granularity) <= request) {
+/* static */ size_t ExecutableAllocator::roundUpAllocationSize(
+    size_t request, size_t granularity) {
+  if ((std::numeric_limits<size_t>::max() - granularity) <= request)
     return OVERSIZE_ALLOCATION;
-  }
 
   // Round up to next page boundary
   size_t size = request + (granularity - 1);
@@ -169,15 +157,15 @@ size_t ExecutableAllocator::roundUpAllocationSize(size_t request,
 }
 
 ExecutablePool* ExecutableAllocator::createPool(size_t n) {
+  MOZ_ASSERT(rt_->jitRuntime()->preventBackedgePatching());
+
   size_t allocSize = roundUpAllocationSize(n, ExecutableCodePageSize);
-  if (allocSize == OVERSIZE_ALLOCATION) {
-    return nullptr;
-  }
+  if (allocSize == OVERSIZE_ALLOCATION) return nullptr;
+
+  if (!m_pools.initialized() && !m_pools.init()) return nullptr;
 
   ExecutablePool::Allocation a = systemAlloc(allocSize);
-  if (!a.pages) {
-    return nullptr;
-  }
+  if (!a.pages) return nullptr;
 
   ExecutablePool* pool = js_new<ExecutablePool>(this, a);
   if (!pool) {
@@ -196,6 +184,9 @@ ExecutablePool* ExecutableAllocator::createPool(size_t n) {
 
 void* ExecutableAllocator::alloc(JSContext* cx, size_t n,
                                  ExecutablePool** poolp, CodeKind type) {
+  // Don't race with reprotectAll called from the signal handler.
+  JitRuntime::AutoPreventBackedgePatching apbp(rt_);
+
   // Caller must ensure 'n' is word-size aligned. If all allocations are
   // of word sized quantities, then all subsequent allocations will be
   // aligned.
@@ -207,9 +198,7 @@ void* ExecutableAllocator::alloc(JSContext* cx, size_t n,
   }
 
   *poolp = poolForSize(n);
-  if (!*poolp) {
-    return nullptr;
-  }
+  if (!*poolp) return nullptr;
 
   // This alloc is infallible because poolForSize() just obtained
   // (found, or created if necessary) a pool that had enough space.
@@ -222,16 +211,22 @@ void* ExecutableAllocator::alloc(JSContext* cx, size_t n,
 }
 
 void ExecutableAllocator::releasePoolPages(ExecutablePool* pool) {
+  // Don't race with reprotectAll called from the signal handler.
+  JitRuntime::AutoPreventBackedgePatching apbp(rt_);
+
   MOZ_ASSERT(pool->m_allocation.pages);
   systemRelease(pool->m_allocation);
 
+  MOZ_ASSERT(m_pools.initialized());
+
   // Pool may not be present in m_pools if we hit OOM during creation.
-  if (auto ptr = m_pools.lookup(pool)) {
-    m_pools.remove(ptr);
-  }
+  if (auto ptr = m_pools.lookup(pool)) m_pools.remove(ptr);
 }
 
 void ExecutableAllocator::purge() {
+  // Don't race with reprotectAll called from the signal handler.
+  JitRuntime::AutoPreventBackedgePatching apbp(rt_);
+
   for (size_t i = 0; i < m_smallPools.length();) {
     ExecutablePool* pool = m_smallPools[i];
     if (pool->m_refCount > 1) {
@@ -248,35 +243,46 @@ void ExecutableAllocator::purge() {
 }
 
 void ExecutableAllocator::addSizeOfCode(JS::CodeSizes* sizes) const {
-  for (ExecPoolHashSet::Range r = m_pools.all(); !r.empty(); r.popFront()) {
-    ExecutablePool* pool = r.front();
-    sizes->ion += pool->m_codeBytes[CodeKind::Ion];
-    sizes->baseline += pool->m_codeBytes[CodeKind::Baseline];
-    sizes->regexp += pool->m_codeBytes[CodeKind::RegExp];
-    sizes->other += pool->m_codeBytes[CodeKind::Other];
-    sizes->unused += pool->m_allocation.size - pool->usedCodeBytes();
+  if (m_pools.initialized()) {
+    for (ExecPoolHashSet::Range r = m_pools.all(); !r.empty(); r.popFront()) {
+      ExecutablePool* pool = r.front();
+      sizes->ion += pool->m_codeBytes[CodeKind::Ion];
+      sizes->baseline += pool->m_codeBytes[CodeKind::Baseline];
+      sizes->regexp += pool->m_codeBytes[CodeKind::RegExp];
+      sizes->other += pool->m_codeBytes[CodeKind::Other];
+      sizes->unused += pool->m_allocation.size - pool->usedCodeBytes();
+    }
   }
 }
 
-/* static */
-void ExecutableAllocator::reprotectPool(JSRuntime* rt, ExecutablePool* pool,
-                                        ProtectionSetting protection) {
+void ExecutableAllocator::reprotectAll(ProtectionSetting protection) {
+  if (!m_pools.initialized()) return;
+
+  for (ExecPoolHashSet::Range r = m_pools.all(); !r.empty(); r.popFront())
+    reprotectPool(rt_, r.front(), protection);
+}
+
+/* static */ void ExecutableAllocator::reprotectPool(
+    JSRuntime* rt, ExecutablePool* pool, ProtectionSetting protection) {
+  // Don't race with reprotectAll called from the signal handler.
+  MOZ_ASSERT(rt->jitRuntime()->preventBackedgePatching() ||
+             rt->activeContext()->handlingJitInterrupt());
+
   char* start = pool->m_allocation.pages;
-  if (!ReprotectRegion(start, pool->m_freePtr - start, protection)) {
-    MOZ_CRASH();
-  }
+  if (!ReprotectRegion(start, pool->m_freePtr - start, protection)) MOZ_CRASH();
 }
 
-/* static */
-void ExecutableAllocator::poisonCode(JSRuntime* rt,
-                                     JitPoisonRangeVector& ranges) {
+/* static */ void ExecutableAllocator::poisonCode(
+    JSRuntime* rt, JitPoisonRangeVector& ranges) {
   MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt));
+
+  // Don't race with reprotectAll called from the signal handler.
+  JitRuntime::AutoPreventBackedgePatching apbp(rt);
 
 #ifdef DEBUG
   // Make sure no pools have the mark bit set.
-  for (size_t i = 0; i < ranges.length(); i++) {
+  for (size_t i = 0; i < ranges.length(); i++)
     MOZ_ASSERT(!ranges[i].pool->isMarked());
-  }
 #endif
 
   for (size_t i = 0; i < ranges.length(); i++) {
@@ -296,11 +302,7 @@ void ExecutableAllocator::poisonCode(JSRuntime* rt,
       pool->mark();
     }
 
-    // Note: we use memset instead of js::Poison because we want to poison
-    // JIT code in release builds too. Furthermore, we don't want the
-    // invalid-ObjectValue poisoning js::Poison does in debug builds.
     memset(ranges[i].start, JS_SWEPT_CODE_PATTERN, ranges[i].size);
-    MOZ_MAKE_MEM_NOACCESS(ranges[i].start, ranges[i].size);
   }
 
   // Make the pools executable again and drop references.
@@ -315,8 +317,7 @@ void ExecutableAllocator::poisonCode(JSRuntime* rt,
 }
 
 ExecutablePool::Allocation ExecutableAllocator::systemAlloc(size_t n) {
-  void* allocation = AllocateExecutableMemory(n, ProtectionSetting::Executable,
-                                              MemCheckKind::MakeNoAccess);
+  void* allocation = AllocateExecutableMemory(n, ProtectionSetting::Executable);
   ExecutablePool::Allocation alloc = {reinterpret_cast<char*>(allocation), n};
   return alloc;
 }

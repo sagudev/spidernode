@@ -149,6 +149,26 @@ def get_morphed(make_taskgraph):
     return inner
 
 
+def test_template_artifact(get_morphed):
+    morphed = get_morphed({
+        'templates': {
+            'artifact': {'enabled': 1}
+        },
+    })
+
+    assert len(morphed.tasks) == 2
+
+    for t in morphed.tasks.values():
+        if t.kind == 'build':
+            assert t.task['extra']['treeherder']['group'] == 'tc'
+            assert t.task['extra']['treeherder']['symbol'] == 'Ba'
+            assert t.task['payload']['env']['USE_ARTIFACT'] == 1
+        else:
+            assert t.task['extra']['treeherder']['group'] == 'tc'
+            assert t.task['extra']['treeherder']['symbol'] == 't'
+            assert 'USE_ARTIFACT' not in t.task['payload']['env']
+
+
 def test_template_env(get_morphed):
     morphed = get_morphed({
         'templates': {
@@ -205,14 +225,14 @@ def test_template_rebuild(get_morphed):
     [['foo']],
     [['foo', '--bar']],
 ))
-def test_template_gecko_profile(get_morphed, command):
+def test_template_talos_profile(get_morphed, command):
     tasks = TASKS[:]
     for t in tasks:
         t['task']['payload']['command'] = command
 
     morphed = get_morphed({
         'templates': {
-            'gecko-profile': True,
+            'talos-profile': True,
         }
     }, tasks)
 
@@ -223,9 +243,9 @@ def test_template_gecko_profile(get_morphed, command):
         command = ' '.join(command)
 
         if t.label == 'a':
-            assert not command.endswith('--gecko-profile')
+            assert not command.endswith('--geckoProfile')
         elif t.label == 'b':
-            assert command.endswith('--gecko-profile')
+            assert command.endswith('--geckoProfile')
 
 
 if __name__ == '__main__':

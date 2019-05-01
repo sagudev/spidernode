@@ -545,7 +545,7 @@ function test()
         check(() => b[90] == 5)
 
     // Protos and proxies, oh my!
-    var alien = newGlobal({newCompartment: true});
+    var alien = newGlobal();
 
     var alien_view = alien.eval('view = new Uint8Array(7)');
     var alien_buffer = alien.eval('buffer = view.buffer');
@@ -560,15 +560,12 @@ function test()
     alien_view[3] = 77;
     check(() => view[3] == 77);
 
-    // Now check that the proxy setup is as expected in the cross-compartment
-    // case.
-    if (isProxy(alien)) {
-        check(() => isProxy(alien_view));
-        check(() => isProxy(alien_buffer));
-        check(() => isProxy(view)); // the real test
-    }
+    // Now check that the proxy setup is as expected
+    check(() => isProxy(alien_view));
+    check(() => isProxy(alien_buffer));
+    check(() => isProxy(view)); // the real test
 
-    // cross-realm property access
+    // cross-compartment property access
     check(() => alien_buffer.byteLength == 7);
     check(() => alien_view.byteLength == 7);
     check(() => view.byteLength == 7);

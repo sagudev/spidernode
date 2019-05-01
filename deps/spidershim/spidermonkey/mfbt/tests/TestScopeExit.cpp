@@ -9,25 +9,31 @@
 
 using mozilla::MakeScopeExit;
 
-#define CHECK(c)                                       \
-  do {                                                 \
-    bool cond = !!(c);                                 \
+#define CHECK(c) \
+  do { \
+    bool cond = !!(c); \
     MOZ_RELEASE_ASSERT(cond, "Failed assertion: " #c); \
-    if (!cond) {                                       \
-      return false;                                    \
-    }                                                  \
+    if (!cond) { \
+      return false; \
+    } \
   } while (false)
 
-static bool Test() {
+static bool
+Test()
+{
   int a = 1;
   int b = 1;
 
   {
     a++;
-    auto guardA = MakeScopeExit([&] { a--; });
+    auto guardA = MakeScopeExit([&] {
+      a--;
+    });
 
     b++;
-    auto guardB = MakeScopeExit([&] { b--; });
+    auto guardB = MakeScopeExit([&] {
+      b--;
+    });
 
     guardB.release();
   }
@@ -38,7 +44,9 @@ static bool Test() {
   return true;
 }
 
-int main() {
+int
+main()
+{
   if (!Test()) {
     return 1;
   }

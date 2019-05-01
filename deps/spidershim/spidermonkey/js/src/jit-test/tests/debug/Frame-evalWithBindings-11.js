@@ -1,5 +1,5 @@
 // var statements in non-strict evalWithBindings code behave like non-strict direct eval.
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 var log;
 dbg.onDebuggerStatement = function (frame) {

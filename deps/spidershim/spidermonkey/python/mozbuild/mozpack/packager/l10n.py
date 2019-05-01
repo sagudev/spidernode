@@ -9,7 +9,6 @@ Replace localized parts of a packaged directory with data from a langpack
 directory.
 '''
 
-import json
 import os
 import mozpack.path as mozpath
 from mozpack.packager.formats import (
@@ -24,7 +23,6 @@ from mozpack.packager import (
 )
 from mozpack.files import (
     ComposedFinder,
-    GeneratedFile,
     ManifestFile,
 )
 from mozpack.copier import (
@@ -94,37 +92,6 @@ class LocaleManifestFinder(object):
                                 if isinstance(e, ManifestLocale)))
 
 
-class L10NRepackFormatterMixin(object):
-    def __init__(self, *args, **kwargs):
-        super(L10NRepackFormatterMixin, self).__init__(*args, **kwargs)
-        self._dictionaries = {}
-
-    def add(self, path, file):
-        if path.endswith('.dic'):
-            base, relpath = self._get_base(path)
-            if relpath.startswith('dictionaries/'):
-                root, ext = mozpath.splitext(mozpath.basename(path))
-                self._dictionaries[root] = path
-        elif path.endswith('/built_in_addons.json'):
-            data = json.load(file.open())
-            data['dictionaries'] = self._dictionaries
-            # The GeneratedFile content is only really generated after
-            # all calls to formatter.add.
-            file = GeneratedFile(lambda: json.dumps(data))
-        super(L10NRepackFormatterMixin, self).add(path, file)
-
-
-def L10NRepackFormatter(klass):
-    class L10NRepackFormatter(L10NRepackFormatterMixin, klass):
-        pass
-    return L10NRepackFormatter
-
-
-FlatFormatter = L10NRepackFormatter(FlatFormatter)
-JarFormatter = L10NRepackFormatter(JarFormatter)
-OmniJarFormatter = L10NRepackFormatter(OmniJarFormatter)
-
-
 def _repack(app_finder, l10n_finder, copier, formatter, non_chrome=set()):
     app = LocaleManifestFinder(app_finder)
     l10n = LocaleManifestFinder(l10n_finder)
@@ -175,7 +142,7 @@ def _repack(app_finder, l10n_finder, copier, formatter, non_chrome=set()):
                 continue
             if key(e) not in l10n_paths[base]:
                 errors.fatal("Locale doesn't have a manifest entry for '%s'" %
-                             e.name)
+                    e.name)
                 # Allow errors to accumulate
                 continue
             paths[e.path] = l10n_paths[base][key(e)]
@@ -210,8 +177,7 @@ def _repack(app_finder, l10n_finder, copier, formatter, non_chrome=set()):
             if base:
                 subpath = mozpath.relpath(p, base)
                 path = mozpath.normpath(mozpath.join(paths[base],
-                                                     subpath))
-
+                                                               subpath))
         if path:
             files = [f for p, f in l10n_finder.find(path)]
             if not len(files):
@@ -298,9 +264,11 @@ def repack(source, l10n, extra_l10n={}, non_resources=[], non_chrome=set()):
         formatter = FlatFormatter(copier)
     elif app_finder.kind == 'jar':
         formatter = JarFormatter(copier,
+                                 optimize=app_finder.optimizedjars,
                                  compress=compress)
     elif app_finder.kind == 'omni':
         formatter = OmniJarFormatter(copier, app_finder.omnijar,
+                                     optimize=app_finder.optimizedjars,
                                      compress=compress,
                                      non_resources=non_resources)
 

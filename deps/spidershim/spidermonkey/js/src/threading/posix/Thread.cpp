@@ -12,15 +12,15 @@
 #include <string.h>
 
 #if defined(__APPLE__) && defined(__MACH__)
-#  include <dlfcn.h>
+#include <dlfcn.h>
 #endif
 
 #if defined(__DragonFly__) || defined(__FreeBSD__) || defined(__OpenBSD__)
-#  include <pthread_np.h>
+#include <pthread_np.h>
 #endif
 
 #if defined(__linux__)
-#  include <sys/prctl.h>
+#include <sys/prctl.h>
 #endif
 
 #include "threading/Thread.h"
@@ -163,7 +163,7 @@ void js::ThisThread::SetName(const char* name) {
 #else
   rv = pthread_setname_np(pthread_self(), name);
 #endif
-  MOZ_RELEASE_ASSERT(!rv || mozilla::recordreplay::IsRecordingOrReplaying());
+  MOZ_RELEASE_ASSERT(!rv);
 }
 
 void js::ThisThread::GetName(char* nameBuffer, size_t len) {
@@ -172,14 +172,9 @@ void js::ThisThread::GetName(char* nameBuffer, size_t len) {
   int rv = -1;
 #ifdef HAVE_PTHREAD_GETNAME_NP
   rv = pthread_getname_np(pthread_self(), nameBuffer, len);
-#elif defined(HAVE_PTHREAD_GET_NAME_NP)
-  pthread_get_name_np(pthread_self(), nameBuffer, len);
-  rv = 0;
 #elif defined(__linux__)
   rv = prctl(PR_GET_NAME, reinterpret_cast<unsigned long>(nameBuffer));
 #endif
 
-  if (rv) {
-    nameBuffer[0] = '\0';
-  }
+  if (rv) nameBuffer[0] = '\0';
 }

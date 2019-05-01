@@ -1,5 +1,4 @@
 # Tests for jsid pretty-printing
-# flake8: noqa: F821
 
 assert_subprinter_registered('SpiderMonkey', 'jsid')
 

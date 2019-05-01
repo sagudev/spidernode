@@ -1,6 +1,6 @@
 // |jit-test| error: ReferenceError
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal("same-compartment");
 var dbg = new Debugger;
 g.toggle = function toggle(d) {
     if (d) {

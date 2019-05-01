@@ -1,4 +1,4 @@
-const root3 = newGlobal({newCompartment: true});
+const root3 = newGlobal();
 function test(constructor) {
     if (!nukeCCW(root3.load)) {}
 }

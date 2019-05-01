@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,7 +22,7 @@ void LIRGeneratorShared::emitAtUses(MInstruction* mir) {
 }
 
 LUse LIRGeneratorShared::use(MDefinition* mir, LUse policy) {
-  // It is illegal to call use() on an instruction with two defs.
+// It is illegal to call use() on an instruction with two defs.
 #if BOX_PIECES > 1
   MOZ_ASSERT(mir->type() != MIRType::Value);
 #endif
@@ -247,6 +247,32 @@ void LIRGeneratorShared::defineInt64(
   add(lir);
 }
 
+void LIRGeneratorShared::defineSharedStubReturn(LInstruction* lir,
+                                                MDefinition* mir) {
+  lir->setMir(mir);
+
+  MOZ_ASSERT(lir->isBinarySharedStub() || lir->isUnarySharedStub() ||
+             lir->isNullarySharedStub());
+  MOZ_ASSERT(mir->type() == MIRType::Value);
+
+  uint32_t vreg = getVirtualRegister();
+
+#if defined(JS_NUNBOX32)
+  lir->setDef(TYPE_INDEX,
+              LDefinition(vreg + VREG_TYPE_OFFSET, LDefinition::TYPE,
+                          LGeneralReg(JSReturnReg_Type)));
+  lir->setDef(PAYLOAD_INDEX,
+              LDefinition(vreg + VREG_DATA_OFFSET, LDefinition::PAYLOAD,
+                          LGeneralReg(JSReturnReg_Data)));
+  getVirtualRegister();
+#elif defined(JS_PUNBOX64)
+  lir->setDef(0, LDefinition(vreg, LDefinition::BOX, LGeneralReg(JSReturnReg)));
+#endif
+
+  mir->setVirtualRegister(vreg);
+  add(lir);
+}
+
 void LIRGeneratorShared::defineReturn(LInstruction* lir, MDefinition* mir) {
   lir->setMir(mir);
 
@@ -342,7 +368,7 @@ void LIRGeneratorShared::defineSinCos(LInstructionHelper<2, Ops, Temps>* lir,
   lir->setDef(1, LDefinition(vreg + VREG_INCREMENT, LDefinition::DOUBLE,
                              LFloatReg(xmm1)));
 #else
-#  error "Unsupported architecture for SinCos"
+#error "Unsupported architecture for SinCos"
 #endif
 
   getVirtualRegister();
@@ -357,13 +383,13 @@ void LIRGeneratorShared::defineSinCos(LInstructionHelper<2, Ops, Temps>* lir,
 // checks that when making redefinitions, we don't accidentally coerce two
 // incompatible types.
 static inline bool IsCompatibleLIRCoercion(MIRType to, MIRType from) {
-  if (to == from) {
-    return true;
-  }
+  if (to == from) return true;
   if ((to == MIRType::Int32 || to == MIRType::Boolean) &&
       (from == MIRType::Int32 || from == MIRType::Boolean)) {
     return true;
   }
+  // SIMD types can be coerced with from*Bits operators.
+  if (IsSimdType(to) && IsSimdType(from)) return true;
   return false;
 }
 
@@ -384,11 +410,10 @@ void LIRGeneratorShared::redefine(MDefinition* def, MDefinition* as,
   // The sincos returns two values:
   // - VREG: it returns the sin's value of the sincos;
   // - VREG + VREG_INCREMENT: it returns the cos' value of the sincos.
-  if (math->function() == MMathFunction::Sin) {
+  if (math->function() == MMathFunction::Sin)
     def->setVirtualRegister(as->virtualRegister());
-  } else {
+  else
     def->setVirtualRegister(as->virtualRegister() + VREG_INCREMENT);
-  }
 }
 
 void LIRGeneratorShared::redefine(MDefinition* def, MDefinition* as) {
@@ -404,13 +429,12 @@ void LIRGeneratorShared::redefine(MDefinition* def, MDefinition* as) {
         (as->type() == MIRType::Int32 || as->type() == MIRType::Boolean)))) {
     MInstruction* replacement;
     if (def->type() != as->type()) {
-      if (as->type() == MIRType::Int32) {
+      if (as->type() == MIRType::Int32)
         replacement =
             MConstant::New(alloc(), BooleanValue(as->toConstant()->toInt32()));
-      } else {
+      else
         replacement =
             MConstant::New(alloc(), Int32Value(as->toConstant()->toBoolean()));
-      }
       def->block()->insertBefore(def->toInstruction(), replacement);
       emitAtUses(replacement->toInstruction());
     } else {
@@ -429,8 +453,7 @@ void LIRGeneratorShared::redefine(MDefinition* def, MDefinition* as) {
         case MIRType::Object:
         case MIRType::ObjectOrNull:
         case MIRType::String:
-        case MIRType::Symbol:
-        case MIRType::BigInt: {
+        case MIRType::Symbol: {
           LAssertResultT* check =
               new (alloc()) LAssertResultT(useRegister(def));
           add(check, def->toInstruction());
@@ -451,7 +474,7 @@ void LIRGeneratorShared::redefine(MDefinition* def, MDefinition* as) {
 
 void LIRGeneratorShared::ensureDefined(MDefinition* mir) {
   if (mir->isEmittedAtUses()) {
-    visitEmittedAtUses(mir->toInstruction());
+    mir->toInstruction()->accept(this);
     MOZ_ASSERT(mir->isLowered());
   }
 }
@@ -461,18 +484,14 @@ LClass* LIRGeneratorShared::allocateVariadic(uint32_t numOperands,
                                              Args&&... args) {
   size_t numBytes = sizeof(LClass) + numOperands * sizeof(LAllocation);
   void* buf = alloc().allocate(numBytes);
-  if (!buf) {
-    return nullptr;
-  }
+  if (!buf) return nullptr;
 
   LClass* ins = static_cast<LClass*>(buf);
-  new (ins) LClass(numOperands, std::forward<Args>(args)...);
+  new (ins) LClass(numOperands, mozilla::Forward<Args>(args)...);
 
   ins->initOperandsOffset(sizeof(LClass));
 
-  for (uint32_t i = 0; i < numOperands; i++) {
-    ins->setOperand(i, LAllocation());
-  }
+  for (uint32_t i = 0; i < numOperands; i++) ins->setOperand(i, LAllocation());
 
   return ins;
 }
@@ -494,53 +513,40 @@ LUse LIRGeneratorShared::useAtStart(MDefinition* mir) {
 }
 
 LAllocation LIRGeneratorShared::useOrConstant(MDefinition* mir) {
-  if (mir->isConstant()) {
-    return LAllocation(mir->toConstant());
-  }
+  if (mir->isConstant()) return LAllocation(mir->toConstant());
   return use(mir);
 }
 
 LAllocation LIRGeneratorShared::useOrConstantAtStart(MDefinition* mir) {
-  if (mir->isConstant()) {
-    return LAllocation(mir->toConstant());
-  }
+  if (mir->isConstant()) return LAllocation(mir->toConstant());
   return useAtStart(mir);
 }
 
 LAllocation LIRGeneratorShared::useRegisterOrConstant(MDefinition* mir) {
-  if (mir->isConstant()) {
-    return LAllocation(mir->toConstant());
-  }
+  if (mir->isConstant()) return LAllocation(mir->toConstant());
   return useRegister(mir);
 }
 
 LAllocation LIRGeneratorShared::useRegisterOrConstantAtStart(MDefinition* mir) {
-  if (mir->isConstant()) {
-    return LAllocation(mir->toConstant());
-  }
+  if (mir->isConstant()) return LAllocation(mir->toConstant());
   return useRegisterAtStart(mir);
 }
 
 LAllocation LIRGeneratorShared::useRegisterOrZero(MDefinition* mir) {
-  if (mir->isConstant() && mir->toConstant()->isInt32(0)) {
-    return LAllocation();
-  }
+  if (mir->isConstant() && mir->toConstant()->isInt32(0)) return LAllocation();
   return useRegister(mir);
 }
 
 LAllocation LIRGeneratorShared::useRegisterOrZeroAtStart(MDefinition* mir) {
-  if (mir->isConstant() && mir->toConstant()->isInt32(0)) {
-    return LAllocation();
-  }
+  if (mir->isConstant() && mir->toConstant()->isInt32(0)) return LAllocation();
   return useRegisterAtStart(mir);
 }
 
 LAllocation LIRGeneratorShared::useRegisterOrNonDoubleConstant(
     MDefinition* mir) {
   if (mir->isConstant() && mir->type() != MIRType::Double &&
-      mir->type() != MIRType::Float32) {
+      mir->type() != MIRType::Float32)
     return LAllocation(mir->toConstant());
-  }
   return useRegister(mir);
 }
 
@@ -578,9 +584,7 @@ LAllocation LIRGeneratorShared::useKeepalive(MDefinition* mir) {
 }
 
 LAllocation LIRGeneratorShared::useKeepaliveOrConstant(MDefinition* mir) {
-  if (mir->isConstant()) {
-    return LAllocation(mir->toConstant());
-  }
+  if (mir->isConstant()) return LAllocation(mir->toConstant());
   return useKeepalive(mir);
 }
 
@@ -626,12 +630,6 @@ LDefinition LIRGeneratorShared::tempFixed(Register reg) {
   return t;
 }
 
-LDefinition LIRGeneratorShared::tempFixed(FloatRegister reg) {
-  LDefinition t = temp(LDefinition::DOUBLE);
-  t.setOutput(LFloatReg(reg));
-  return t;
-}
-
 LDefinition LIRGeneratorShared::tempFloat32() {
   return temp(LDefinition::FLOAT32);
 }
@@ -674,13 +672,11 @@ static inline uint32_t VirtualRegisterOfPayload(MDefinition* mir) {
   if (mir->isBox()) {
     MDefinition* inner = mir->toBox()->getOperand(0);
     if (!inner->isConstant() && inner->type() != MIRType::Double &&
-        inner->type() != MIRType::Float32) {
+        inner->type() != MIRType::Float32)
       return inner->virtualRegister();
-    }
   }
-  if (mir->isTypeBarrier() && mir->toTypeBarrier()->canRedefineInput()) {
+  if (mir->isTypeBarrier() && mir->toTypeBarrier()->canRedefineInput())
     return VirtualRegisterOfPayload(mir->toTypeBarrier()->input());
-  }
   return mir->virtualRegister() + VREG_DATA_OFFSET;
 }
 
@@ -729,9 +725,8 @@ LUse LIRGeneratorShared::useRegisterForTypedLoad(MDefinition* mir,
   // the input and output use the same register and we're not loading an
   // int32/bool/double, so we just call useRegister in this case.
   if (type != MIRType::Int32 && type != MIRType::Boolean &&
-      type != MIRType::Double) {
+      type != MIRType::Double)
     return useRegister(mir);
-  }
 #endif
 
   return useRegisterAtStart(mir);
@@ -753,9 +748,7 @@ LBoxAllocation LIRGeneratorShared::useBox(MDefinition* mir, LUse::Policy policy,
 }
 
 LBoxAllocation LIRGeneratorShared::useBoxOrTyped(MDefinition* mir) {
-  if (mir->type() == MIRType::Value) {
-    return useBox(mir);
-  }
+  if (mir->type() == MIRType::Value) return useBox(mir);
 
 #if defined(JS_NUNBOX32)
   return LBoxAllocation(useRegister(mir), LAllocation());
@@ -816,7 +809,7 @@ LInt64Allocation LIRGeneratorShared::useInt64FixedAtStart(MDefinition* mir,
 
 LInt64Allocation LIRGeneratorShared::useInt64(MDefinition* mir,
                                               bool useAtStart) {
-  // On 32-bit platforms, always load the value in registers.
+// On 32-bit platforms, always load the value in registers.
 #if JS_BITS_PER_WORD == 32
   return useInt64(mir, LUse::REGISTER, useAtStart);
 #else

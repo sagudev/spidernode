@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,7 +14,6 @@
 
 #include "jsapi.h"
 
-#include "builtin/MapObject.h"
 #include "js/GCVector.h"
 #include "threading/ConditionVariable.h"
 #include "threading/LockGuard.h"
@@ -24,9 +23,8 @@
 #include "vm/Monitor.h"
 
 // Some platform hooks must be implemented for single-step profiling.
-#if defined(JS_SIMULATOR_ARM) || defined(JS_SIMULATOR_MIPS64) || \
-    defined(JS_SIMULATOR_MIPS32)
-#  define SINGLESTEP_PROFILING
+#if defined(JS_SIMULATOR_ARM) || defined(JS_SIMULATOR_MIPS64)
+#define SINGLESTEP_PROFILING
 #endif
 
 namespace js {
@@ -66,9 +64,8 @@ class AutoCloseFile {
   ~AutoCloseFile() { (void)release(); }
   bool release() {
     bool success = true;
-    if (f_ && f_ != stdin && f_ != stdout && f_ != stderr) {
+    if (f_ && f_ != stdin && f_ != stdout && f_ != stderr)
       success = !fclose(f_);
-    }
     f_ = nullptr;
     return success;
   }
@@ -111,9 +108,8 @@ class NonshrinkingGCObjectVector
  public:
   void sweep() {
     for (uint32_t i = 0; i < this->length(); i++) {
-      if (JS::GCPolicy<JSObject*>::needsSweep(&(*this)[i])) {
+      if (JS::GCPolicy<JSObject*>::needsSweep(&(*this)[i]))
         (*this)[i] = nullptr;
-      }
     }
   }
 };
@@ -132,24 +128,14 @@ struct ShellContext {
   ~ShellContext();
 
   bool isWorker;
-  bool lastWarningEnabled;
-
-  // Track promise rejections and report unhandled rejections.
-  bool trackUnhandledRejections;
-
   double timeoutInterval;
   double startTime;
   mozilla::Atomic<bool> serviceInterrupt;
   mozilla::Atomic<bool> haveInterruptFunc;
   JS::PersistentRootedValue interruptFunc;
+  bool lastWarningEnabled;
   JS::PersistentRootedValue lastWarning;
   JS::PersistentRootedValue promiseRejectionTrackerCallback;
-
-  // Rejected promises that are not yet handled. Added when rejection
-  // happens, and removed when rejection is handled. This uses SetObject to
-  // report unhandled rejections in the rejected order.
-  JS::PersistentRooted<SetObject*> unhandledRejectedPromises;
-
 #ifdef SINGLESTEP_PROFILING
   Vector<StackChars, 0, SystemAllocPolicy> stacks;
 #endif
@@ -173,10 +159,9 @@ struct ShellContext {
   js::shell::RCFile** errFilePtr;
   js::shell::RCFile** outFilePtr;
 
-  UniquePtr<ProfilingStack> geckoProfilingStack;
+  UniquePtr<PseudoStack> geckoProfilingStack;
 
   JS::UniqueChars moduleLoadPath;
-
   UniquePtr<MarkBitObservers> markObservers;
 
   // Off-thread parse state.

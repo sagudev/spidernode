@@ -20,6 +20,7 @@ function dumpStack()
 setJitCompilerOption("ion.warmup.trigger", 10);
 setJitCompilerOption("baseline.warmup.trigger", 0);
 setJitCompilerOption("offthread-compilation.enable", 0);
+setCachingEnabled(true);
 
 var callFFI = asmCompile('global', 'ffis', USE_ASM + "var ffi=ffis.ffi; function f() { return ffi()|0 } return f");
 
@@ -30,9 +31,9 @@ for (var i = 0; i < 15; i++) {
     matchStack(stack, ['dumpStack', 'f']);
 }
 
-if (isAsmJSCompilationAvailable()) {
+if (isAsmJSCompilationAvailable() && isCachingEnabled()) {
     var callFFI = asmCompile('global', 'ffis', USE_ASM + "var ffi=ffis.ffi; function f() { return ffi()|0 } return f");
-    assertEq(isAsmJSModule(callFFI), true);
+    assertEq(isAsmJSModuleLoadedFromCache(callFFI), true);
     stack = null;
     f();
     matchStack(stack, ['dumpStack', 'f']);

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,21 +32,13 @@ void TypedObjectPrediction::markAsCommonPrefix(const StructTypeDescr& descrA,
   // count is the number of fields in common. It begins as the min
   // of the number of fields from descrA, descrB, and max, and then
   // is decremented as we find uncommon fields.
-  if (max > descrA.fieldCount()) {
-    max = descrA.fieldCount();
-  }
-  if (max > descrB.fieldCount()) {
-    max = descrB.fieldCount();
-  }
+  if (max > descrA.fieldCount()) max = descrA.fieldCount();
+  if (max > descrB.fieldCount()) max = descrB.fieldCount();
 
   size_t i = 0;
   for (; i < max; i++) {
-    if (&descrA.fieldName(i) != &descrB.fieldName(i)) {
-      break;
-    }
-    if (&descrA.fieldDescr(i) != &descrB.fieldDescr(i)) {
-      break;
-    }
+    if (&descrA.fieldName(i) != &descrB.fieldName(i)) break;
+    if (&descrA.fieldDescr(i) != &descrB.fieldDescr(i)) break;
     MOZ_ASSERT(descrA.fieldOffset(i) == descrB.fieldOffset(i));
   }
 
@@ -67,17 +59,11 @@ void TypedObjectPrediction::addDescr(const TypeDescr& descr) {
       return;  // keep same state
 
     case Descr: {
-      if (&descr == data_.descr) {
-        return;  // keep same state
-      }
+      if (&descr == data_.descr) return;  // keep same state
 
-      if (descr.kind() != data_.descr->kind()) {
-        return markInconsistent();
-      }
+      if (descr.kind() != data_.descr->kind()) return markInconsistent();
 
-      if (descr.kind() != type::Struct) {
-        return markInconsistent();
-      }
+      if (descr.kind() != type::Struct) return markInconsistent();
 
       const StructTypeDescr& structDescr = descr.as<StructTypeDescr>();
       const StructTypeDescr& currentDescr = data_.descr->as<StructTypeDescr>();
@@ -86,9 +72,7 @@ void TypedObjectPrediction::addDescr(const TypeDescr& descr) {
     }
 
     case Prefix:
-      if (descr.kind() != type::Struct) {
-        return markInconsistent();
-      }
+      if (descr.kind() != type::Struct) return markInconsistent();
 
       markAsCommonPrefix(*data_.prefix.descr, descr.as<StructTypeDescr>(),
                          data_.prefix.fields);
@@ -118,6 +102,7 @@ bool TypedObjectPrediction::ofArrayKind() const {
   switch (kind()) {
     case type::Scalar:
     case type::Reference:
+    case type::Simd:
     case type::Struct:
       return false;
 
@@ -155,9 +140,8 @@ const TypedProto* TypedObjectPrediction::getKnownPrototype() const {
       return nullptr;
 
     case TypedObjectPrediction::Descr:
-      if (descr().is<ComplexTypeDescr>()) {
+      if (descr().is<ComplexTypeDescr>())
         return &descr().as<ComplexTypeDescr>().instancePrototype();
-      }
       return nullptr;
 
     case TypedObjectPrediction::Prefix:
@@ -192,8 +176,12 @@ ScalarTypeDescr::Type TypedObjectPrediction::scalarType() const {
   return extractType<ScalarTypeDescr>();
 }
 
-ReferenceType TypedObjectPrediction::referenceType() const {
+ReferenceTypeDescr::Type TypedObjectPrediction::referenceType() const {
   return extractType<ReferenceTypeDescr>();
+}
+
+SimdType TypedObjectPrediction::simdType() const {
+  return descr().as<SimdTypeDescr>().type();
 }
 
 bool TypedObjectPrediction::hasKnownArrayLength(int32_t* length) const {
@@ -240,29 +228,22 @@ bool TypedObjectPrediction::hasFieldNamedPrefix(const StructTypeDescr& descr,
                                                 size_t fieldCount, jsid id,
                                                 size_t* fieldOffset,
                                                 TypedObjectPrediction* out,
-                                                size_t* index,
-                                                bool* isMutable) const {
+                                                size_t* index) const {
   // Find the index of the field |id| if any.
-  if (!descr.fieldIndex(id, index)) {
-    return false;
-  }
+  if (!descr.fieldIndex(id, index)) return false;
 
   // Check whether the index falls within our known safe prefix.
-  if (*index >= fieldCount) {
-    return false;
-  }
+  if (*index >= fieldCount) return false;
 
   // Load the offset and type.
   *fieldOffset = descr.fieldOffset(*index);
   *out = TypedObjectPrediction(descr.fieldDescr(*index));
-  *isMutable = descr.fieldIsMutable(*index);
   return true;
 }
 
 bool TypedObjectPrediction::hasFieldNamed(jsid id, size_t* fieldOffset,
                                           TypedObjectPrediction* fieldType,
-                                          size_t* fieldIndex,
-                                          bool* fieldMutable) const {
+                                          size_t* fieldIndex) const {
   MOZ_ASSERT(kind() == type::Struct);
 
   switch (predictionKind()) {
@@ -272,13 +253,11 @@ bool TypedObjectPrediction::hasFieldNamed(jsid id, size_t* fieldOffset,
 
     case TypedObjectPrediction::Descr:
       return hasFieldNamedPrefix(descr().as<StructTypeDescr>(), ALL_FIELDS, id,
-                                 fieldOffset, fieldType, fieldIndex,
-                                 fieldMutable);
+                                 fieldOffset, fieldType, fieldIndex);
 
     case TypedObjectPrediction::Prefix:
       return hasFieldNamedPrefix(*prefix().descr, prefix().fields, id,
-                                 fieldOffset, fieldType, fieldIndex,
-                                 fieldMutable);
+                                 fieldOffset, fieldType, fieldIndex);
 
     default:
       MOZ_CRASH("Bad prediction kind");

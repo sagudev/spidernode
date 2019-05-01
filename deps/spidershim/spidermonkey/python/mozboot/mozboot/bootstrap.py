@@ -9,16 +9,6 @@ import platform
 import sys
 import os
 import subprocess
-try:
-    from ConfigParser import (
-        Error as ConfigParserError,
-        RawConfigParser,
-    )
-except ImportError:
-    from configparser import (
-        Error as ConfigParserError,
-        RawConfigParser,
-    )
 
 # Don't forgot to add new mozboot modules to the bootstrap download
 # list in bin/bootstrap.py!
@@ -39,12 +29,28 @@ from mozboot.util import (
 APPLICATION_CHOICE = '''
 Note on Artifact Mode:
 
-Artifact builds download prebuilt C++ components rather than building
-them locally. Artifact builds are faster!
+Firefox for Desktop and Android supports a fast build mode called
+artifact mode. Artifact mode downloads pre-built C++ components rather
+than building them locally, trading bandwidth for time.
 
-Artifact builds are recommended for people working on Firefox or
-Firefox for Android frontends, or the GeckoView Java API. They are unsuitable
-for those working on C++ code. For more information see:
+Artifact builds will be useful to many developers who are not working
+with compiled code. If you want to work on look-and-feel of Firefox,
+you want "Firefox for Desktop Artifact Mode".
+
+Similarly, if you want to work on the look-and-feel of Firefox for Android,
+you want "Firefox for Android Artifact Mode".
+
+To work on the Gecko technology platform, you would need to opt to full,
+non-artifact mode. Gecko is Mozilla's web rendering engine, similar to Edge,
+Blink, and WebKit. Gecko is implemented in C++ and JavaScript. If you
+want to work on web rendering, you want "Firefox for Desktop", or
+"Firefox for Android".
+
+If you don't know what you want, start with just Artifact Mode of the desired
+platform. Your builds will be much shorter than if you build Gecko as well.
+But don't worry! You can always switch configurations later.
+
+You can learn more about Artifact mode builds at
 https://developer.mozilla.org/en-US/docs/Artifact_builds.
 
 Please choose the version of Firefox you want to build:
@@ -54,8 +60,8 @@ Your choice: '''
 APPLICATIONS_LIST = [
     ('Firefox for Desktop Artifact Mode', 'browser_artifact_mode'),
     ('Firefox for Desktop', 'browser'),
-    ('GeckoView/Firefox for Android Artifact Mode', 'mobile_android_artifact_mode'),
-    ('GeckoView/Firefox for Android', 'mobile_android'),
+    ('Firefox for Android Artifact Mode', 'mobile_android_artifact_mode'),
+    ('Firefox for Android', 'mobile_android'),
 ]
 
 # This is a workaround for the fact that we must support python2.6 (which has
@@ -78,21 +84,26 @@ If you would like to use a different directory, hit CTRL+c and set the
 MOZBUILD_STATE_PATH environment variable to the directory you'd like to
 use and re-run the bootstrapper.
 
-Would you like to create this directory? (Yn):'''
+Would you like to create this directory?
 
-STYLO_NODEJS_DIRECTORY_MESSAGE = '''
-Stylo and NodeJS packages require a directory to store shared, persistent
-state.  On this machine, that directory is:
+  1. Yes
+  2. No
+
+Your choice: '''
+
+STYLO_DIRECTORY_MESSAGE = '''
+Stylo packages require a directory to store shared, persistent state.
+On this machine, that directory is:
 
   {statedir}
 
 Please restart bootstrap and create that directory when prompted.
 '''
 
-STYLE_NODEJS_REQUIRES_CLONE = '''
-Installing Stylo and NodeJS packages requires a checkout of mozilla-central.
-Once you have such a checkout, please re-run `./mach bootstrap` from the
-checkout directory.
+STYLO_REQUIRES_CLONE = '''
+Installing Stylo packages requires a checkout of mozilla-central. Once you
+have such a checkout, please re-run `./mach bootstrap` from the checkout
+directory.
 '''
 
 FINISHED = '''
@@ -104,8 +115,8 @@ Source code can be obtained by running
 
     hg clone https://hg.mozilla.org/mozilla-unified
 
-Or, if you prefer Git, by following the instruction here to clone from the
-Mercurial repository:
+Or, if you prefer Git, you should install git-cinnabar, and follow the
+instruction here to clone from the Mercurial repository:
 
     https://github.com/glandium/git-cinnabar/wiki/Mozilla:-A-git-workflow-for-Gecko-development
 
@@ -119,46 +130,41 @@ Mozilla recommends a number of changes to Mercurial to enhance your
 experience with it.
 
 Would you like to run a configuration wizard to ensure Mercurial is
-optimally configured?'''
+optimally configured?
 
-CONFIGURE_GIT = '''
-Mozilla recommends using git-cinnabar to work with mozilla-central.
+  1. Yes
+  2. No
 
-Would you like to run a few configuration steps to ensure Git is
-optimally configured?'''
+Please enter your reply: '''
 
-CLONE_VCS = '''
-If you would like to clone the {} {} repository, please
+CLONE_MERCURIAL = '''
+If you would like to clone the mozilla-unified Mercurial repository, please
 enter the destination path below.
+
+(If you prefer to use Git, leave this blank.)
 '''
 
-CLONE_VCS_PROMPT = '''
-Destination directory for {} clone (leave empty to not clone): '''.lstrip()
+CLONE_MERCURIAL_PROMPT = '''
+Destination directory for Mercurial clone (leave empty to not clone): '''.lstrip()
 
-CLONE_VCS_NOT_EMPTY = '''\
-Destination directory '{}' is not empty.
+CLONE_MERCURIAL_NOT_EMPTY = '''
+ERROR! Destination directory '{}' is not empty.
 
-Would you like to clone to '{}' instead?
+Would you like to clone to '{}'?
+
   1. Yes
   2. No, let me enter another path
   3. No, stop cloning
-Your choice: '''
 
-CLONE_VCS_NOT_EMPTY_FALLBACK_FAILED = '''
-ERROR! Destination directory '{}' is not empty and '{}' exists.
+Please enter your reply: '''.lstrip()
+
+CLONE_MERCURIAL_NOT_EMPTY_FALLBACK_FAILED = '''
+ERROR! Destination directory '{}' is not empty.
 '''
 
-CLONE_VCS_NOT_DIR = '''
+CLONE_MERCURIAL_NOT_DIR = '''
 ERROR! Destination '{}' exists but is not a directory.
 '''
-
-CLONE_MERCURIAL_PULL_FAIL = '''
-Failed to pull from hg.mozilla.org.
-
-This is most likely because of unstable network connection.
-Try running `hg pull https://hg.mozilla.org/mozilla-unified` manually, or
-download mercurial bundle and use it:
-https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Source_Code/Mercurial/Bundles'''
 
 DEBIAN_DISTROS = (
     'Debian',
@@ -172,73 +178,22 @@ DEBIAN_DISTROS = (
     'LinuxMint',
     'Elementary OS',
     'Elementary',
-    'elementary',
-    'neon',
+    '"elementary OS"',
+    '"elementary"'
 )
-
-ADD_GIT_TOOLS_PATH = '''
-To add git-cinnabar to the PATH, edit your shell initialization script, which
-may be called ~/.bashrc or ~/.bash_profile or ~/.profile, and add the following
-lines:
-
-    export PATH="{}:$PATH"
-
-Then restart your shell.
-'''
-
-TELEMETRY_OPT_IN_PROMPT = '''
-Build system telemetry
-
-Mozilla collects data about local builds in order to make builds faster and
-improve developer tooling. To learn more about the data we intend to collect
-read here:
-https://firefox-source-docs.mozilla.org/build/buildsystem/telemetry.html.
-
-If you have questions, please ask in #build in irc.mozilla.org. If you would
-like to opt out of data collection, select (N) at the prompt.
-
-Would you like to enable build system telemetry?'''
-
-
-def update_or_create_build_telemetry_config(path):
-    """Write a mach config file enabling build telemetry to `path`. If the file does not exist,
-    create it. If it exists, add the new setting to the existing data.
-
-    This is standalone from mach's `ConfigSettings` so we can use it during bootstrap
-    without a source checkout.
-    """
-    config = RawConfigParser()
-    if os.path.exists(path):
-        try:
-            config.read([path])
-        except ConfigParserError as e:
-            print('Your mach configuration file at `{path}` is not parseable:\n{error}'.format(
-                path=path, error=e))
-            return False
-    if not config.has_section('build'):
-        config.add_section('build')
-    config.set('build', 'telemetry', 'true')
-    with open(path, 'wb') as f:
-        config.write(f)
-    return True
 
 
 class Bootstrapper(object):
     """Main class that performs system bootstrap."""
 
     def __init__(self, finished=FINISHED, choice=None, no_interactive=False,
-                 hg_configure=False, no_system_changes=False, mach_context=None,
-                 vcs=None):
+                 hg_configure=False):
         self.instance = None
         self.finished = finished
         self.choice = choice
         self.hg_configure = hg_configure
-        self.no_system_changes = no_system_changes
-        self.mach_context = mach_context
-        self.vcs = vcs
         cls = None
-        args = {'no_interactive': no_interactive,
-                'no_system_changes': no_system_changes}
+        args = {'no_interactive': no_interactive}
 
         if sys.platform.startswith('linux'):
             distro, version, dist_id = platform.linux_distribution()
@@ -290,15 +245,11 @@ class Bootstrapper(object):
 
         self.instance = cls(**args)
 
-    def input_clone_dest(self, with_hg=True):
-        repo_name = 'mozilla-unified'
-        vcs = 'Mercurial'
-        if not with_hg:
-            vcs = 'Git'
-        print(CLONE_VCS.format(repo_name, vcs))
+    def input_clone_dest(self):
+        print(CLONE_MERCURIAL)
 
         while True:
-            dest = raw_input(CLONE_VCS_PROMPT.format(vcs))
+            dest = raw_input(CLONE_MERCURIAL_PROMPT)
             dest = dest.strip()
             if not dest:
                 return ''
@@ -308,18 +259,18 @@ class Bootstrapper(object):
                 return dest
 
             if not os.path.isdir(dest):
-                print(CLONE_VCS_NOT_DIR.format(dest))
+                print(CLONE_MERCURIAL_NOT_DIR.format(dest))
                 continue
 
             if os.listdir(dest) == []:
                 return dest
 
-            newdest = os.path.join(dest, repo_name)
+            newdest = os.path.join(dest, 'mozilla-unified')
             if os.path.exists(newdest):
-                print(CLONE_VCS_NOT_EMPTY_FALLBACK_FAILED.format(dest, newdest))
+                print(CLONE_MERCURIAL_NOT_EMPTY_FALLBACK_FAILED.format(dest))
                 continue
 
-            choice = self.instance.prompt_int(prompt=CLONE_VCS_NOT_EMPTY.format(dest,
+            choice = self.instance.prompt_int(prompt=CLONE_MERCURIAL_NOT_EMPTY.format(dest,
                                               newdest), low=1, high=3)
             if choice == 1:
                 return newdest
@@ -327,72 +278,11 @@ class Bootstrapper(object):
                 continue
             return ''
 
-    # The state directory code is largely duplicated from mach_bootstrap.py.
-    # We can't easily import mach_bootstrap.py because the bootstrapper may
-    # run in self-contained mode and only the files in this directory will
-    # be available. We /could/ refactor parts of mach_bootstrap.py to be
-    # part of this directory to avoid the code duplication.
-    def try_to_create_state_dir(self):
-        state_dir = get_state_dir()
-
-        if not os.path.exists(state_dir):
-            should_create_state_dir = True
-            if not self.instance.no_interactive:
-                should_create_state_dir = self.instance.prompt_yesno(
-                    prompt=STATE_DIR_INFO.format(statedir=state_dir))
-
-            # This directory is by default in $HOME, or overridden via an env
-            # var, so we probably shouldn't gate it on --no-system-changes.
-            if should_create_state_dir:
-                print('Creating global state directory: %s' % state_dir)
-                os.makedirs(state_dir, mode=0o770)
-
-        state_dir_available = os.path.exists(state_dir)
-        return state_dir_available, state_dir
-
-    def maybe_install_private_packages_or_exit(self, state_dir,
-                                               state_dir_available,
-                                               have_clone,
-                                               checkout_root):
-        # Install the clang packages needed for building the style system, as
-        # well as the version of NodeJS that we currently support.
-        # Also install the clang static-analysis package by default
-        # The best place to install our packages is in the state directory
-        # we have.  We should have created one above in non-interactive mode.
-        if not state_dir_available:
-            print(STYLO_NODEJS_DIRECTORY_MESSAGE.format(statedir=state_dir))
-            sys.exit(1)
-
-        if not have_clone:
-            print(STYLE_NODEJS_REQUIRES_CLONE)
-            sys.exit(1)
-
-        self.instance.state_dir = state_dir
-        self.instance.ensure_node_packages(state_dir, checkout_root)
-        if not self.instance.artifact_mode:
-            self.instance.ensure_stylo_packages(state_dir, checkout_root)
-            self.instance.ensure_clang_static_analysis_package(state_dir, checkout_root)
-            self.instance.ensure_nasm_packages(state_dir, checkout_root)
-
-    def check_telemetry_opt_in(self, state_dir):
-        # We can't prompt the user.
-        if self.instance.no_interactive:
-            return
-        # Don't prompt if the user already has a setting for this value.
-        if self.mach_context is not None and 'telemetry' in self.mach_context.settings.build:
-            return
-        choice = self.instance.prompt_yesno(prompt=TELEMETRY_OPT_IN_PROMPT)
-        if choice:
-            cfg_file = os.path.join(state_dir, 'machrc')
-            if update_or_create_build_telemetry_config(cfg_file):
-                print('\nThanks for enabling build telemetry! You can change this setting at ' +
-                      'any time by editing the config file `{}`\n'.format(cfg_file))
-
     def bootstrap(self):
         if self.choice is None:
             # Like ['1. Firefox for Desktop', '2. Firefox for Android Artifact Mode', ...].
             labels = ['%s. %s' % (i + 1, name) for (i, (name, _)) in enumerate(APPLICATIONS_LIST)]
-            prompt = APPLICATION_CHOICE % '\n'.join('  {}'.format(label) for label in labels)
+            prompt = APPLICATION_CHOICE % '\n'.join(labels)
             prompt_choice = self.instance.prompt_int(prompt=prompt, low=1, high=len(APPLICATIONS))
             name, application = APPLICATIONS_LIST[prompt_choice-1]
         elif self.choice not in APPLICATIONS.keys():
@@ -401,28 +291,6 @@ class Bootstrapper(object):
         else:
             name, application = APPLICATIONS[self.choice]
 
-        self.instance.application = application
-        self.instance.artifact_mode = 'artifact_mode' in application
-
-        if self.instance.no_system_changes:
-            state_dir_available, state_dir = self.try_to_create_state_dir()
-            # We need to enable the loading of hgrc in case extensions are
-            # required to open the repo.
-            r = current_firefox_checkout(
-                check_output=self.instance.check_output,
-                env=self.instance._hg_cleanenv(load_hgrc=True),
-                hg=self.instance.which('hg'))
-            (checkout_type, checkout_root) = r
-            have_clone = bool(checkout_type)
-
-            if state_dir_available:
-                self.check_telemetry_opt_in(state_dir)
-            self.maybe_install_private_packages_or_exit(state_dir,
-                                                        state_dir_available,
-                                                        have_clone,
-                                                        checkout_root)
-            sys.exit(0)
-
         self.instance.install_system_packages()
 
         # Like 'install_browser_packages' or 'install_mobile_android_packages'.
@@ -430,10 +298,27 @@ class Bootstrapper(object):
 
         hg_installed, hg_modern = self.instance.ensure_mercurial_modern()
         self.instance.ensure_python_modern()
-        if not self.instance.artifact_mode:
-            self.instance.ensure_rust_modern()
+        self.instance.ensure_rust_modern()
 
-        state_dir_available, state_dir = self.try_to_create_state_dir()
+        # The state directory code is largely duplicated from mach_bootstrap.py.
+        # We can't easily import mach_bootstrap.py because the bootstrapper may
+        # run in self-contained mode and only the files in this directory will
+        # be available. We /could/ refactor parts of mach_bootstrap.py to be
+        # part of this directory to avoid the code duplication.
+        state_dir, _ = get_state_dir()
+
+        if not os.path.exists(state_dir):
+            if not self.instance.no_interactive:
+                choice = self.instance.prompt_int(
+                    prompt=STATE_DIR_INFO.format(statedir=state_dir),
+                    low=1,
+                    high=2)
+
+                if choice == 1:
+                    print('Creating global state directory: %s' % state_dir)
+                    os.makedirs(state_dir, mode=0o770)
+
+        state_dir_available = os.path.exists(state_dir)
 
         # We need to enable the loading of hgrc in case extensions are
         # required to open the repo.
@@ -442,58 +327,53 @@ class Bootstrapper(object):
                                      hg=self.instance.which('hg'))
         (checkout_type, checkout_root) = r
 
-        # Possibly configure Mercurial, but not if the current checkout or repo
-        # type is Git.
-        if hg_installed and state_dir_available and (checkout_type == 'hg' or self.vcs == 'hg'):
+        # Possibly configure Mercurial, but not if the current checkout is Git.
+        # TODO offer to configure Git.
+        if hg_installed and state_dir_available and checkout_type != 'git':
             configure_hg = False
             if not self.instance.no_interactive:
-                configure_hg = self.instance.prompt_yesno(prompt=CONFIGURE_MERCURIAL)
+                choice = self.instance.prompt_int(prompt=CONFIGURE_MERCURIAL,
+                                                  low=1, high=2)
+                if choice == 1:
+                    configure_hg = True
             else:
                 configure_hg = self.hg_configure
 
             if configure_hg:
                 configure_mercurial(self.instance.which('hg'), state_dir)
 
-        # Offer to configure Git, if the current checkout or repo type is Git.
-        elif self.instance.which('git') and (checkout_type == 'git' or self.vcs == 'git'):
-            should_configure_git = False
-            if not self.instance.no_interactive:
-                should_configure_git = self.instance.prompt_yesno(prompt=CONFIGURE_GIT)
-            else:
-                # Assuming default configuration setting applies to all VCS.
-                should_configure_git = self.hg_configure
-
-            if should_configure_git:
-                configure_git(self.instance.which('git'), state_dir,
-                              checkout_root)
-
         # Offer to clone if we're not inside a clone.
         have_clone = False
 
         if checkout_type:
             have_clone = True
-        elif hg_installed and not self.instance.no_interactive and self.vcs == 'hg':
+        elif hg_installed and not self.instance.no_interactive:
             dest = self.input_clone_dest()
             if dest:
-                have_clone = hg_clone_firefox(self.instance.which('hg'), dest)
-                checkout_root = dest
-        elif self.instance.which('git') and self.vcs == 'git':
-            dest = self.input_clone_dest(False)
-            if dest:
-                git = self.instance.which('git')
-                watchman = self.instance.which('watchman')
-                have_clone = git_clone_firefox(git, dest, watchman)
+                have_clone = clone_firefox(self.instance.which('hg'), dest)
                 checkout_root = dest
 
         if not have_clone:
             print(SOURCE_ADVERTISE)
 
-        if state_dir_available:
-            self.check_telemetry_opt_in(state_dir)
-        self.maybe_install_private_packages_or_exit(state_dir,
-                                                    state_dir_available,
-                                                    have_clone,
-                                                    checkout_root)
+        # Install the clang packages needed for developing stylo.
+        if not self.instance.no_interactive:
+            # The best place to install our packages is in the state directory
+            # we have.  If the user doesn't have one, we need them to re-run
+            # bootstrap and create the directory.
+            #
+            # XXX Android bootstrap just assumes the existence of the state
+            # directory and writes the NDK into it.  Should we do the same?
+            if not state_dir_available:
+                print(STYLO_DIRECTORY_MESSAGE.format(statedir=state_dir))
+                sys.exit(1)
+
+            if not have_clone:
+                print(STYLO_REQUIRES_CLONE)
+                sys.exit(1)
+
+            self.instance.state_dir = state_dir
+            self.instance.ensure_stylo_packages(state_dir, checkout_root)
 
         print(self.finished % name)
         if not (self.instance.which('rustc') and self.instance._parse_version('rustc')
@@ -572,7 +452,7 @@ def update_mercurial_repo(hg, url, dest, revision):
         print('=' * 80)
 
 
-def hg_clone_firefox(hg, dest):
+def clone_firefox(hg, dest):
     """Clone the Firefox repository to a specified destination."""
     print('Cloning Firefox Mercurial repository to %s' % dest)
 
@@ -611,7 +491,8 @@ def hg_clone_firefox(hg, dest):
     res = subprocess.call([hg, 'pull', 'https://hg.mozilla.org/mozilla-unified'], cwd=dest)
     print('')
     if res:
-        print(CLONE_MERCURIAL_PULL_FAIL)
+        print('error pulling; try running `hg pull https://hg.mozilla.org/mozilla-unified` '
+              'manually')
         return False
 
     print('updating to "central" - the development head of Gecko and Firefox')
@@ -663,104 +544,3 @@ def current_firefox_checkout(check_output, env, hg=None):
             break
 
     return (None, None)
-
-
-def update_git_tools(git, root_state_dir, top_src_dir):
-    """Update git tools, hooks and extensions"""
-    # Bug 1481425 - delete the git-mozreview
-    # commit message hook in .git/hooks dir
-    if top_src_dir:
-        mozreview_commit_hook = os.path.join(top_src_dir, '.git/hooks/commit-msg')
-        if os.path.exists(mozreview_commit_hook):
-            with open(mozreview_commit_hook, 'rb') as f:
-                contents = f.read()
-
-            if b'MozReview' in contents:
-                print('removing git-mozreview commit message hook...')
-                os.remove(mozreview_commit_hook)
-                print('git-mozreview commit message hook removed.')
-
-    # Ensure git-cinnabar is up to date.
-    cinnabar_dir = os.path.join(root_state_dir, 'git-cinnabar')
-
-    # Ensure the latest revision of git-cinnabar is present.
-    update_git_repo(git, 'https://github.com/glandium/git-cinnabar.git',
-                    cinnabar_dir)
-
-    # Perform a download of cinnabar.
-    download_args = [git, 'cinnabar', 'download']
-
-    try:
-        subprocess.check_call(download_args, cwd=cinnabar_dir)
-    except subprocess.CalledProcessError as e:
-        print(e)
-    return cinnabar_dir
-
-
-def update_git_repo(git, url, dest):
-    """Perform a clone/pull + update of a Git repository."""
-    pull_args = [git]
-
-    if os.path.exists(dest):
-        pull_args.extend(['pull'])
-        cwd = dest
-    else:
-        pull_args.extend(['clone', '--no-checkout', url, dest])
-        cwd = '/'
-
-    update_args = [git, 'checkout']
-
-    print('=' * 80)
-    print('Ensuring %s is up to date at %s' % (url, dest))
-
-    try:
-        subprocess.check_call(pull_args, cwd=cwd)
-        subprocess.check_call(update_args, cwd=dest)
-    finally:
-        print('=' * 80)
-
-
-def configure_git(git, root_state_dir, top_src_dir):
-    """Run the Git configuration steps."""
-    cinnabar_dir = update_git_tools(git, root_state_dir, top_src_dir)
-
-    print(ADD_GIT_TOOLS_PATH.format(cinnabar_dir))
-
-
-def git_clone_firefox(git, dest, watchman=None):
-    """Clone the Firefox repository to a specified destination."""
-    print('Cloning Firefox repository to %s' % dest)
-
-    try:
-        # Configure git per the git-cinnabar requirements.
-        subprocess.check_call([git, 'clone', '-b', 'bookmarks/central',
-                               'hg::https://hg.mozilla.org/mozilla-unified', dest])
-        subprocess.check_call([git, 'remote', 'add', 'inbound',
-                               'hg::ssh://hg.mozilla.org/integration/mozilla-inbound'],
-                              cwd=dest)
-        subprocess.check_call([git, 'config', 'remote.inbound.skipDefaultUpdate',
-                               'true'], cwd=dest)
-        subprocess.check_call([git, 'config', 'remote.inbound.push',
-                               '+HEAD:refs/heads/branches/default/tip'], cwd=dest)
-        subprocess.check_call([git, 'config', 'fetch.prune', 'true'], cwd=dest)
-        subprocess.check_call([git, 'config', 'pull.ff', 'only'], cwd=dest)
-
-        watchman_sample = os.path.join(dest, '.git/hooks/fsmonitor-watchman.sample')
-        # Older versions of git didn't include fsmonitor-watchman.sample.
-        if watchman and watchman_sample:
-            print('Configuring watchman')
-            watchman_config = os.path.join(dest, '.git/hooks/query-watchman')
-            if not os.path.exists(watchman_config):
-                print('Copying %s to %s' % (watchman_sample, watchman_config))
-                copy_args = ['cp', '.git/hooks/fsmonitor-watchman.sample',
-                             '.git/hooks/query-watchman']
-                subprocess.check_call(copy_args, cwd=dest)
-
-            config_args = [git, 'config', 'core.fsmonitor', '.git/hooks/query-watchman']
-            subprocess.check_call(config_args, cwd=dest)
-    except Exception as e:
-        print(e)
-        return False
-
-    print('Firefox source code available at %s' % dest)
-    return True

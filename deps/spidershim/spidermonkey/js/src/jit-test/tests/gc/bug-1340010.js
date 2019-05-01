@@ -1,4 +1,7 @@
-// |jit-test| skip-if: helperThreadCount() === 0 || !('deterministicgc' in this)
+if (helperThreadCount() === 0)
+    quit();
+if (!('deterministicgc' in this))
+    quit();
 gczeal(0);
 
 gc();

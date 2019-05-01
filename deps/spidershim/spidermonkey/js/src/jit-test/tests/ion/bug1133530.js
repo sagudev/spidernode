@@ -12,7 +12,7 @@ Object.defineProperty(this, "x", {
     }
 })
 x;
-g = newGlobal({newCompartment: true});
+g = newGlobal();
 g.parent = this
 g.eval("Debugger(parent).onExceptionUnwind=(function(){})")
 y; 

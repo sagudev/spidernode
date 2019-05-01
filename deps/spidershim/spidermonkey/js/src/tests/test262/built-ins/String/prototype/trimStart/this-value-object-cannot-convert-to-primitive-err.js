@@ -43,8 +43,6 @@ info: |
 features: [string-trimming, String.prototype.trimStart, Symbol.toPrimitive]
 ---*/
 
-assert.sameValue(typeof String.prototype.trimStart, "function");
-
 var thisVal = {
   [Symbol.toPrimitive]: undefined,
   toString: undefined,
@@ -55,9 +53,7 @@ var thisVal = {
 // nor valueOf defined, then a TypeError exception should be thrown.
 assert.throws(
   TypeError,
-  function() {
-    String.prototype.trimStart.call(thisVal);
-  }
+  function() { String.prototype.trimStart.call(thisVal); },
 );
 
 reportCompare(0, 0);

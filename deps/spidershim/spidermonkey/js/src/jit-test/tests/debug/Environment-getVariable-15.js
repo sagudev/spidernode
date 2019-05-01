@@ -7,7 +7,7 @@
 // since the latter was not recorded. Internal function objects should not be
 // exposed via Debugger.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 
 dbg.onDebuggerStatement = function (frame) {

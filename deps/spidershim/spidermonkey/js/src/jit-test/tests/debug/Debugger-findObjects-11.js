@@ -1,6 +1,6 @@
 // This shouldn't segfault.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.eval(`function f() { return function() {
   function g() {}
 }; }`);

@@ -8,14 +8,7 @@
    PR_SetEnv requires its argument to be leaked, but does not appear on stacks. (See bug 793534.)
    Memcheck:Leak
    ...
-   fun:_ZN7mozilla9SaveToEnvEPKc
-   ...
-}
-{
-   PR_SetEnv requires its argument to be leaked, but does not appear on stacks. (See bug 793534.)
-   Memcheck:Leak
-   ...
-   fun:SaveToEnv
+   fun:_ZL9SaveToEnvPKc
    ...
 }
 {
@@ -23,13 +16,6 @@
    Memcheck:Leak
    ...
    fun:_ZL13SaveWordToEnvPKcRK12nsTSubstringIcE
-   ...
-}
-{
-   PR_SetEnv requires its argument to be leaked, but does not appear on stacks. (See bug 793549.)
-   Memcheck:Leak
-   ...
-   fun:SaveWordToEnv
    ...
 }
 {

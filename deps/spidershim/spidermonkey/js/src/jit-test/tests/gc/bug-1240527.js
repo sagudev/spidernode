@@ -1,4 +1,11 @@
-// |jit-test| skip-if: helperThreadCount() === 0 || !('oomTest' in this)
+if (typeof offThreadCompileScript !== 'function' ||
+    typeof runOffThreadScript !== 'function' ||
+    typeof oomTest !== 'function' ||
+    typeof fullcompartmentchecks !== 'function' ||
+    helperThreadCount() === 0)
+{
+    quit(0);
+}
 
 offThreadCompileScript(`
  oomTest(() => "".search(/d/));

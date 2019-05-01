@@ -102,15 +102,15 @@ namespace mozilla {
 template <typename T>
 class NotNull {
   template <typename U>
-  friend constexpr NotNull<U> WrapNotNull(U aBasePtr);
+  friend NotNull<U> WrapNotNull(U aBasePtr);
   template <typename U, typename... Args>
-  friend constexpr NotNull<U> MakeNotNull(Args&&... aArgs);
+  friend NotNull<U> MakeNotNull(Args&&... aArgs);
 
   T mBasePtr;
 
   // This constructor is only used by WrapNotNull() and MakeNotNull<U>().
   template <typename U>
-  constexpr explicit NotNull(U aBasePtr) : mBasePtr(aBasePtr) {}
+  explicit NotNull(U aBasePtr) : mBasePtr(aBasePtr) {}
 
  public:
   // Disallow default construction.
@@ -118,8 +118,7 @@ class NotNull {
 
   // Construct/assign from another NotNull with a compatible base pointer type.
   template <typename U>
-  constexpr MOZ_IMPLICIT NotNull(const NotNull<U>& aOther)
-      : mBasePtr(aOther.get()) {
+  MOZ_IMPLICIT NotNull(const NotNull<U>& aOther) : mBasePtr(aOther.get()) {
     static_assert(sizeof(T) == sizeof(NotNull<T>),
                   "NotNull must have zero space overhead.");
     static_assert(offsetof(NotNull<T>, mBasePtr) == 0,
@@ -137,18 +136,18 @@ class NotNull {
 
   // Explicit conversion to a base pointer. Use only to resolve ambiguity or to
   // get a castable pointer.
-  constexpr const T& get() const { return mBasePtr; }
+  const T& get() const { return mBasePtr; }
 
   // Implicit conversion to a base pointer. Preferable to get().
-  constexpr operator const T&() const { return get(); }
+  operator const T&() const { return get(); }
 
   // Dereference operators.
-  constexpr const T& operator->() const { return get(); }
-  constexpr decltype(*mBasePtr) operator*() const { return *mBasePtr; }
+  const T& operator->() const { return get(); }
+  decltype(*mBasePtr) operator*() const { return *mBasePtr; }
 };
 
 template <typename T>
-constexpr NotNull<T> WrapNotNull(const T aBasePtr) {
+NotNull<T> WrapNotNull(const T aBasePtr) {
   NotNull<T> notNull(aBasePtr);
   MOZ_RELEASE_ASSERT(aBasePtr);
   return notNull;
@@ -188,40 +187,40 @@ struct PointedTo<const T*> {
 // |MakeNotNull<Ptr<Ob>>(args...)| will run |new Ob(args...)|
 // and return NotNull<Ptr<Ob>>.
 template <typename T, typename... Args>
-constexpr NotNull<T> MakeNotNull(Args&&... aArgs) {
+NotNull<T> MakeNotNull(Args&&... aArgs) {
   using Pointee = typename detail::PointedTo<T>::NonConstType;
   static_assert(!IsArray<Pointee>::value,
                 "MakeNotNull cannot construct an array");
-  return NotNull<T>(new Pointee(std::forward<Args>(aArgs)...));
+  return NotNull<T>(new Pointee(Forward<Args>(aArgs)...));
 }
 
 // Compare two NotNulls.
 template <typename T, typename U>
-constexpr bool operator==(const NotNull<T>& aLhs, const NotNull<U>& aRhs) {
+inline bool operator==(const NotNull<T>& aLhs, const NotNull<U>& aRhs) {
   return aLhs.get() == aRhs.get();
 }
 template <typename T, typename U>
-constexpr bool operator!=(const NotNull<T>& aLhs, const NotNull<U>& aRhs) {
+inline bool operator!=(const NotNull<T>& aLhs, const NotNull<U>& aRhs) {
   return aLhs.get() != aRhs.get();
 }
 
 // Compare a NotNull to a base pointer.
 template <typename T, typename U>
-constexpr bool operator==(const NotNull<T>& aLhs, const U& aRhs) {
+inline bool operator==(const NotNull<T>& aLhs, const U& aRhs) {
   return aLhs.get() == aRhs;
 }
 template <typename T, typename U>
-constexpr bool operator!=(const NotNull<T>& aLhs, const U& aRhs) {
+inline bool operator!=(const NotNull<T>& aLhs, const U& aRhs) {
   return aLhs.get() != aRhs;
 }
 
 // Compare a base pointer to a NotNull.
 template <typename T, typename U>
-constexpr bool operator==(const T& aLhs, const NotNull<U>& aRhs) {
+inline bool operator==(const T& aLhs, const NotNull<U>& aRhs) {
   return aLhs == aRhs.get();
 }
 template <typename T, typename U>
-constexpr bool operator!=(const T& aLhs, const NotNull<U>& aRhs) {
+inline bool operator!=(const T& aLhs, const NotNull<U>& aRhs) {
   return aLhs != aRhs.get();
 }
 

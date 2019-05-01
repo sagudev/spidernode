@@ -9,7 +9,7 @@ en_CA{
             }
         }
     }
-    Version{"2.1.47.86"}
+    Version{"2.1.37.22"}
     calendar{
         chinese{
             DateTimePatterns{
@@ -113,7 +113,7 @@ en_CA{
                 MMMd{"MMM d"}
                 Md{"MM-dd"}
                 yyyyM{"GGGGG y-MM"}
-                yyyyMEd{"E, y-MM-dd GGGGG"}
+                yyyyMEd{"E, GGGGG y-MM-dd"}
                 yyyyMMMEd{"E, MMM d, y G"}
                 yyyyMMMd{"MMM d, y G"}
                 yyyyMd{"GGGGG y-MM-dd"}
@@ -170,10 +170,6 @@ en_CA{
                 "a.m.",
                 "p.m.",
             }
-            AmPmMarkersNarrow{
-                "am",
-                "pm",
-            }
             DateTimePatterns{
                 "h:mm:ss a zzzz",
                 "h:mm:ss a z",
@@ -218,27 +214,14 @@ en_CA{
                 }
             }
             dayPeriod{
-                format{
-                    narrow{
-                        afternoon1{"aft"}
-                        evening1{"eve"}
-                        midnight{"mid"}
-                        morning1{"mor"}
-                        night1{"night"}
-                    }
-                }
                 stand-alone{
                     abbreviated{
                         am{"a.m."}
                         pm{"p.m."}
                     }
                     narrow{
-                        afternoon1{"aft"}
                         am{"a.m."}
-                        evening1{"eve"}
-                        midnight{"mid"}
-                        morning1{"mor"}
-                        pm{"pm"}
+                        pm{"p.m."}
                     }
                     wide{
                         am{"a.m."}
@@ -305,6 +288,22 @@ en_CA{
                         "Dec.",
                     }
                 }
+                stand-alone{
+                    abbreviated{
+                        "Jan",
+                        "Feb",
+                        "Mar",
+                        "Apr",
+                        "May",
+                        "Jun",
+                        "Jul",
+                        "Aug",
+                        "Sep",
+                        "Oct",
+                        "Nov",
+                        "Dec",
+                    }
+                }
             }
         }
         islamic{
@@ -328,10 +327,8 @@ en_CA{
                 GyMMMd{"MMM d, y G"}
                 MEd{"E, MM-dd"}
                 MMMd{"MMM d"}
-                yyyyM{"y-MM GGGG"}
                 yyyyMMMEd{"E, MMM d, y G"}
                 yyyyMMMd{"MMM d, y G"}
-                yyyyMd{"y-MM-dd GGGGG"}
             }
         }
     }
@@ -357,19 +354,14 @@ en_CA{
             dn{"a.m./p.m."}
         }
         fri-narrow{
-            relative{
-                "-1"{"last Fr"}
-                "0"{"this Fr"}
-                "1"{"next Fr"}
-            }
             relativeTime{
                 future{
-                    one{"in {0} Fr"}
-                    other{"in {0} Fr’s"}
+                    one{"in {0} F"}
+                    other{"in {0} F’s"}
                 }
                 past{
-                    one{"{0} Fr ago"}
-                    other{"{0} Fr’s ago"}
+                    one{"{0} F ago"}
+                    other{"{0} F’s ago"}
                 }
             }
         }
@@ -434,6 +426,18 @@ en_CA{
                 past{
                     one{"{0} min. ago"}
                     other{"{0} mins. ago"}
+                }
+            }
+        }
+        mon-narrow{
+            relativeTime{
+                future{
+                    one{"in {0} M"}
+                    other{"in {0} M’s"}
+                }
+                past{
+                    one{"{0} M ago"}
+                    other{"{0} M’s ago"}
                 }
             }
         }
@@ -504,9 +508,11 @@ en_CA{
         sat-narrow{
             relativeTime{
                 future{
+                    one{"in {0} Sa"}
                     other{"in {0} Sa’s"}
                 }
                 past{
+                    one{"{0} Sa ago"}
                     other{"{0} Sa’s ago"}
                 }
             }
@@ -552,9 +558,11 @@ en_CA{
         sun-narrow{
             relativeTime{
                 future{
+                    one{"in {0} Su"}
                     other{"in {0} Su’s"}
                 }
                 past{
+                    one{"{0} Su ago"}
                     other{"{0} Su’s ago"}
                 }
             }
@@ -565,18 +573,16 @@ en_CA{
                     one{"in {0} Sun."}
                     other{"in {0} Sun’s."}
                 }
-                past{
-                    one{"{0} Sun. ago"}
-                    other{"{0} Sun’s. ago"}
-                }
             }
         }
         thu-narrow{
             relativeTime{
                 future{
+                    one{"in {0} Th"}
                     other{"in {0} Th’s"}
                 }
                 past{
+                    one{"{0} Th ago"}
                     other{"{0} Th’s ago"}
                 }
             }
@@ -596,9 +602,11 @@ en_CA{
         tue-narrow{
             relativeTime{
                 future{
+                    one{"in {0} Tu"}
                     other{"in {0} Tu’s"}
                 }
                 past{
+                    one{"{0} Tu ago"}
                     other{"{0} Tu’s ago"}
                 }
             }
@@ -616,19 +624,14 @@ en_CA{
             }
         }
         wed-narrow{
-            relative{
-                "-1"{"last We"}
-                "0"{"this We"}
-                "1"{"next We"}
-            }
             relativeTime{
                 future{
-                    one{"in {0} We"}
-                    other{"in {0} We’s"}
+                    one{"in {0} W"}
+                    other{"in {0} W’s"}
                 }
                 past{
-                    one{"{0} We ago"}
-                    other{"{0} We’s ago"}
+                    one{"{0} W ago"}
+                    other{"{0} W’s ago"}
                 }
             }
         }
@@ -697,16 +700,6 @@ en_CA{
                     other{"{0} yrs. ago"}
                 }
             }
-        }
-    }
-    listPattern{
-        standard-narrow{
-            2{"{0} and {1}"}
-            end{"{0}, and {1}"}
-        }
-        standard-short{
-            2{"{0} and {1}"}
-            end{"{0}, and {1}"}
         }
     }
 }

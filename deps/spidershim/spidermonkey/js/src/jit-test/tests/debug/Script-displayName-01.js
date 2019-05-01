@@ -1,6 +1,6 @@
 // Debugger.Script.prototype.displayName
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = Debugger(g);
 var name;
 dbg.onDebuggerStatement = f => { name = f.callee.script.displayName; };

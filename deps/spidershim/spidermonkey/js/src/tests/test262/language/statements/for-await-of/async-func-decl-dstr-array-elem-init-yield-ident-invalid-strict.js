@@ -29,7 +29,7 @@ info: |
           lhs using AssignmentPattern as the goal symbol.
     [...]
 ---*/
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 async function fn() {
   for await ([ x = yield ] of [[]])

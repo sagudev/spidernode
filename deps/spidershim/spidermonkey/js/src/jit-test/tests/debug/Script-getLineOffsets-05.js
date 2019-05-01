@@ -1,6 +1,6 @@
 // getLineOffsets identifies multiple ways to land on a line.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.line0 = null;
 var dbg = Debugger(g);
 var where;

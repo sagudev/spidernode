@@ -1,5 +1,3 @@
-// |jit-test| skip-if: !this.SharedArrayBuffer
-
 // Test tracing of a single linked ArrayBufferViewObject.
 
 function f() {
@@ -8,4 +6,5 @@ function f() {
     gc();
 }
 
-f();
+if (this.SharedArrayBuffer)
+    f();

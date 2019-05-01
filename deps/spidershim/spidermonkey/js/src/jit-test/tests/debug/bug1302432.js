@@ -1,7 +1,6 @@
-setJitCompilerOption("baseline.warmup.trigger", 0);
 setJitCompilerOption('ion.warmup.trigger', 0);
 gczeal(7, 1);
-var dbgGlobal = newGlobal({newCompartment: true});
+var dbgGlobal = newGlobal();
 var dbg = new dbgGlobal.Debugger();
 dbg.addDebuggee(this);
 function f(x, await = () => Array.isArray(revocable.proxy), ...get) {

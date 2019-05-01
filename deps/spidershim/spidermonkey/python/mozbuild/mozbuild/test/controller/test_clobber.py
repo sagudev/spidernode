@@ -20,7 +20,6 @@ from mozbuild.controller.building import (
 from mozbuild.controller.clobber import (
     Clobberer,
 )
-from mozbuild.test.common import prepare_tmp_topsrcdir
 
 
 class TestClobberer(unittest.TestCase):
@@ -48,7 +47,6 @@ class TestClobberer(unittest.TestCase):
 
     def get_topsrcdir(self):
         t = self.get_tempdir()
-        prepare_tmp_topsrcdir(t)
         p = os.path.join(t, 'CLOBBER')
         with open(p, 'a'):
             pass

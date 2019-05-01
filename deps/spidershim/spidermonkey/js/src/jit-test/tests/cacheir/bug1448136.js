@@ -2,7 +2,7 @@ print = function(s) { return s.toString(); }
 assertEq = function(a,b) {
   try { print(a); print(b); } catch(exc) {}
 }
-g = newGlobal({newCompartment: true});
+g = newGlobal();
 g.parent = this;
 g.eval("(" + function() {
   Debugger(parent).onExceptionUnwind = function(frame) {

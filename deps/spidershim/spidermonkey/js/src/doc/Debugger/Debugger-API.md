@@ -110,8 +110,7 @@ other tools that use their own `Debugger` instances.
 Here are some things you can try out yourself that show off some of `Debugger`'s
 features:
 
-- [Setting a breakpoint][tut breakpoint] in a page, running a handler function
-  when it is hit that evaluates an expression in the page's context.
+- [Evaluating an expression in a web page's stack frame when it executes a `debugger;` statement.][tut debugger]
 
 - [Showing how many objects different call paths allocate.][tut alloc log]
 

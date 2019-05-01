@@ -1,5 +1,7 @@
 // This testcase tests setting object metadata for objects created from JIT
 // code.
+if (!("getJitCompilerOptions" in this))
+  quit();
 opts = getJitCompilerOptions();
 if (!opts['ion.enable'] || !opts['baseline.enable'])
   quit();

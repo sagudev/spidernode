@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -138,7 +138,9 @@ END_TEST(testGCPersistentRootedTraceableCannotOutliveRuntime)
 using MyHashMap = js::GCHashMap<js::Shape*, JSObject*>;
 
 BEGIN_TEST(testGCRootedHashMap) {
-  JS::Rooted<MyHashMap> map(cx, MyHashMap(cx, 15));
+  JS::Rooted<MyHashMap> map(cx, MyHashMap(cx));
+  CHECK(map.init(15));
+  CHECK(map.initialized());
 
   for (size_t i = 0; i < 10; ++i) {
     RootedObject obj(cx, JS_NewObject(cx, nullptr));
@@ -164,45 +166,6 @@ BEGIN_TEST(testGCRootedHashMap) {
 }
 END_TEST(testGCRootedHashMap)
 
-// Repeat of the test above, but without rooting. This is a rooting hazard. The
-// JS_EXPECT_HAZARDS annotation will cause the hazard taskcluster job to fail
-// if the hazard below is *not* detected.
-BEGIN_TEST_WITH_ATTRIBUTES(testUnrootedGCHashMap, JS_EXPECT_HAZARDS) {
-  MyHashMap map(cx, 15);
-
-  for (size_t i = 0; i < 10; ++i) {
-    RootedObject obj(cx, JS_NewObject(cx, nullptr));
-    RootedValue val(cx, UndefinedValue());
-    // Construct a unique property name to ensure that the object creates a
-    // new shape.
-    char buffer[2];
-    buffer[0] = 'a' + i;
-    buffer[1] = '\0';
-    CHECK(JS_SetProperty(cx, obj, buffer, val));
-    CHECK(map.putNew(obj->as<NativeObject>().lastProperty(), obj));
-  }
-
-  JS_GC(cx);
-
-  // Access map to keep it live across the GC.
-  CHECK(map.count() == 10);
-
-  return true;
-}
-END_TEST(testUnrootedGCHashMap)
-
-BEGIN_TEST(testSafelyUnrootedGCHashMap) {
-  // This is not rooted, but it doesn't use GC pointers as keys or values so
-  // it's ok.
-  js::GCHashMap<uint64_t, uint64_t> map(cx, 15);
-
-  JS_GC(cx);
-  CHECK(map.putNew(12, 13));
-
-  return true;
-}
-END_TEST(testSafelyUnrootedGCHashMap)
-
 static bool FillMyHashMap(JSContext* cx, MutableHandle<MyHashMap> map) {
   for (size_t i = 0; i < 10; ++i) {
     RootedObject obj(cx, JS_NewObject(cx, nullptr));
@@ -212,12 +175,8 @@ static bool FillMyHashMap(JSContext* cx, MutableHandle<MyHashMap> map) {
     char buffer[2];
     buffer[0] = 'a' + i;
     buffer[1] = '\0';
-    if (!JS_SetProperty(cx, obj, buffer, val)) {
-      return false;
-    }
-    if (!map.putNew(obj->as<NativeObject>().lastProperty(), obj)) {
-      return false;
-    }
+    if (!JS_SetProperty(cx, obj, buffer, val)) return false;
+    if (!map.putNew(obj->as<NativeObject>().lastProperty(), obj)) return false;
   }
   return true;
 }
@@ -225,15 +184,15 @@ static bool FillMyHashMap(JSContext* cx, MutableHandle<MyHashMap> map) {
 static bool CheckMyHashMap(JSContext* cx, Handle<MyHashMap> map) {
   for (auto r = map.all(); !r.empty(); r.popFront()) {
     RootedObject obj(cx, r.front().value());
-    if (obj->as<NativeObject>().lastProperty() != r.front().key()) {
-      return false;
-    }
+    if (obj->as<NativeObject>().lastProperty() != r.front().key()) return false;
   }
   return true;
 }
 
 BEGIN_TEST(testGCHandleHashMap) {
-  JS::Rooted<MyHashMap> map(cx, MyHashMap(cx, 15));
+  JS::Rooted<MyHashMap> map(cx, MyHashMap(cx));
+  CHECK(map.init(15));
+  CHECK(map.initialized());
 
   CHECK(FillMyHashMap(cx, &map));
 
@@ -278,9 +237,7 @@ BEGIN_TEST(testGCRootedVector) {
   }
 
   // Ensure iterator enumeration works through the rooted.
-  for (auto shape : shapes) {
-    CHECK(shape);
-  }
+  for (auto shape : shapes) CHECK(shape);
 
   CHECK(receiveConstRefToShapeVector(shapes));
 
@@ -293,26 +250,20 @@ BEGIN_TEST(testGCRootedVector) {
 
 bool receiveConstRefToShapeVector(const JS::Rooted<GCVector<Shape*>>& rooted) {
   // Ensure range enumeration works through the reference.
-  for (auto shape : rooted) {
-    CHECK(shape);
-  }
+  for (auto shape : rooted) CHECK(shape);
   return true;
 }
 
 bool receiveHandleToShapeVector(JS::Handle<GCVector<Shape*>> handle) {
   // Ensure range enumeration works through the handle.
-  for (auto shape : handle) {
-    CHECK(shape);
-  }
+  for (auto shape : handle) CHECK(shape);
   return true;
 }
 
 bool receiveMutableHandleToShapeVector(
     JS::MutableHandle<GCVector<Shape*>> handle) {
   // Ensure range enumeration works through the handle.
-  for (auto shape : handle) {
-    CHECK(shape);
-  }
+  for (auto shape : handle) CHECK(shape);
   return true;
 }
 END_TEST(testGCRootedVector)
@@ -367,19 +318,13 @@ static bool FillVector(JSContext* cx, MutableHandle<ShapeVec> shapes) {
     char buffer[2];
     buffer[0] = 'a' + i;
     buffer[1] = '\0';
-    if (!JS_SetProperty(cx, obj, buffer, val)) {
-      return false;
-    }
-    if (!shapes.append(obj->as<NativeObject>().lastProperty())) {
-      return false;
-    }
+    if (!JS_SetProperty(cx, obj, buffer, val)) return false;
+    if (!shapes.append(obj->as<NativeObject>().lastProperty())) return false;
   }
 
   // Ensure iterator enumeration works through the mutable handle.
   for (auto shape : shapes) {
-    if (!shape) {
-      return false;
-    }
+    if (!shape) return false;
   }
 
   return true;
@@ -393,19 +338,14 @@ static bool CheckVector(JSContext* cx, Handle<ShapeVec> shapes) {
     buffer[1] = '\0';
     bool match;
     if (!JS_StringEqualsAscii(cx, JSID_TO_STRING(shapes[i]->propid()), buffer,
-                              &match)) {
+                              &match))
       return false;
-    }
-    if (!match) {
-      return false;
-    }
+    if (!match) return false;
   }
 
   // Ensure iterator enumeration works through the handle.
   for (auto shape : shapes) {
-    if (!shape) {
-      return false;
-    }
+    if (!shape) return false;
   }
 
   return true;
@@ -424,20 +364,3 @@ BEGIN_TEST(testGCHandleVector) {
   return true;
 }
 END_TEST(testGCHandleVector)
-
-class Foo {
- public:
-  Foo(int, int) {}
-  void trace(JSTracer*) {}
-};
-
-using FooVector = JS::GCVector<Foo>;
-
-BEGIN_TEST(testGCVectorEmplaceBack) {
-  JS::Rooted<FooVector> vector(cx, FooVector(cx));
-
-  CHECK(vector.emplaceBack(1, 2));
-
-  return true;
-}
-END_TEST(testGCVectorEmplaceBack)

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,21 +7,20 @@
 #include "mozilla/DebugOnly.h"
 
 #include "jit/Bailouts.h"
+#include "jit/JitCompartment.h"
 #include "jit/JitFrames.h"
-#include "jit/JitRealm.h"
 #include "jit/JitSpewer.h"
 #include "jit/Linker.h"
 #include "jit/mips-shared/SharedICHelpers-mips-shared.h"
 #include "jit/mips32/Bailouts-mips32.h"
 #ifdef JS_ION_PERF
-#  include "jit/PerfSpewer.h"
+#include "jit/PerfSpewer.h"
 #endif
 #include "jit/VMFunctions.h"
-#include "vm/Realm.h"
+#include "vm/JSCompartment.h"
 
 #include "jit/MacroAssembler-inl.h"
 #include "jit/SharedICHelpers-inl.h"
-#include "jit/VMFunctionList-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -194,7 +193,7 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
   masm.storePtr(s2, Address(StackPointer, 0));              // callee token
 
   masm.subPtr(StackPointer, s4);
-  masm.makeFrameDescriptor(s4, FrameType::CppToJSJit, JitFrameLayout::Size());
+  masm.makeFrameDescriptor(s4, JitFrame_CppToJSJit, JitFrameLayout::Size());
   masm.push(s4);  // descriptor
 
   CodeLabel returnLabel;
@@ -244,7 +243,7 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
     masm.addPtr(
         Imm32(BaselineFrame::Size() + BaselineFrame::FramePointerOffset),
         scratch);
-    masm.makeFrameDescriptor(scratch, FrameType::BaselineJS,
+    masm.makeFrameDescriptor(scratch, JitFrame_BaselineJS,
                              ExitFrameLayout::Size());
 
     // Push frame descriptor and fake return address.
@@ -499,7 +498,7 @@ void JitRuntime::generateArgumentsRectifier(MacroAssembler& masm) {
   masm.lshiftPtr(Imm32(3), t0);
 
   // Construct sizeDescriptor.
-  masm.makeFrameDescriptor(t0, FrameType::Rectifier, JitFrameLayout::Size());
+  masm.makeFrameDescriptor(t0, JitFrame_Rectifier, JitFrameLayout::Size());
 
   // Construct JitFrameLayout.
   masm.subPtr(Imm32(3 * sizeof(uintptr_t)), StackPointer);
@@ -673,12 +672,12 @@ void JitRuntime::generateBailoutHandler(MacroAssembler& masm,
 }
 
 bool JitRuntime::generateVMWrapper(JSContext* cx, MacroAssembler& masm,
-                                   const VMFunctionData& f, void* nativeFun,
-                                   uint32_t* wrapperOffset) {
-  *wrapperOffset = startTrampolineCode(masm);
+                                   const VMFunction& f) {
+  MOZ_ASSERT(functionWrappers_);
+  MOZ_ASSERT(functionWrappers_->initialized());
 
-  // Avoid conflicts with argument registers while discarding the result after
-  // the function call.
+  uint32_t wrapperOffset = startTrampolineCode(masm);
+
   AllocatableGeneralRegisterSet regs(Register::Codes::WrapperMask);
 
   static_assert(
@@ -690,9 +689,7 @@ bool JitRuntime::generateVMWrapper(JSContext* cx, MacroAssembler& masm,
   regs.take(cxreg);
 
   // If it isn't a tail call, then the return address needs to be saved
-  if (f.expectTailCall == NonTailCall) {
-    masm.pushReturnAddress();
-  }
+  if (f.expectTailCall == NonTailCall) masm.pushReturnAddress();
 
   // We're aligned to an exit frame, so link it up.
   masm.loadJSContext(cxreg);
@@ -756,9 +753,7 @@ bool JitRuntime::generateVMWrapper(JSContext* cx, MacroAssembler& masm,
   masm.reserveStack(outParamOffset);
   masm.movePtr(StackPointer, doubleArgs);
 
-  if (!generateTLEnterVM(masm, f)) {
-    return false;
-  }
+  if (!generateTLEnterVM(masm, f)) return false;
 
   masm.setupAlignedABICall();
   masm.passABIArg(cxreg);
@@ -768,25 +763,26 @@ bool JitRuntime::generateVMWrapper(JSContext* cx, MacroAssembler& masm,
 
   // Copy any arguments.
   for (uint32_t explicitArg = 0; explicitArg < f.explicitArgs; explicitArg++) {
+    MoveOperand from;
     switch (f.argProperties(explicitArg)) {
-      case VMFunctionData::WordByValue:
+      case VMFunction::WordByValue:
         masm.passABIArg(MoveOperand(argsBase, argDisp), MoveOp::GENERAL);
         argDisp += sizeof(uint32_t);
         break;
-      case VMFunctionData::DoubleByValue:
+      case VMFunction::DoubleByValue:
         // Values should be passed by reference, not by value, so we
         // assert that the argument is a double-precision float.
         MOZ_ASSERT(f.argPassedInFloatReg(explicitArg));
         masm.passABIArg(MoveOperand(argsBase, argDisp), MoveOp::DOUBLE);
         argDisp += sizeof(double);
         break;
-      case VMFunctionData::WordByRef:
+      case VMFunction::WordByRef:
         masm.passABIArg(
             MoveOperand(argsBase, argDisp, MoveOperand::EFFECTIVE_ADDRESS),
             MoveOp::GENERAL);
         argDisp += sizeof(uint32_t);
         break;
-      case VMFunctionData::DoubleByRef:
+      case VMFunction::DoubleByRef:
         // Copy double sized argument to aligned place.
         masm.ma_ldc1WordAligned(ScratchDoubleReg, argsBase, argDisp);
         masm.as_sdc1(ScratchDoubleReg, doubleArgs, doubleArgDisp);
@@ -809,12 +805,10 @@ bool JitRuntime::generateVMWrapper(JSContext* cx, MacroAssembler& masm,
         MoveOp::GENERAL);
   }
 
-  masm.callWithABI(nativeFun, MoveOp::GENERAL,
+  masm.callWithABI(f.wrapped, MoveOp::GENERAL,
                    CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
-  if (!generateTLExitVM(masm, f)) {
-    return false;
-  }
+  if (!generateTLExitVM(masm, f)) return false;
 
   // Test for failure.
   switch (f.failType()) {
@@ -880,7 +874,7 @@ bool JitRuntime::generateVMWrapper(JSContext* cx, MacroAssembler& masm,
                   f.explicitStackSlots() * sizeof(uintptr_t) +
                   f.extraValuesToPop * sizeof(Value)));
 
-  return true;
+  return functionWrappers_->putNew(&f, wrapperOffset);
 }
 
 uint32_t JitRuntime::generatePreBarrier(JSContext* cx, MacroAssembler& masm,
@@ -935,8 +929,12 @@ uint32_t JitRuntime::generatePreBarrier(JSContext* cx, MacroAssembler& masm,
   return offset;
 }
 
+typedef bool (*HandleDebugTrapFn)(JSContext*, BaselineFrame*, uint8_t*, bool*);
+static const VMFunction HandleDebugTrapInfo =
+    FunctionInfo<HandleDebugTrapFn>(HandleDebugTrap, "HandleDebugTrap");
+
 JitCode* JitRuntime::generateDebugTrapHandler(JSContext* cx) {
-  StackMacroAssembler masm(cx);
+  MacroAssembler masm(cx);
 
   Register scratch1 = t0;
   Register scratch2 = t1;
@@ -951,9 +949,8 @@ JitCode* JitRuntime::generateDebugTrapHandler(JSContext* cx) {
   masm.movePtr(ImmPtr(nullptr), ICStubReg);
   EmitBaselineEnterStubFrame(masm, scratch2);
 
-  using Fn = bool (*)(JSContext*, BaselineFrame*, uint8_t*, bool*);
-  VMFunctionId id = VMFunctionToId<Fn, jit::HandleDebugTrap>::id;
-  TrampolinePtr code = cx->runtime()->jitRuntime()->getVMWrapper(id);
+  TrampolinePtr code =
+      cx->runtime()->jitRuntime()->getVMWrapper(HandleDebugTrapInfo);
 
   masm.subPtr(Imm32(2 * sizeof(uintptr_t)), StackPointer);
   masm.storePtr(ra, Address(StackPointer, sizeof(uintptr_t)));
@@ -992,7 +989,8 @@ JitCode* JitRuntime::generateDebugTrapHandler(JSContext* cx) {
 
   masm.ret();
 
-  Linker linker(masm, "DebugTrapHandler");
+  Linker linker(masm);
+  AutoFlushICache afc("DebugTrapHandler");
   JitCode* codeDbg = linker.newCode(cx, CodeKind::Other);
 
 #ifdef JS_ION_PERF
@@ -1118,28 +1116,28 @@ void JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm,
   Label handle_Entry;
   Label end;
 
-  masm.branch32(Assembler::Equal, scratch2, Imm32(FrameType::IonJS),
+  masm.branch32(Assembler::Equal, scratch2, Imm32(JitFrame_IonJS),
                 &handle_IonJS);
-  masm.branch32(Assembler::Equal, scratch2, Imm32(FrameType::BaselineJS),
+  masm.branch32(Assembler::Equal, scratch2, Imm32(JitFrame_BaselineJS),
                 &handle_IonJS);
-  masm.branch32(Assembler::Equal, scratch2, Imm32(FrameType::BaselineStub),
+  masm.branch32(Assembler::Equal, scratch2, Imm32(JitFrame_BaselineStub),
                 &handle_BaselineStub);
-  masm.branch32(Assembler::Equal, scratch2, Imm32(FrameType::Rectifier),
+  masm.branch32(Assembler::Equal, scratch2, Imm32(JitFrame_Rectifier),
                 &handle_Rectifier);
-  masm.branch32(Assembler::Equal, scratch2, Imm32(FrameType::IonICCall),
+  masm.branch32(Assembler::Equal, scratch2, Imm32(JitFrame_IonICCall),
                 &handle_IonICCall);
-  masm.branch32(Assembler::Equal, scratch2, Imm32(FrameType::CppToJSJit),
+  masm.branch32(Assembler::Equal, scratch2, Imm32(JitFrame_CppToJSJit),
                 &handle_Entry);
 
   // The WasmToJSJit is just another kind of entry.
-  masm.branch32(Assembler::Equal, scratch2, Imm32(FrameType::WasmToJSJit),
+  masm.branch32(Assembler::Equal, scratch2, Imm32(JitFrame_WasmToJSJit),
                 &handle_Entry);
 
   masm.assumeUnreachable(
       "Invalid caller frame type when exiting from Ion frame.");
 
   //
-  // FrameType::IonJS
+  // JitFrame_IonJS
   //
   // Stack layout:
   //                  ...
@@ -1171,7 +1169,7 @@ void JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm,
   }
 
   //
-  // FrameType::BaselineStub
+  // JitFrame_BaselineStub
   //
   // Look past the stub and store the frame pointer to
   // the baselineJS frame prior to it.
@@ -1214,7 +1212,7 @@ void JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm,
   }
 
   //
-  // FrameType::Rectifier
+  // JitFrame_Rectifier
   //
   // The rectifier frame can be preceded by either an IonJS, a BaselineStub,
   // or a CppToJSJit/WasmToJSJit frame.
@@ -1269,7 +1267,7 @@ void JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm,
 
     // Check for either Ion or BaselineStub frame.
     Label notIonFrame;
-    masm.branch32(Assembler::NotEqual, scratch3, Imm32(FrameType::IonJS),
+    masm.branch32(Assembler::NotEqual, scratch3, Imm32(JitFrame_IonJS),
                   &notIonFrame);
 
     // Handle Rectifier <- IonJS
@@ -1290,7 +1288,7 @@ void JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm,
 
     // Check for either BaselineStub or a CppToJSJit/WasmToJSJit entry
     // frame.
-    masm.branch32(Assembler::NotEqual, scratch3, Imm32(FrameType::BaselineStub),
+    masm.branch32(Assembler::NotEqual, scratch3, Imm32(JitFrame_BaselineStub),
                   &handle_Entry);
 
     // Handle Rectifier <- BaselineStub <- BaselineJS
@@ -1309,7 +1307,7 @@ void JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm,
     masm.ret();
   }
 
-  // FrameType::IonICCall
+  // JitFrame_IonICCall
   //
   // The caller is always an IonJS frame.
   //
@@ -1339,7 +1337,7 @@ void JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm,
     masm.and32(Imm32((1 << FRAMETYPE_BITS) - 1), scratch1);
     {
       Label checkOk;
-      masm.branch32(Assembler::Equal, scratch1, Imm32(FrameType::IonJS),
+      masm.branch32(Assembler::Equal, scratch1, Imm32(JitFrame_IonJS),
                     &checkOk);
       masm.assumeUnreachable("IonICCall frame must be preceded by IonJS frame");
       masm.bind(&checkOk);
@@ -1362,7 +1360,7 @@ void JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler& masm,
   }
 
   //
-  // FrameType::CppToJSJit / FrameType::WasmToJSJit
+  // JitFrame_CppToJSJit / JitFrame_WasmToJSJit
   //
   // If at an entry frame, store null into both fields.
   // A fast-path wasm->jit transition frame is an entry frame from the point

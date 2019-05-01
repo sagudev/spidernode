@@ -1,6 +1,6 @@
 // Test retrieving the log multiple times.
 
-const root = newGlobal({newCompartment: true});
+const root = newGlobal();
 const dbg = new Debugger();
 dbg.addDebuggee(root)
 

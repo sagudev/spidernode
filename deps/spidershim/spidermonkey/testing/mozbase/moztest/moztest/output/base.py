@@ -11,6 +11,7 @@ try:
     from abc import abstractmethod
 except ImportError:
     # abc is python 2.6+
+    # from https://github.com/mozilla/mozbase/blob/master/mozdevice/mozdevice/devicemanager.py
     def abstractmethod(method):
         line = method.func_code.co_firstlineno
         filename = method.func_code.co_filename

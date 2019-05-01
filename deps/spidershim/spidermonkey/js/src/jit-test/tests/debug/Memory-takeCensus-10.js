@@ -1,6 +1,6 @@
 // Check byte counts produced by takeCensus.
 
-let g = newGlobal({newCompartment: true});
+let g = newGlobal();
 let dbg = new Debugger(g);
 
 let sizeOfAM = byteSize(allocationMarker());

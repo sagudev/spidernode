@@ -2,13 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-import shutil
-import tempfile
 import textwrap
 import unittest
 
-from compare_locales import parser, mozpath
+from compare_locales import parser
 
 
 class TestParserContext(unittest.TestCase):
@@ -41,10 +38,14 @@ third line
 
     def test_empty_parser(self):
         p = parser.Parser()
-        entities = p.parse()
-        self.assertTupleEqual(
+        entities, _map = p.parse()
+        self.assertListEqual(
             entities,
-            tuple()
+            []
+        )
+        self.assertDictEqual(
+            _map,
+            {}
         )
 
 
@@ -65,25 +66,3 @@ class TestOffsetComment(unittest.TestCase):
                  baz
             ''')
         )
-
-
-class TestUniversalNewlines(unittest.TestCase):
-    def setUp(self):
-        '''Create a parser for this test.
-        '''
-        self.parser = parser.Parser()
-        self.dir = tempfile.mkdtemp()
-
-    def tearDown(self):
-        'tear down this test'
-        del self.parser
-        shutil.rmtree(self.dir)
-
-    def test_universal_newlines(self):
-        f = mozpath.join(self.dir, 'file')
-        with open(f, 'wb') as fh:
-            fh.write(b'one\ntwo\rthree\r\n')
-        self.parser.readFile(f)
-        self.assertEqual(
-            self.parser.ctx.contents,
-            'one\ntwo\nthree\n')

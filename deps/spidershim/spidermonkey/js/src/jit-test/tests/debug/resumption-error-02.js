@@ -1,6 +1,6 @@
 // Error handling if parsing a resumption value throws.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = Debugger(g);
 var rv;
 dbg.onDebuggerStatement = stack => rv;

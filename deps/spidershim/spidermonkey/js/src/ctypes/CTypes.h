@@ -18,7 +18,6 @@
 #include "js/GCHashTable.h"
 #include "js/UniquePtr.h"
 #include "js/Vector.h"
-#include "vm/JSObject.h"
 #include "vm/StringType.h"
 
 namespace js {
@@ -28,222 +27,104 @@ namespace ctypes {
 ** Utility classes
 *******************************************************************************/
 
-// CTypes builds a number of strings. StringBuilder allows repeated appending
-// with a single error check at the end. Only the Vector methods required for
-// building the string are exposed.
-
-template <class CharT, size_t N>
-class StringBuilder {
-  Vector<CharT, N, SystemAllocPolicy> v;
-
-  // Have any (OOM) errors been encountered while constructing this string?
-  bool errored{false};
-
-#ifdef DEBUG
-  // Have we finished building this string?
-  bool finished{false};
-
-  // Did we check for errors?
-  mutable bool checked{false};
-#endif
-
- public:
-  explicit operator bool() const {
-#ifdef DEBUG
-    checked = true;
-#endif
-    return !errored;
-  }
-
-  // Handle the result of modifying the string, by remembering the persistent
-  // errored status.
-  bool handle(bool result) {
-    MOZ_ASSERT(!finished);
-    if (!result) {
-      errored = true;
-    }
-    return result;
-  }
-
-  bool resize(size_t n) { return handle(v.resize(n)); }
-
-  CharT& operator[](size_t index) { return v[index]; }
-  const CharT& operator[](size_t index) const { return v[index]; }
-  size_t length() const { return v.length(); }
-
-  template <typename U>
-  MOZ_MUST_USE bool append(U&& u) {
-    return handle(v.append(u));
-  }
-
-  template <typename U>
-  MOZ_MUST_USE bool append(const U* begin, const U* end) {
-    return handle(v.append(begin, end));
-  }
-
-  template <typename U>
-  MOZ_MUST_USE bool append(const U* begin, size_t len) {
-    return handle(v.append(begin, len));
-  }
-
-  CharT* begin() {
-    MOZ_ASSERT(!finished);
-    return v.begin();
-  }
-
-  // finish() produces the results of the string building, and is required as
-  // the last thing before the string contents are used. The StringBuilder must
-  // be checked for errors before calling this, however.
-  Vector<CharT, N, SystemAllocPolicy>&& finish() {
-    MOZ_ASSERT(!errored);
-    MOZ_ASSERT(!finished);
-    MOZ_ASSERT(checked);
-#ifdef DEBUG
-    finished = true;
-#endif
-    return std::move(v);
-  }
-};
-
-// Note that these strings do not have any inline storage, because we use move
-// constructors to pass the data around and inline storage would necessitate
-// copying.
-typedef StringBuilder<char16_t, 0> AutoString;
-typedef StringBuilder<char, 0> AutoCString;
-
-typedef Vector<char16_t, 0, SystemAllocPolicy> AutoStringChars;
-typedef Vector<char, 0, SystemAllocPolicy> AutoCStringChars;
+// String and AutoString classes, based on Vector.
+typedef Vector<char16_t, 0, SystemAllocPolicy> String;
+typedef Vector<char16_t, 64, SystemAllocPolicy> AutoString;
+typedef Vector<char, 0, SystemAllocPolicy> CString;
+typedef Vector<char, 64, SystemAllocPolicy> AutoCString;
 
 // Convenience functions to append, insert, and compare Strings.
-template <class T, size_t N, size_t ArrayLength>
-void AppendString(JSContext* cx, StringBuilder<T, N>& v,
+template <class T, size_t N, class AP, size_t ArrayLength>
+void AppendString(mozilla::Vector<T, N, AP>& v,
                   const char (&array)[ArrayLength]) {
   // Don't include the trailing '\0'.
   size_t alen = ArrayLength - 1;
   size_t vlen = v.length();
-  if (!v.resize(vlen + alen)) {
-    return;
-  }
+  if (!v.resize(vlen + alen)) return;
 
-  for (size_t i = 0; i < alen; ++i) {
-    v[i + vlen] = array[i];
-  }
+  for (size_t i = 0; i < alen; ++i) v[i + vlen] = array[i];
 }
 
-template <class T, size_t N>
-void AppendChars(StringBuilder<T, N>& v, const char c, size_t count) {
+template <class T, size_t N, class AP>
+void AppendChars(mozilla::Vector<T, N, AP>& v, const char c, size_t count) {
   size_t vlen = v.length();
-  if (!v.resize(vlen + count)) {
-    return;
-  }
+  if (!v.resize(vlen + count)) return;
 
-  for (size_t i = 0; i < count; ++i) {
-    v[i + vlen] = c;
-  }
+  for (size_t i = 0; i < count; ++i) v[i + vlen] = c;
 }
 
-template <class T, size_t N>
-void AppendUInt(StringBuilder<T, N>& v, unsigned n) {
+template <class T, size_t N, class AP>
+void AppendUInt(mozilla::Vector<T, N, AP>& v, unsigned n) {
   char array[16];
   size_t alen = SprintfLiteral(array, "%u", n);
   size_t vlen = v.length();
-  if (!v.resize(vlen + alen)) {
-    return;
-  }
+  if (!v.resize(vlen + alen)) return;
 
-  for (size_t i = 0; i < alen; ++i) {
-    v[i + vlen] = array[i];
-  }
+  for (size_t i = 0; i < alen; ++i) v[i + vlen] = array[i];
 }
 
 template <class T, size_t N, size_t M, class AP>
-void AppendString(JSContext* cx, StringBuilder<T, N>& v,
-                  mozilla::Vector<T, M, AP>& w) {
-  if (!v.append(w.begin(), w.length())) {
-    return;
-  }
+void AppendString(mozilla::Vector<T, N, AP>& v, mozilla::Vector<T, M, AP>& w) {
+  if (!v.append(w.begin(), w.length())) return;
 }
 
-template <size_t N>
-void AppendString(JSContext* cx, StringBuilder<char16_t, N>& v, JSString* str) {
+template <size_t N, class AP>
+void AppendString(mozilla::Vector<char16_t, N, AP>& v, JSString* str) {
   MOZ_ASSERT(str);
-  JSLinearString* linear = str->ensureLinear(cx);
-  if (!linear) {
-    return;
-  }
+  JSLinearString* linear = str->ensureLinear(nullptr);
+  if (!linear) return;
   JS::AutoCheckCannotGC nogc;
   if (linear->hasLatin1Chars()) {
-    if (!v.append(linear->latin1Chars(nogc), linear->length())) {
-      return;
-    }
+    if (!v.append(linear->latin1Chars(nogc), linear->length())) return;
   } else {
-    if (!v.append(linear->twoByteChars(nogc), linear->length())) {
-      return;
-    }
+    if (!v.append(linear->twoByteChars(nogc), linear->length())) return;
   }
 }
 
-template <size_t N>
-void AppendString(JSContext* cx, StringBuilder<char, N>& v, JSString* str) {
+template <size_t N, class AP>
+void AppendString(mozilla::Vector<char, N, AP>& v, JSString* str) {
   MOZ_ASSERT(str);
   size_t vlen = v.length();
   size_t alen = str->length();
-  if (!v.resize(vlen + alen)) {
-    return;
-  }
+  if (!v.resize(vlen + alen)) return;
 
-  JSLinearString* linear = str->ensureLinear(cx);
-  if (!linear) {
-    return;
-  }
+  JSLinearString* linear = str->ensureLinear(nullptr);
+  if (!linear) return;
 
   JS::AutoCheckCannotGC nogc;
   if (linear->hasLatin1Chars()) {
     const Latin1Char* chars = linear->latin1Chars(nogc);
-    for (size_t i = 0; i < alen; ++i) {
-      v[i + vlen] = char(chars[i]);
-    }
+    for (size_t i = 0; i < alen; ++i) v[i + vlen] = char(chars[i]);
   } else {
     const char16_t* chars = linear->twoByteChars(nogc);
-    for (size_t i = 0; i < alen; ++i) {
-      v[i + vlen] = char(chars[i]);
-    }
+    for (size_t i = 0; i < alen; ++i) v[i + vlen] = char(chars[i]);
   }
 }
 
-template <class T, size_t N, size_t ArrayLength>
-void PrependString(JSContext* cx, StringBuilder<T, N>& v,
+template <class T, size_t N, class AP, size_t ArrayLength>
+void PrependString(mozilla::Vector<T, N, AP>& v,
                    const char (&array)[ArrayLength]) {
   // Don't include the trailing '\0'.
   size_t alen = ArrayLength - 1;
   size_t vlen = v.length();
-  if (!v.resize(vlen + alen)) {
-    return;
-  }
+  if (!v.resize(vlen + alen)) return;
 
   // Move vector data forward. This is safe since we've already resized.
   memmove(v.begin() + alen, v.begin(), vlen * sizeof(T));
 
   // Copy data to insert.
-  for (size_t i = 0; i < alen; ++i) {
-    v[i] = array[i];
-  }
+  for (size_t i = 0; i < alen; ++i) v[i] = array[i];
 }
 
-template <size_t N>
-void PrependString(JSContext* cx, StringBuilder<char16_t, N>& v,
-                   JSString* str) {
+template <size_t N, class AP>
+void PrependString(mozilla::Vector<char16_t, N, AP>& v, JSString* str) {
   MOZ_ASSERT(str);
   size_t vlen = v.length();
   size_t alen = str->length();
-  if (!v.resize(vlen + alen)) {
-    return;
-  }
+  if (!v.resize(vlen + alen)) return;
 
-  JSLinearString* linear = str->ensureLinear(cx);
-  if (!linear) {
-    return;
-  }
+  JSLinearString* linear = str->ensureLinear(nullptr);
+  if (!linear) return;
 
   // Move vector data forward. This is safe since we've already resized.
   memmove(v.begin() + alen, v.begin(), vlen * sizeof(char16_t));
@@ -252,23 +133,27 @@ void PrependString(JSContext* cx, StringBuilder<char16_t, N>& v,
   JS::AutoCheckCannotGC nogc;
   if (linear->hasLatin1Chars()) {
     const Latin1Char* chars = linear->latin1Chars(nogc);
-    for (size_t i = 0; i < alen; i++) {
-      v[i] = chars[i];
-    }
+    for (size_t i = 0; i < alen; i++) v[i] = chars[i];
   } else {
     memcpy(v.begin(), linear->twoByteChars(nogc), alen * sizeof(char16_t));
   }
 }
 
-MOZ_MUST_USE bool ReportErrorIfUnpairedSurrogatePresent(JSContext* cx,
-                                                        JSLinearString* str);
+template <typename CharT>
+extern size_t GetDeflatedUTF8StringLength(JSContext* maybecx,
+                                          const CharT* chars,
+                                          size_t charsLength);
 
-MOZ_MUST_USE JSObject* GetThisObject(JSContext* cx, const CallArgs& args,
-                                     const char* msg);
+template <typename CharT>
+MOZ_MUST_USE bool DeflateStringToUTF8Buffer(JSContext* maybecx,
+                                            const CharT* src, size_t srclen,
+                                            char* dst, size_t* dstlenp);
 
 /*******************************************************************************
 ** Function and struct API definitions
 *******************************************************************************/
+
+MOZ_ALWAYS_INLINE void ASSERT_OK(bool ok) { MOZ_ASSERT(ok); }
 
 // for JS error reporting
 enum ErrorNum {
@@ -307,11 +192,11 @@ enum TypeCode {
 // Descriptor of one field in a StructType. The name of the field is stored
 // as the key to the hash entry.
 struct FieldInfo {
-  HeapPtr<JSObject*> mType;  // CType of the field
-  size_t mIndex;             // index of the field in the struct (first is 0)
-  size_t mOffset;            // offset of the field in the struct, in bytes
+  JS::Heap<JSObject*> mType;  // CType of the field
+  size_t mIndex;              // index of the field in the struct (first is 0)
+  size_t mOffset;             // offset of the field in the struct, in bytes
 
-  void trace(JSTracer* trc) { TraceEdge(trc, &mType, "fieldType"); }
+  void trace(JSTracer* trc) { JS::TraceEdge(trc, &mType, "fieldType"); }
 };
 
 struct UnbarrieredFieldInfo {
@@ -331,9 +216,7 @@ struct FieldHashPolicy : DefaultHasher<JSFlatString*> {
   template <typename CharT>
   static uint32_t hash(const CharT* s, size_t n) {
     uint32_t hash = 0;
-    for (; n > 0; s++, n--) {
-      hash = hash * 33 + *s;
-    }
+    for (; n > 0; s++, n--) hash = hash * 33 + *s;
     return hash;
   }
 
@@ -344,13 +227,9 @@ struct FieldHashPolicy : DefaultHasher<JSFlatString*> {
   }
 
   static bool match(const Key& k, const Lookup& l) {
-    if (k == l) {
-      return true;
-    }
+    if (k == l) return true;
 
-    if (k->length() != l->length()) {
-      return false;
-    }
+    if (k->length() != l->length()) return false;
 
     return EqualChars(k, l);
   }
@@ -369,14 +248,14 @@ struct FunctionInfo {
 
   // Calling convention of the function. Convert to ffi_abi using GetABI
   // and ObjectValue. Stored as a JSObject* for ease of tracing.
-  HeapPtr<JSObject*> mABI;
+  JS::Heap<JSObject*> mABI;
 
   // The CType of the value returned by the function.
-  HeapPtr<JSObject*> mReturnType;
+  JS::Heap<JSObject*> mReturnType;
 
   // A fixed array of known parameter types, excluding any variadic
   // parameters (if mIsVariadic).
-  GCVector<HeapPtr<JSObject*>, 0, SystemAllocPolicy> mArgTypes;
+  Vector<JS::Heap<JSObject*>, 0, SystemAllocPolicy> mArgTypes;
 
   // A variable array of ffi_type*s corresponding to both known parameter
   // types and dynamic (variadic) parameter types. Longer than mArgTypes
@@ -391,10 +270,10 @@ struct FunctionInfo {
 // Parameters necessary for invoking a JS function from a C closure.
 struct ClosureInfo {
   JSContext* cx;
-  HeapPtr<JSObject*> closureObj;  // CClosure object
-  HeapPtr<JSObject*> typeObj;     // FunctionType describing the C function
-  HeapPtr<JSObject*> thisObj;  // 'this' object to use for the JS function call
-  HeapPtr<JSObject*> jsfnObj;  // JS function
+  JS::Heap<JSObject*> closureObj;  // CClosure object
+  JS::Heap<JSObject*> typeObj;     // FunctionType describing the C function
+  JS::Heap<JSObject*> thisObj;  // 'this' object to use for the JS function call
+  JS::Heap<JSObject*> jsfnObj;  // JS function
   void* errResult;       // Result that will be returned if the closure throws
   ffi_closure* closure;  // The C closure itself
 
@@ -404,9 +283,7 @@ struct ClosureInfo {
       : cx(context), errResult(nullptr), closure(nullptr) {}
 
   ~ClosureInfo() {
-    if (closure) {
-      ffi_closure_free(closure);
-    }
+    if (closure) ffi_closure_free(closure);
     js_free(errResult);
   }
 };
@@ -578,8 +455,7 @@ JSObject* ConstructWithObject(JSContext* cx, JSObject* typeObj,
                               JSObject* result);
 
 FunctionInfo* GetFunctionInfo(JSObject* obj);
-void BuildSymbolName(JSContext* cx, JSString* name, JSObject* typeObj,
-                     AutoCString& result);
+void BuildSymbolName(JSString* name, JSObject* typeObj, AutoCString& result);
 }  // namespace FunctionType
 
 namespace CClosure {

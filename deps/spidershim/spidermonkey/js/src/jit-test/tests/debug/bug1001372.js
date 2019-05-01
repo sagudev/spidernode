@@ -12,7 +12,7 @@ lfcode.push("");
 lfcode.push("0");
 lfcode.push("gczeal(2);");
 lfcode.push("\
-    var g = newGlobal({newCompartment: true});\
+    var g = newGlobal();\
     g.parent = this;\
     g.eval('new Debugger(parent).onExceptionUnwind = function() {};');\
     ");

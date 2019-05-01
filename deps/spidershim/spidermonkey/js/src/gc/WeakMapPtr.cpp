@@ -1,12 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "js/WeakMapPtr.h"
 
-#include "gc/WeakMap-inl.h"
+#include "gc/WeakMap.h"
 
 //
 // Machinery for the externally-linkable JS::WeakMapPtr, which wraps js::WeakMap
@@ -36,8 +36,9 @@ struct DataType<JS::Value> {
 template <typename K, typename V>
 struct Utils {
   typedef typename DataType<K>::BarrieredType KeyType;
+  typedef typename DataType<K>::HasherType HasherType;
   typedef typename DataType<V>::BarrieredType ValueType;
-  typedef WeakMap<KeyType, ValueType> Type;
+  typedef WeakMap<KeyType, ValueType, HasherType> Type;
   typedef Type* PtrType;
   static PtrType cast(void* ptr) { return static_cast<PtrType>(ptr); }
 };
@@ -55,10 +56,8 @@ template <typename K, typename V>
 bool JS::WeakMapPtr<K, V>::init(JSContext* cx) {
   MOZ_ASSERT(!initialized());
   typename WeakMapDetails::Utils<K, V>::PtrType map =
-      cx->new_<typename WeakMapDetails::Utils<K, V>::Type>(cx);
-  if (!map) {
-    return false;
-  }
+      cx->zone()->new_<typename WeakMapDetails::Utils<K, V>::Type>(cx);
+  if (!map || !map->init()) return false;
   ptr = map;
   return true;
 }
@@ -74,9 +73,7 @@ V JS::WeakMapPtr<K, V>::lookup(const K& key) {
   MOZ_ASSERT(initialized());
   typename WeakMapDetails::Utils<K, V>::Type::Ptr result =
       WeakMapDetails::Utils<K, V>::cast(ptr)->lookup(key);
-  if (!result) {
-    return WeakMapDetails::DataType<V>::NullValue();
-  }
+  if (!result) return WeakMapDetails::DataType<V>::NullValue();
   return result->value();
 }
 

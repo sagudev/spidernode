@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +18,7 @@ class LBoxFloatingPoint : public LInstructionHelper<2, 1, 1> {
 
   LBoxFloatingPoint(const LAllocation& in, const LDefinition& temp,
                     MIRType type)
-      : LInstructionHelper(classOpcode), type_(type) {
+      : type_(type) {
     setOperand(0, in);
     setTemp(0, temp);
   }
@@ -30,8 +30,6 @@ class LBoxFloatingPoint : public LInstructionHelper<2, 1, 1> {
 class LUnbox : public LInstructionHelper<1, 2, 0> {
  public:
   LIR_HEADER(Unbox);
-
-  LUnbox() : LInstructionHelper(classOpcode) {}
 
   MUnbox* mir() const { return mir_->toUnbox(); }
   const LAllocation* payload() { return getOperand(0); }
@@ -47,12 +45,12 @@ class LUnboxFloatingPoint : public LInstructionHelper<1, 2, 0> {
 
   static const size_t Input = 0;
 
-  LUnboxFloatingPoint(const LBoxAllocation& input, MIRType type)
-      : LInstructionHelper(classOpcode), type_(type) {
+  LUnboxFloatingPoint(const LBoxAllocation& input, MIRType type) : type_(type) {
     setBoxOperand(Input, input);
   }
 
   MUnbox* mir() const { return mir_->toUnbox(); }
+
   MIRType type() const { return type_; }
   const char* extraName() const { return StringFromMIRType(type_); }
 };
@@ -65,34 +63,25 @@ class LDivOrModI64
   static const size_t Lhs = 0;
   static const size_t Rhs = INT64_PIECES;
 
-  LDivOrModI64(const LInt64Allocation& lhs, const LInt64Allocation& rhs)
-      : LCallInstructionHelper(classOpcode) {
+  LDivOrModI64(const LInt64Allocation& lhs, const LInt64Allocation& rhs) {
     setInt64Operand(Lhs, lhs);
     setInt64Operand(Rhs, rhs);
   }
-
   MBinaryArithInstruction* mir() const {
     MOZ_ASSERT(mir_->isDiv() || mir_->isMod());
     return static_cast<MBinaryArithInstruction*>(mir_);
   }
-
   bool canBeDivideByZero() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->canBeDivideByZero();
-    }
+    if (mir_->isMod()) return mir_->toMod()->canBeDivideByZero();
     return mir_->toDiv()->canBeDivideByZero();
   }
   bool canBeNegativeOverflow() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->canBeNegativeDividend();
-    }
+    if (mir_->isMod()) return mir_->toMod()->canBeNegativeDividend();
     return mir_->toDiv()->canBeNegativeOverflow();
   }
   wasm::BytecodeOffset bytecodeOffset() const {
     MOZ_ASSERT(mir_->isDiv() || mir_->isMod());
-    if (mir_->isMod()) {
-      return mir_->toMod()->bytecodeOffset();
-    }
+    if (mir_->isMod()) return mir_->toMod()->bytecodeOffset();
     return mir_->toDiv()->bytecodeOffset();
   }
 };
@@ -105,8 +94,7 @@ class LUDivOrModI64
   static const size_t Lhs = 0;
   static const size_t Rhs = INT64_PIECES;
 
-  LUDivOrModI64(const LInt64Allocation& lhs, const LInt64Allocation& rhs)
-      : LCallInstructionHelper(classOpcode) {
+  LUDivOrModI64(const LInt64Allocation& lhs, const LInt64Allocation& rhs) {
     setInt64Operand(Lhs, lhs);
     setInt64Operand(Rhs, rhs);
   }
@@ -114,24 +102,17 @@ class LUDivOrModI64
     MOZ_ASSERT(mir_->isDiv() || mir_->isMod());
     return static_cast<MBinaryArithInstruction*>(mir_);
   }
-
   bool canBeDivideByZero() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->canBeDivideByZero();
-    }
+    if (mir_->isMod()) return mir_->toMod()->canBeDivideByZero();
     return mir_->toDiv()->canBeDivideByZero();
   }
   bool canBeNegativeOverflow() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->canBeNegativeDividend();
-    }
+    if (mir_->isMod()) return mir_->toMod()->canBeNegativeDividend();
     return mir_->toDiv()->canBeNegativeOverflow();
   }
   wasm::BytecodeOffset bytecodeOffset() const {
     MOZ_ASSERT(mir_->isDiv() || mir_->isMod());
-    if (mir_->isMod()) {
-      return mir_->toMod()->bytecodeOffset();
-    }
+    if (mir_->isMod()) return mir_->toMod()->bytecodeOffset();
     return mir_->toDiv()->bytecodeOffset();
   }
 };
@@ -140,10 +121,7 @@ class LWasmTruncateToInt64 : public LCallInstructionHelper<INT64_PIECES, 1, 0> {
  public:
   LIR_HEADER(WasmTruncateToInt64);
 
-  explicit LWasmTruncateToInt64(const LAllocation& in)
-      : LCallInstructionHelper(classOpcode) {
-    setOperand(0, in);
-  }
+  explicit LWasmTruncateToInt64(const LAllocation& in) { setOperand(0, in); }
 
   MWasmTruncateToInt64* mir() const { return mir_->toWasmTruncateToInt64(); }
 };
@@ -153,8 +131,7 @@ class LInt64ToFloatingPoint
  public:
   LIR_HEADER(Int64ToFloatingPoint);
 
-  explicit LInt64ToFloatingPoint(const LInt64Allocation& in)
-      : LCallInstructionHelper(classOpcode) {
+  explicit LInt64ToFloatingPoint(const LInt64Allocation& in) {
     setInt64Operand(0, in);
   }
 
@@ -165,9 +142,7 @@ class LWasmAtomicLoadI64 : public LInstructionHelper<INT64_PIECES, 1, 0> {
  public:
   LIR_HEADER(WasmAtomicLoadI64);
 
-  LWasmAtomicLoadI64(const LAllocation& ptr) : LInstructionHelper(classOpcode) {
-    setOperand(0, ptr);
-  }
+  LWasmAtomicLoadI64(const LAllocation& ptr) { setOperand(0, ptr); }
 
   const LAllocation* ptr() { return getOperand(0); }
   const MWasmLoad* mir() const { return mir_->toWasmLoad(); }
@@ -178,8 +153,7 @@ class LWasmAtomicStoreI64 : public LInstructionHelper<0, 1 + INT64_PIECES, 1> {
   LIR_HEADER(WasmAtomicStoreI64);
 
   LWasmAtomicStoreI64(const LAllocation& ptr, const LInt64Allocation& value,
-                      const LDefinition& tmp)
-      : LInstructionHelper(classOpcode) {
+                      const LDefinition& tmp) {
     setOperand(0, ptr);
     setInt64Operand(1, value);
     setTemp(0, tmp);

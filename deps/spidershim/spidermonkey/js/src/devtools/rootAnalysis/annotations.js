@@ -12,23 +12,6 @@ var ignoreIndirectCalls = {
     "mozalloc_oom.cpp:void (* gAbortHandler)(size_t)" : true,
 };
 
-// Types that when constructed with no arguments, are "safe" values (they do
-// not contain GC pointers).
-var typesWithSafeConstructors = new Set([
-    "mozilla::Maybe",
-    "mozilla::dom::Nullable",
-    "mozilla::dom::Optional",
-    "mozilla::UniquePtr",
-    "js::UniquePtr"
-]);
-
-var resetterMethods = {
-    'mozilla::Maybe': new Set(["reset"]),
-    'mozilla::UniquePtr': new Set(["reset"]),
-    'js::UniquePtr': new Set(["reset"]),
-    'mozilla::dom::Nullable': new Set(["SetNull"]),
-};
-
 function indirectCallCannotGC(fullCaller, fullVariable)
 {
     var caller = readable(fullCaller);
@@ -46,6 +29,9 @@ function indirectCallCannotGC(fullCaller, fullVariable)
         return true;
 
     if (name == "params" && caller == "PR_ExplodeTime")
+        return true;
+
+    if (name == "op" && /GetWeakmapKeyDelegate/.test(caller))
         return true;
 
     // hook called during script finalization which cannot GC.
@@ -182,6 +168,7 @@ var ignoreFunctions = {
     "PR_ExplodeTime" : true,
     "PR_ErrorInstallTable" : true,
     "PR_SetThreadPrivate" : true,
+    "JSObject* js::GetWeakmapKeyDelegate(JSObject*)" : true, // FIXME: mark with AutoSuppressGCAnalysis instead
     "uint8 NS_IsMainThread()" : true,
 
     // Has an indirect call under it by the name "__f", which seemed too
@@ -210,6 +197,16 @@ var ignoreFunctions = {
 
     // FIXME!
     "NS_DebugBreak": true,
+
+    // These are a little overzealous -- these destructors *can* GC if they end
+    // up wrapping a pending exception. See bug 898815 for the heavyweight fix.
+    "void js::AutoCompartment::~AutoCompartment(int32)" : true,
+    "void JSAutoCompartment::~JSAutoCompartment(int32)" : true,
+
+    // The nsScriptNameSpaceManager functions can't actually GC.  They
+    // just use a PLDHashTable which has function pointers, which makes the
+    // analysis think maybe they can.
+    "nsGlobalNameStruct* nsScriptNameSpaceManager::LookupName(nsAString*, uint16**)": true,
 
     // Similar to heap snapshot mock classes, and GTests below. This posts a
     // synchronous runnable when a GTest fails, and we are pretty sure that the
@@ -276,11 +273,8 @@ function isGTest(name)
 
 function ignoreGCFunction(mangled)
 {
-    // Field calls will not be in readableNames
-    if (!(mangled in readableNames))
-        return false;
-
-    const fun = readableNames[mangled][0];
+    assert(mangled in readableNames, mangled + " not in readableNames");
+    var fun = readableNames[mangled][0];
 
     if (fun in ignoreFunctions)
         return true;
@@ -310,10 +304,8 @@ function ignoreGCFunction(mangled)
     if (fun.includes("js::WeakMap<Key, Value, HashPolicy>::getDelegate("))
         return true;
 
-    // TODO: modify refillFreeList<NoGC> to not need data flow analysis to
-    // understand it cannot GC. As of gcc 6, the same problem occurs with
-    // tryNewTenuredThing, tryNewNurseryObject, and others.
-    if (/refillFreeList|tryNew/.test(fun) && /\(js::AllowGC\)0u/.test(fun))
+    // XXX modify refillFreeList<NoGC> to not need data flow analysis to understand it cannot GC.
+    if (/refillFreeList/.test(fun) && /\(js::AllowGC\)0u/.test(fun))
         return true;
     return false;
 }
@@ -333,10 +325,19 @@ function extraRootedGCThings()
 function extraRootedPointers()
 {
     return [
+        'ModuleValidator',
+        'JSErrorResult',
+        'WrappableJSErrorResult',
+
         // These are not actually rooted, but are only used in the context of
         // AutoKeepAtoms.
         'js::frontend::TokenStream',
         'js::frontend::TokenStreamAnyChars',
+
+        'mozilla::ErrorResult',
+        'mozilla::IgnoredErrorResult',
+        'mozilla::IgnoreErrors',
+        'mozilla::dom::binding_detail::FastErrorResult',
     ];
 }
 
@@ -347,7 +348,7 @@ function isRootedGCPointerTypeName(name)
     if (name.startsWith('MaybeRooted<'))
         return /\(js::AllowGC\)1u>::RootType/.test(name);
 
-    return false;
+    return name.startsWith('Rooted') || name.startsWith('PersistentRooted');
 }
 
 function isUnsafeStorage(typeName)
@@ -356,37 +357,31 @@ function isUnsafeStorage(typeName)
     return typeName.startsWith('UniquePtr<');
 }
 
-// If edgeType is a constructor type, return whatever limits it implies for its
-// scope (or zero if not matching).
-function isLimitConstructor(typeInfo, edgeType, varName)
+function isSuppressConstructor(typeInfo, edgeType, varName)
 {
     // Check whether this could be a constructor
     if (edgeType.Kind != 'Function')
-        return 0;
+        return false;
     if (!('TypeFunctionCSU' in edgeType))
-        return 0;
+        return false;
     if (edgeType.Type.Kind != 'Void')
-        return 0;
+        return false;
 
     // Check whether the type is a known suppression type.
     var type = edgeType.TypeFunctionCSU.Type.Name;
-    let limit = 0;
-    if (type in typeInfo.GCSuppressors)
-        limit = limit | LIMIT_CANNOT_GC;
+    if (!(type in typeInfo.GCSuppressors))
+        return false;
 
     // And now make sure this is the constructor, not some other method on a
     // suppression type. varName[0] contains the qualified name.
     var [ mangled, unmangled ] = splitFunction(varName[0]);
-    if (mangled.search(/C\d[EI]/) == -1)
-        return 0; // Mangled names of constructors have C<num>E or C<num>I
+    if (mangled.search(/C\dE/) == -1)
+        return false; // Mangled names of constructors have C<num>E
     var m = unmangled.match(/([~\w]+)(?:<.*>)?\(/);
     if (!m)
-        return 0;
+        return false;
     var type_stem = type.replace(/\w+::/g, '').replace(/\<.*\>/g, '');
-    if (m[1] != type_stem)
-        return 0;
-
-    return limit;
+    return m[1] == type_stem;
 }
 
 // nsISupports subclasses' methods may be scriptable (or overridden
@@ -411,12 +406,6 @@ function isOverridableField(initialCSU, csu, field)
         return false;
     if (field == "GetThreadFromPRThread")
         return false;
-    if (field == "DocAddSizeOfIncludingThis")
-        return false;
-    if (field == "ConstructUbiNode")
-        return false;
-    if (initialCSU == 'nsIXPCScriptable' && field == "GetScriptableFlags")
-        return false;
     if (initialCSU == 'nsIXPConnectJSObjectHolder' && field == 'GetJSObject')
         return false;
     if (initialCSU == 'nsIXPConnect' && field == 'GetSafeJSContext')
@@ -439,16 +428,4 @@ function listNonGCPointers() {
         // Safe only because jsids are currently only made from pinned strings.
         'NPIdentifier',
     ];
-}
-
-function isJSNative(mangled)
-{
-    // _Z...E = function
-    // 9JSContext = JSContext*
-    // j = uint32
-    // PN2JS5Value = JS::Value*
-    //   P = pointer
-    //   N2JS = JS::
-    //   5Value = Value
-    return mangled.endsWith("P9JSContextjPN2JS5ValueE") && mangled.startsWith("_Z");
 }

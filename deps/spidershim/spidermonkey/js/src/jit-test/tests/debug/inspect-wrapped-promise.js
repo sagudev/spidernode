@@ -1,8 +1,9 @@
+if (typeof Promise === "undefined")
+    quit(0);
+
 load(libdir + "asserts.js");
 
-ignoreUnhandledRejections();
-
-let g = newGlobal({newCompartment: true});
+let g = newGlobal();
 let dbg = new Debugger();
 let gw = dbg.addDebuggee(g);
 

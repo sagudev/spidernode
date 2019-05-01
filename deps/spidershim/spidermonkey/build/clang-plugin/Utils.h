@@ -5,7 +5,6 @@
 #ifndef Utils_h__
 #define Utils_h__
 
-#include "CustomAttributes.h"
 #include "ThirdPartyPaths.h"
 #include "plugin.h"
 
@@ -38,7 +37,7 @@ inline bool hasSideEffectAssignment(const Expr *Expression) {
 template <class T>
 inline bool ASTIsInSystemHeader(const ASTContext &AC, const T &D) {
   auto &SourceManager = AC.getSourceManager();
-  auto ExpansionLoc = SourceManager.getExpansionLoc(D.getBeginLoc());
+  auto ExpansionLoc = SourceManager.getExpansionLoc(D.getLocStart());
   if (ExpansionLoc.isInvalid()) {
     return false;
   }
@@ -162,7 +161,8 @@ inline bool isInIgnoredNamespaceForImplicitCtor(const Decl *Declaration) {
          Name == "dwarf2reader" ||      // dwarf2reader
          Name == "arm_ex_to_module" ||  // arm_ex_to_module
          Name == "testing" ||           // gtest
-         Name == "Json";                // jsoncpp
+         Name == "Json" ||              // jsoncpp
+         Name == "pdfium";              // upstream pdfium 'base' package
 }
 
 inline bool isInIgnoredNamespaceForImplicitConversion(const Decl *Declaration) {
@@ -175,6 +175,37 @@ inline bool isInIgnoredNamespaceForImplicitConversion(const Decl *Declaration) {
          Name == "__gnu_cxx" ||       // gnu C++ lib
          Name == "google_breakpad" || // breakpad
          Name == "testing";           // gtest
+}
+
+inline bool isIgnoredPathForImplicitCtor(const Decl *Declaration) {
+  SourceLocation Loc = Declaration->getLocation();
+  const SourceManager &SM = Declaration->getASTContext().getSourceManager();
+  SmallString<1024> FileName = SM.getFilename(Loc);
+  llvm::sys::fs::make_absolute(FileName);
+  llvm::sys::path::reverse_iterator Begin = llvm::sys::path::rbegin(FileName),
+                                    End = llvm::sys::path::rend(FileName);
+  for (; Begin != End; ++Begin) {
+    if (Begin->compare_lower(StringRef("skia")) == 0 ||
+        Begin->compare_lower(StringRef("sfntly")) == 0 ||
+        Begin->compare_lower(StringRef("angle")) == 0 ||
+        Begin->compare_lower(StringRef("harfbuzz")) == 0 ||
+        Begin->compare_lower(StringRef("hunspell")) == 0 ||
+        Begin->compare_lower(StringRef("scoped_ptr.h")) == 0 ||
+        Begin->compare_lower(StringRef("graphite2")) == 0 ||
+        Begin->compare_lower(StringRef("icu")) == 0 ||
+        Begin->compare_lower(StringRef("libcubeb")) == 0 ||
+        Begin->compare_lower(StringRef("libstagefright")) == 0 ||
+        Begin->compare_lower(StringRef("cairo")) == 0 ||
+        Begin->compare_lower(StringRef("pdfium")) == 0) {
+      return true;
+    }
+    if (Begin->compare_lower(StringRef("chromium")) == 0) {
+      // Ignore security/sandbox/chromium but not ipc/chromium.
+      ++Begin;
+      return Begin != End && Begin->compare_lower(StringRef("sandbox")) == 0;
+    }
+  }
+  return false;
 }
 
 inline bool isIgnoredPathForImplicitConversion(const Decl *Declaration) {
@@ -200,7 +231,7 @@ inline bool isIgnoredPathForImplicitConversion(const Decl *Declaration) {
 
 inline bool isIgnoredPathForSprintfLiteral(const CallExpr *Call,
                                            const SourceManager &SM) {
-  SourceLocation Loc = Call->getBeginLoc();
+  SourceLocation Loc = Call->getLocStart();
   SmallString<1024> FileName = SM.getFilename(Loc);
   llvm::sys::fs::make_absolute(FileName);
   llvm::sys::path::reverse_iterator Begin = llvm::sys::path::rbegin(FileName),
@@ -220,7 +251,8 @@ inline bool isIgnoredPathForSprintfLiteral(const CallExpr *Call,
         Begin->compare_lower(StringRef("skia")) == 0 ||
         Begin->compare_lower(StringRef("sfntly")) == 0 ||
         // Gtest uses snprintf as GTEST_SNPRINTF_ with sizeof
-        Begin->compare_lower(StringRef("testing")) == 0) {
+        Begin->compare_lower(StringRef("testing")) == 0 ||
+        Begin->compare_lower(StringRef("pdfium")) == 0) {
       return true;
     }
     if (Begin->compare_lower(StringRef("webrtc")) == 0) {
@@ -280,49 +312,30 @@ inline bool typeIsRefPtr(QualType Q) {
 // The method defined in clang for ignoring implicit nodes doesn't work with
 // some AST trees. To get around this, we define our own implementation of
 // IgnoreTrivials.
-inline const Stmt *MaybeSkipOneTrivial(const Stmt *s) {
-    if (!s) {
-      return nullptr;
-    }
-    if (auto *ewc = dyn_cast<ExprWithCleanups>(s)) {
-      return ewc->getSubExpr();
-    }
-    if (auto *mte = dyn_cast<MaterializeTemporaryExpr>(s)) {
-      return mte->GetTemporaryExpr();
-    }
-    if (auto *bte = dyn_cast<CXXBindTemporaryExpr>(s)) {
-      return bte->getSubExpr();
-    }
-    if (auto *ce = dyn_cast<CastExpr>(s)) {
-      s = ce->getSubExpr();
-    }
-    if (auto *pe = dyn_cast<ParenExpr>(s)) {
-      s = pe->getSubExpr();
-    }
-    // Not a trivial.
-    return s;
-}
-
 inline const Stmt *IgnoreTrivials(const Stmt *s) {
   while (true) {
-    const Stmt* newS = MaybeSkipOneTrivial(s);
-    if (newS == s) {
-      return newS;
+    if (!s) {
+      return nullptr;
+    } else if (auto *ewc = dyn_cast<ExprWithCleanups>(s)) {
+      s = ewc->getSubExpr();
+    } else if (auto *mte = dyn_cast<MaterializeTemporaryExpr>(s)) {
+      s = mte->GetTemporaryExpr();
+    } else if (auto *bte = dyn_cast<CXXBindTemporaryExpr>(s)) {
+      s = bte->getSubExpr();
+    } else if (auto *ce = dyn_cast<CastExpr>(s)) {
+      s = ce->getSubExpr();
+    } else if (auto *pe = dyn_cast<ParenExpr>(s)) {
+      s = pe->getSubExpr();
+    } else {
+      break;
     }
-    s = newS;
   }
 
-  // Unreachable
-  return nullptr;
+  return s;
 }
 
 inline const Expr *IgnoreTrivials(const Expr *e) {
   return cast_or_null<Expr>(IgnoreTrivials(static_cast<const Stmt *>(e)));
-}
-
-// Returns the input if the input is not a trivial.
-inline const Expr *MaybeSkipOneTrivial(const Expr *e) {
-  return cast_or_null<Expr>(MaybeSkipOneTrivial(static_cast<const Stmt *>(e)));
 }
 
 const FieldDecl *getBaseRefCntMember(QualType T);
@@ -351,28 +364,31 @@ inline const FieldDecl *getBaseRefCntMember(QualType T) {
   return Clazz ? getBaseRefCntMember(Clazz) : 0;
 }
 
+inline bool hasCustomAnnotation(const Decl *D, StringRef Spelling) {
+  iterator_range<specific_attr_iterator<AnnotateAttr>> Attrs =
+      D->specific_attrs<AnnotateAttr>();
+
+  for (AnnotateAttr *Attr : Attrs) {
+    if (Attr->getAnnotation() == Spelling) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 inline bool isPlacementNew(const CXXNewExpr *Expression) {
   // Regular new expressions aren't placement new
   if (Expression->getNumPlacementArgs() == 0)
     return false;
   const FunctionDecl *Declaration = Expression->getOperatorNew();
-  if (Declaration && hasCustomAttribute<moz_heap_allocator>(Declaration)) {
+  if (Declaration && hasCustomAnnotation(Declaration, "moz_heap_allocator")) {
     return false;
   }
   return true;
 }
 
-extern DenseMap<unsigned, bool> InThirdPartyPathCache;
-
 inline bool inThirdPartyPath(SourceLocation Loc, const SourceManager &SM) {
-  Loc = SM.getFileLoc(Loc);
-
-  unsigned id = SM.getFileID(Loc).getHashValue();
-  auto pair = InThirdPartyPathCache.find(id);
-  if (pair != InThirdPartyPathCache.end()) {
-    return pair->second;
-  }
-
   SmallString<1024> FileName = SM.getFilename(Loc);
   llvm::sys::fs::make_absolute(FileName);
 
@@ -397,13 +413,11 @@ inline bool inThirdPartyPath(SourceLocation Loc, const SourceManager &SM) {
 
       // We found a match!
       if (IThirdPartyB == ThirdPartyE) {
-        InThirdPartyPathCache.insert(std::make_pair(id, true));
         return true;
       }
     }
   }
 
-  InThirdPartyPathCache.insert(std::make_pair(id, false));
   return false;
 }
 
@@ -443,13 +457,10 @@ inline bool inThirdPartyPath(const Decl *D) {
 }
 
 inline bool inThirdPartyPath(const Stmt *S, ASTContext *context) {
-  SourceLocation Loc = S->getBeginLoc();
+  SourceLocation Loc = S->getLocStart();
   const SourceManager &SM = context->getSourceManager();
-  auto ExpansionLoc = SM.getExpansionLoc(Loc);
-  if (ExpansionLoc.isInvalid()) {
-    return inThirdPartyPath(Loc, SM);
-  }
-  return inThirdPartyPath(ExpansionLoc, SM);
+
+  return inThirdPartyPath(Loc, SM);
 }
 
 /// Polyfill for CXXOperatorCallExpr::isInfixBinaryOp()

@@ -9,7 +9,7 @@
 
 load(libdir + 'asserts.js');
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.eval("function f(frame) { n++; return 42; }");
 g.n = 0;
 

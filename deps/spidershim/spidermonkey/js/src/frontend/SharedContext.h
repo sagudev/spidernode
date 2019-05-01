@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,11 +10,13 @@
 #include "jspubtd.h"
 #include "jstypes.h"
 
+#include "builtin/ModuleObject.h"
 #include "ds/InlineTable.h"
 #include "frontend/ParseNode.h"
 #include "frontend/TokenStream.h"
 #include "vm/BytecodeUtil.h"
-#include "vm/JSFunction.h"
+#include "vm/EnvironmentObject.h"
+#include "vm/JSAtom.h"
 #include "vm/JSScript.h"
 
 namespace js {
@@ -97,7 +99,7 @@ class ModuleSharedContext;
  */
 class SharedContext {
  public:
-  JSContext* const cx_;
+  JSContext* const context;
 
  protected:
   enum class Kind : uint8_t { FunctionBox, Global, Eval, Module };
@@ -115,7 +117,6 @@ class SharedContext {
   bool allowNewTarget_ : 1;
   bool allowSuperProperty_ : 1;
   bool allowSuperCall_ : 1;
-  bool allowArguments_ : 1;
   bool inWith_ : 1;
   bool needsThisTDZChecks_ : 1;
 
@@ -156,7 +157,7 @@ class SharedContext {
  public:
   SharedContext(JSContext* cx, Kind kind, Directives directives,
                 bool extraWarnings)
-      : cx_(cx),
+      : context(cx),
         kind_(kind),
         thisBinding_(ThisBinding::Global),
         strictScript(directives.strict()),
@@ -165,7 +166,6 @@ class SharedContext {
         allowNewTarget_(false),
         allowSuperProperty_(false),
         allowSuperCall_(false),
-        allowArguments_(true),
         inWith_(false),
         needsThisTDZChecks_(false),
         hasExplicitUseStrict_(false),
@@ -186,25 +186,11 @@ class SharedContext {
   bool isEvalContext() const { return kind_ == Kind::Eval; }
   inline EvalSharedContext* asEvalContext();
 
-  bool isTopLevelContext() const {
-    switch (kind_) {
-      case Kind::Module:
-      case Kind::Global:
-      case Kind::Eval:
-        return true;
-      case Kind::FunctionBox:
-        break;
-    }
-    MOZ_ASSERT(kind_ == Kind::FunctionBox);
-    return false;
-  }
-
   ThisBinding thisBinding() const { return thisBinding_; }
 
   bool allowNewTarget() const { return allowNewTarget_; }
   bool allowSuperProperty() const { return allowSuperProperty_; }
   bool allowSuperCall() const { return allowSuperCall_; }
-  bool allowArguments() const { return allowArguments_; }
   bool inWith() const { return inWith_; }
   bool needsThisTDZChecks() const { return needsThisTDZChecks_; }
 
@@ -231,6 +217,11 @@ class SharedContext {
 
   // JSOPTION_EXTRA_WARNINGS warnings or strict mode errors.
   bool needStrictChecks() const { return strict() || extraWarnings; }
+
+  bool isDotVariable(JSAtom* atom) const {
+    return atom == context->names().dotGenerator ||
+           atom == context->names().dotThis;
+  }
 };
 
 class MOZ_STACK_CLASS GlobalSharedContext : public SharedContext {
@@ -277,22 +268,10 @@ inline EvalSharedContext* SharedContext::asEvalContext() {
   return static_cast<EvalSharedContext*>(this);
 }
 
-enum class HasHeritage : bool { No, Yes };
-
 class FunctionBox : public ObjectBox, public SharedContext {
-  // The parser handles tracing the fields below via the TraceListNode linked
+  // The parser handles tracing the fields below via the ObjectBox linked
   // list.
 
-  // This field is used for two purposes:
-  //   * If this FunctionBox refers to the function being compiled, this field
-  //     holds its enclosing scope, used for compilation.
-  //   * If this FunctionBox refers to a lazy child of the function being
-  //     compiled, this field holds the child's immediately enclosing scope.
-  //     Once compilation succeeds, we will store it in the child's
-  //     LazyScript.  (Debugger may become confused if LazyScripts refer to
-  //     partially initialized enclosing scopes, so we must avoid storing the
-  //     scope in the LazyScript until compilation has completed
-  //     successfully.)
   Scope* enclosingScope_;
 
   // Names from the named lambda scope, if a named lambda.
@@ -308,9 +287,7 @@ class FunctionBox : public ObjectBox, public SharedContext {
   void initWithEnclosingScope(Scope* enclosingScope);
 
  public:
-  // Back pointer used by asm.js for error messages.
-  FunctionNode* functionNode;
-
+  ParseNode* functionNode; /* back pointer used by asm.js for error messages */
   uint32_t bufStart;
   uint32_t bufEnd;
   uint32_t startLine;
@@ -338,9 +315,9 @@ class FunctionBox : public ObjectBox, public SharedContext {
   bool usesThis : 1;          /* contains 'this' */
   bool usesReturn : 1;        /* contains a 'return' statement */
   bool hasRest_ : 1;          /* has rest parameter */
-  bool hasExprBody_ : 1;      /* arrow function with expression
-                               * body like: () => 1
-                               * Only used by Reflect.parse */
+  bool isExprBody_ : 1;       /* arrow function with expression
+                               * body or expression closure:
+                               * function(x) x*x */
 
   // This function does something that can extend the set of bindings in its
   // call objects --- it does a direct eval in non-strict code, or includes a
@@ -395,28 +372,24 @@ class FunctionBox : public ObjectBox, public SharedContext {
   // Whether this function has nested functions.
   bool hasInnerFunctions_ : 1;
 
-  FunctionBox(JSContext* cx, TraceListNode* traceListHead, JSFunction* fun,
+  FunctionBox(JSContext* cx, ObjectBox* traceListHead, JSFunction* fun,
               uint32_t toStringStart, Directives directives, bool extraWarnings,
               GeneratorKind generatorKind, FunctionAsyncKind asyncKind);
 
-#ifdef DEBUG
-  bool atomsAreKept();
-#endif
-
   MutableHandle<LexicalScope::Data*> namedLambdaBindings() {
-    MOZ_ASSERT(atomsAreKept());
+    MOZ_ASSERT(context->keepAtoms);
     return MutableHandle<LexicalScope::Data*>::fromMarkedLocation(
         &namedLambdaBindings_);
   }
 
   MutableHandle<FunctionScope::Data*> functionScopeBindings() {
-    MOZ_ASSERT(atomsAreKept());
+    MOZ_ASSERT(context->keepAtoms);
     return MutableHandle<FunctionScope::Data*>::fromMarkedLocation(
         &functionScopeBindings_);
   }
 
   MutableHandle<VarScope::Data*> extraVarScopeBindings() {
-    MOZ_ASSERT(atomsAreKept());
+    MOZ_ASSERT(context->keepAtoms);
     return MutableHandle<VarScope::Data*>::fromMarkedLocation(
         &extraVarScopeBindings_);
   }
@@ -425,39 +398,16 @@ class FunctionBox : public ObjectBox, public SharedContext {
   void initStandaloneFunction(Scope* enclosingScope);
   void initWithEnclosingParseContext(ParseContext* enclosing,
                                      FunctionSyntaxKind kind);
-  void initFieldInitializer(ParseContext* enclosing, HasHeritage hasHeritage);
 
-  inline bool isLazyFunctionWithoutEnclosingScope() const {
-    return function()->isInterpretedLazy() &&
-           !function()->lazyScript()->hasEnclosingScope();
-  }
-  void setEnclosingScopeForInnerLazyFunction(Scope* enclosingScope);
-  void finish();
-
-  JSFunction* function() const { return &object()->as<JSFunction>(); }
-  void clobberFunction(JSFunction* function) { gcThing = function; }
+  JSFunction* function() const { return &object->as<JSFunction>(); }
 
   Scope* compilationEnclosingScope() const override {
     // This method is used to distinguish the outermost SharedContext. If
     // a FunctionBox is the outermost SharedContext, it must be a lazy
     // function.
-
-    // If the function is lazy and it has enclosing scope, the function is
-    // being delazified.  In that case the enclosingScope_ field is copied
-    // from the lazy function at the beginning of delazification and should
-    // keep pointing the same scope.
     MOZ_ASSERT_IF(
-        function()->isInterpretedLazy() &&
-            function()->lazyScript()->hasEnclosingScope(),
+        function()->isInterpretedLazy(),
         enclosingScope_ == function()->lazyScript()->enclosingScope());
-
-    // If this FunctionBox is a lazy child of the function we're actually
-    // compiling, then it is not the outermost SharedContext, so this
-    // method should return nullptr."
-    if (isLazyFunctionWithoutEnclosingScope()) {
-      return nullptr;
-    }
-
     return enclosingScope_;
   }
 
@@ -495,19 +445,15 @@ class FunctionBox : public ObjectBox, public SharedContext {
 
   bool needsFinalYield() const { return isGenerator() || isAsync(); }
   bool needsDotGeneratorName() const { return isGenerator() || isAsync(); }
-  bool needsIteratorResult() const { return isGenerator() && !isAsync(); }
-  bool needsPromiseResult() const { return isAsync() && !isGenerator(); }
+  bool needsIteratorResult() const { return isGenerator(); }
 
   bool isArrow() const { return function()->isArrow(); }
 
   bool hasRest() const { return hasRest_; }
   void setHasRest() { hasRest_ = true; }
 
-  bool hasExprBody() const { return hasExprBody_; }
-  void setHasExprBody() {
-    MOZ_ASSERT(isArrow());
-    hasExprBody_ = true;
-  }
+  bool isExprBody() const { return isExprBody_; }
+  void setIsExprBody() { isExprBody_ = true; }
 
   bool hasExtensibleScope() const { return hasExtensibleScope_; }
   bool hasThisBinding() const { return hasThisBinding_; }
@@ -549,10 +495,14 @@ class FunctionBox : public ObjectBox, public SharedContext {
   // for validated asm.js.
   bool useAsmOrInsideUseAsm() const { return useAsm; }
 
-  void setStart(uint32_t offset, uint32_t line, uint32_t column) {
+  void setStart(const TokenStreamAnyChars& anyChars) {
+    uint32_t offset = anyChars.currentToken().pos.begin;
+    setStart(anyChars, offset);
+  }
+
+  void setStart(const TokenStreamAnyChars& anyChars, uint32_t offset) {
     bufStart = offset;
-    startLine = line;
-    startColumn = column;
+    anyChars.srcCoords.lineNumAndColumnIndex(offset, &startLine, &startColumn);
   }
 
   void setEnd(const TokenStreamAnyChars& anyChars) {
@@ -567,22 +517,29 @@ class FunctionBox : public ObjectBox, public SharedContext {
   void trace(JSTracer* trc) override;
 };
 
-template <typename Unit, class AnyCharsAccess>
-inline void GeneralTokenStreamChars<Unit, AnyCharsAccess>::setFunctionStart(
-    FunctionBox* funbox) const {
-  const TokenStreamAnyChars& anyChars = anyCharsAccess();
-
-  uint32_t bufStart = anyChars.currentToken().pos.begin;
-
-  uint32_t startLine, startColumn;
-  computeLineAndColumn(bufStart, &startLine, &startColumn);
-
-  funbox->setStart(bufStart, startLine, startColumn);
-}
-
 inline FunctionBox* SharedContext::asFunctionBox() {
   MOZ_ASSERT(isFunctionBox());
   return static_cast<FunctionBox*>(this);
+}
+
+class MOZ_STACK_CLASS ModuleSharedContext : public SharedContext {
+  RootedModuleObject module_;
+  RootedScope enclosingScope_;
+
+ public:
+  Rooted<ModuleScope::Data*> bindings;
+  ModuleBuilder& builder;
+
+  ModuleSharedContext(JSContext* cx, ModuleObject* module,
+                      Scope* enclosingScope, ModuleBuilder& builder);
+
+  HandleModuleObject module() const { return module_; }
+  Scope* compilationEnclosingScope() const override { return enclosingScope_; }
+};
+
+inline ModuleSharedContext* SharedContext::asModuleContext() {
+  MOZ_ASSERT(isModuleContext());
+  return static_cast<ModuleSharedContext*>(this);
 }
 
 // In generators, we treat all bindings as closed so that they get stored on

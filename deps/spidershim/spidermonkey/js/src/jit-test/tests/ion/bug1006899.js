@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !this.hasOwnProperty("TypedObject")
+if (!this.hasOwnProperty("TypedObject"))
+  quit();
 
 this.__defineGetter__("x",
   function() {

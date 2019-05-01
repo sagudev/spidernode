@@ -1,6 +1,7 @@
-// |jit-test| skip-if: !this.SharedArrayBuffer
-
 // SharedArrayBuffer.prototype.slice
+
+if (!this.SharedArrayBuffer)
+    quit(0);
 
 load(libdir + "asserts.js");
 

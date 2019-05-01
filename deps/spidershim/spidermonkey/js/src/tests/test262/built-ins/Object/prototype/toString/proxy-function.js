@@ -14,7 +14,7 @@ info: |
     a. Set the [[Call]] internal method of P as specified in 9.5.12.
   [...]
 
-features: [generators, Proxy, Symbol.toStringTag]
+features: [Proxy, Symbol.toStringTag]
 ---*/
 
 var functionProxy = new Proxy(function() {}, {});

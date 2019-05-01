@@ -4,7 +4,7 @@
 
 /*---
 info: |
- GeneratorMethod early SyntaxError when super is called
+ GeneratorMethod early SyntaxError when super is called 
  directly inside generator args
 features: [generators]
 es6id: 14.4.1
@@ -15,7 +15,7 @@ negative:
   type: SyntaxError
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 var obj = {
     *foo(a = super()) {

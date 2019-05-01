@@ -1,5 +1,4 @@
-// |jit-test| skip-if: !wasmDebugSupport()
-var g = newGlobal({newCompartment: true});
+var g = newGlobal(() => newGlobal(verifyprebarriers, "rem_s", [7, -3]));
 var dbg = new g.Debugger(this);
 var dbg = new Debugger;
 var kWasmH0 = 0;

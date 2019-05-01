@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -48,7 +48,7 @@ class LBinaryMath : public LInstructionHelper<1, 2 + ExtraUses, Temps> {
 //
 // Note: LSafepoints are 1:1 with LOsiPoints, so it holds a reference to the
 // corresponding LSafepoint to inform it of the LOsiPoint's masm offset when it
-// gets GC'd.
+// gets CG'd.
 class LOsiPoint : public LInstructionHelper<0, 0, 0> {
   LSafepoint* safepoint_;
 
@@ -115,12 +115,506 @@ class LMoveGroup : public LInstructionHelper<0, 0, 0> {
   bool uses(Register reg) {
     for (size_t i = 0; i < numMoves(); i++) {
       LMove move = getMove(i);
-      if (move.from() == LGeneralReg(reg) || move.to() == LGeneralReg(reg)) {
+      if (move.from() == LGeneralReg(reg) || move.to() == LGeneralReg(reg))
         return true;
-      }
     }
     return false;
   }
+};
+
+// Constructs a SIMD object (value type) based on the MIRType of its input.
+class LSimdBox : public LInstructionHelper<1, 1, 1> {
+ public:
+  LIR_HEADER(SimdBox)
+
+  explicit LSimdBox(const LAllocation& simd, const LDefinition& temp)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, simd);
+    setTemp(0, temp);
+  }
+
+  const LDefinition* temp() { return getTemp(0); }
+
+  MSimdBox* mir() const { return mir_->toSimdBox(); }
+};
+
+class LSimdUnbox : public LInstructionHelper<1, 1, 1> {
+ public:
+  LIR_HEADER(SimdUnbox)
+
+  LSimdUnbox(const LAllocation& obj, const LDefinition& temp)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, obj);
+    setTemp(0, temp);
+  }
+
+  const LDefinition* temp() { return getTemp(0); }
+
+  MSimdUnbox* mir() const { return mir_->toSimdUnbox(); }
+};
+
+// Constructs a SIMD value with 16 equal components (int8x16).
+class LSimdSplatX16 : public LInstructionHelper<1, 1, 0> {
+ public:
+  LIR_HEADER(SimdSplatX16)
+  explicit LSimdSplatX16(const LAllocation& v)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, v);
+  }
+
+  MSimdSplat* mir() const { return mir_->toSimdSplat(); }
+};
+
+// Constructs a SIMD value with 8 equal components (int16x8).
+class LSimdSplatX8 : public LInstructionHelper<1, 1, 0> {
+ public:
+  LIR_HEADER(SimdSplatX8)
+  explicit LSimdSplatX8(const LAllocation& v)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, v);
+  }
+
+  MSimdSplat* mir() const { return mir_->toSimdSplat(); }
+};
+
+// Constructs a SIMD value with 4 equal components (e.g. int32x4, float32x4).
+class LSimdSplatX4 : public LInstructionHelper<1, 1, 0> {
+ public:
+  LIR_HEADER(SimdSplatX4)
+  explicit LSimdSplatX4(const LAllocation& v)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, v);
+  }
+
+  MSimdSplat* mir() const { return mir_->toSimdSplat(); }
+};
+
+// Reinterpret the bits of a SIMD value with a different type.
+class LSimdReinterpretCast : public LInstructionHelper<1, 1, 0> {
+ public:
+  LIR_HEADER(SimdReinterpretCast)
+  explicit LSimdReinterpretCast(const LAllocation& v)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, v);
+  }
+
+  MSimdReinterpretCast* mir() const { return mir_->toSimdReinterpretCast(); }
+};
+
+class LSimdExtractElementBase : public LInstructionHelper<1, 1, 0> {
+ protected:
+  LSimdExtractElementBase(Opcode opcode, const LAllocation& base)
+      : LInstructionHelper(opcode) {
+    setOperand(0, base);
+  }
+
+ public:
+  const LAllocation* getBase() { return getOperand(0); }
+  MSimdExtractElement* mir() const { return mir_->toSimdExtractElement(); }
+};
+
+// Extracts an element from a given SIMD bool32x4 lane.
+class LSimdExtractElementB : public LSimdExtractElementBase {
+ public:
+  LIR_HEADER(SimdExtractElementB);
+  explicit LSimdExtractElementB(const LAllocation& base)
+      : LSimdExtractElementBase(classOpcode, base) {}
+};
+
+// Extracts an element from a given SIMD int32x4 lane.
+class LSimdExtractElementI : public LSimdExtractElementBase {
+ public:
+  LIR_HEADER(SimdExtractElementI);
+  explicit LSimdExtractElementI(const LAllocation& base)
+      : LSimdExtractElementBase(classOpcode, base) {}
+};
+
+// Extracts an element from a given SIMD float32x4 lane.
+class LSimdExtractElementF : public LSimdExtractElementBase {
+ public:
+  LIR_HEADER(SimdExtractElementF);
+  explicit LSimdExtractElementF(const LAllocation& base)
+      : LSimdExtractElementBase(classOpcode, base) {}
+};
+
+// Extracts an element from an Uint32x4 SIMD vector, converts to double.
+class LSimdExtractElementU2D : public LInstructionHelper<1, 1, 1> {
+ public:
+  LIR_HEADER(SimdExtractElementU2D);
+  LSimdExtractElementU2D(const LAllocation& base, const LDefinition& temp)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, base);
+    setTemp(0, temp);
+  }
+  MSimdExtractElement* mir() const { return mir_->toSimdExtractElement(); }
+  const LDefinition* temp() { return getTemp(0); }
+};
+
+class LSimdInsertElementBase : public LInstructionHelper<1, 2, 0> {
+ protected:
+  LSimdInsertElementBase(Opcode opcode, const LAllocation& vec,
+                         const LAllocation& val)
+      : LInstructionHelper(opcode) {
+    setOperand(0, vec);
+    setOperand(1, val);
+  }
+
+ public:
+  const LAllocation* vector() { return getOperand(0); }
+  const LAllocation* value() { return getOperand(1); }
+  unsigned lane() const { return mir_->toSimdInsertElement()->lane(); }
+  unsigned length() const {
+    return SimdTypeToLength(mir_->toSimdInsertElement()->type());
+  }
+};
+
+// Replace an element from a given SIMD integer or boolean lane with a given
+// value. The value inserted into a boolean lane should be 0 or -1.
+class LSimdInsertElementI : public LSimdInsertElementBase {
+ public:
+  LIR_HEADER(SimdInsertElementI);
+  LSimdInsertElementI(const LAllocation& vec, const LAllocation& val)
+      : LSimdInsertElementBase(classOpcode, vec, val) {}
+};
+
+// Replace an element from a given SIMD float32x4 lane with a given value.
+class LSimdInsertElementF : public LSimdInsertElementBase {
+ public:
+  LIR_HEADER(SimdInsertElementF);
+  LSimdInsertElementF(const LAllocation& vec, const LAllocation& val)
+      : LSimdInsertElementBase(classOpcode, vec, val) {}
+};
+
+// Base class for both int32x4 and float32x4 shuffle instructions.
+class LSimdSwizzleBase : public LInstructionHelper<1, 1, 1> {
+ public:
+  LSimdSwizzleBase(Opcode opcode, const LAllocation& base)
+      : LInstructionHelper(opcode) {
+    setOperand(0, base);
+  }
+
+  const LAllocation* getBase() { return getOperand(0); }
+
+  unsigned numLanes() const { return mir_->toSimdSwizzle()->numLanes(); }
+  uint32_t lane(unsigned i) const { return mir_->toSimdSwizzle()->lane(i); }
+
+  bool lanesMatch(uint32_t x, uint32_t y, uint32_t z, uint32_t w) const {
+    return mir_->toSimdSwizzle()->lanesMatch(x, y, z, w);
+  }
+};
+
+// Shuffles a int32x4 into another int32x4 vector.
+class LSimdSwizzleI : public LSimdSwizzleBase {
+ public:
+  LIR_HEADER(SimdSwizzleI);
+  explicit LSimdSwizzleI(const LAllocation& base)
+      : LSimdSwizzleBase(classOpcode, base) {}
+};
+// Shuffles a float32x4 into another float32x4 vector.
+class LSimdSwizzleF : public LSimdSwizzleBase {
+ public:
+  LIR_HEADER(SimdSwizzleF);
+  explicit LSimdSwizzleF(const LAllocation& base)
+      : LSimdSwizzleBase(classOpcode, base) {}
+};
+
+class LSimdGeneralShuffleBase : public LVariadicInstruction<1, 1> {
+ public:
+  LSimdGeneralShuffleBase(LNode::Opcode opcode, uint32_t numOperands,
+                          const LDefinition& temp)
+      : LVariadicInstruction<1, 1>(opcode, numOperands) {
+    setTemp(0, temp);
+  }
+  const LAllocation* vector(unsigned i) {
+    MOZ_ASSERT(i < mir()->numVectors());
+    return getOperand(i);
+  }
+  const LAllocation* lane(unsigned i) {
+    MOZ_ASSERT(i < mir()->numLanes());
+    return getOperand(mir()->numVectors() + i);
+  }
+  const LDefinition* temp() { return getTemp(0); }
+  MSimdGeneralShuffle* mir() const { return mir_->toSimdGeneralShuffle(); }
+};
+
+class LSimdGeneralShuffleI : public LSimdGeneralShuffleBase {
+ public:
+  LIR_HEADER(SimdGeneralShuffleI);
+
+  LSimdGeneralShuffleI(uint32_t numOperands, const LDefinition& temp)
+      : LSimdGeneralShuffleBase(classOpcode, numOperands, temp) {}
+};
+
+class LSimdGeneralShuffleF : public LSimdGeneralShuffleBase {
+ public:
+  LIR_HEADER(SimdGeneralShuffleF);
+
+  LSimdGeneralShuffleF(uint32_t numOperands, const LDefinition& temp)
+      : LSimdGeneralShuffleBase(classOpcode, numOperands, temp) {}
+};
+
+// Base class for both int32x4 and float32x4 shuffle instructions.
+class LSimdShuffleX4 : public LInstructionHelper<1, 2, 1> {
+ public:
+  LIR_HEADER(SimdShuffleX4);
+  LSimdShuffleX4() : LInstructionHelper(classOpcode) {}
+
+  const LAllocation* lhs() { return getOperand(0); }
+  const LAllocation* rhs() { return getOperand(1); }
+  const LDefinition* temp() { return getTemp(0); }
+
+  uint32_t lane(unsigned i) const { return mir_->toSimdShuffle()->lane(i); }
+
+  bool lanesMatch(uint32_t x, uint32_t y, uint32_t z, uint32_t w) const {
+    return mir_->toSimdShuffle()->lanesMatch(x, y, z, w);
+  }
+};
+
+// Remaining shuffles (8x16, 16x8).
+class LSimdShuffle : public LInstructionHelper<1, 2, 1> {
+ public:
+  LIR_HEADER(SimdShuffle);
+  LSimdShuffle() : LInstructionHelper(classOpcode) {}
+
+  const LAllocation* lhs() { return getOperand(0); }
+  const LAllocation* rhs() { return getOperand(1); }
+  const LDefinition* temp() { return getTemp(0); }
+
+  unsigned numLanes() const { return mir_->toSimdShuffle()->numLanes(); }
+  unsigned lane(unsigned i) const { return mir_->toSimdShuffle()->lane(i); }
+};
+
+// Binary SIMD comparison operation between two SIMD operands
+class LSimdBinaryComp : public LInstructionHelper<1, 2, 0> {
+ protected:
+  explicit LSimdBinaryComp(LNode::Opcode opcode)
+      : LInstructionHelper<1, 2, 0>(opcode) {}
+
+ public:
+  const LAllocation* lhs() { return getOperand(0); }
+  const LAllocation* rhs() { return getOperand(1); }
+  MSimdBinaryComp::Operation operation() const {
+    return mir_->toSimdBinaryComp()->operation();
+  }
+  const char* extraName() const {
+    return MSimdBinaryComp::OperationName(operation());
+  }
+};
+
+// Binary SIMD comparison operation between two Int8x16 operands.
+class LSimdBinaryCompIx16 : public LSimdBinaryComp {
+ public:
+  LIR_HEADER(SimdBinaryCompIx16);
+  LSimdBinaryCompIx16() : LSimdBinaryComp(classOpcode) {}
+};
+
+// Binary SIMD comparison operation between two Int16x8 operands.
+class LSimdBinaryCompIx8 : public LSimdBinaryComp {
+ public:
+  LIR_HEADER(SimdBinaryCompIx8);
+  LSimdBinaryCompIx8() : LSimdBinaryComp(classOpcode) {}
+};
+
+// Binary SIMD comparison operation between two Int32x4 operands.
+class LSimdBinaryCompIx4 : public LSimdBinaryComp {
+ public:
+  LIR_HEADER(SimdBinaryCompIx4);
+  LSimdBinaryCompIx4() : LSimdBinaryComp(classOpcode) {}
+};
+
+// Binary SIMD comparison operation between two Float32x4 operands
+class LSimdBinaryCompFx4 : public LSimdBinaryComp {
+ public:
+  LIR_HEADER(SimdBinaryCompFx4);
+  LSimdBinaryCompFx4() : LSimdBinaryComp(classOpcode) {}
+};
+
+// Binary SIMD arithmetic operation between two SIMD operands
+class LSimdBinaryArith : public LInstructionHelper<1, 2, 1> {
+ public:
+  explicit LSimdBinaryArith(LNode::Opcode opcode)
+      : LInstructionHelper<1, 2, 1>(opcode) {}
+
+  const LAllocation* lhs() { return this->getOperand(0); }
+  const LAllocation* rhs() { return this->getOperand(1); }
+  const LDefinition* temp() { return getTemp(0); }
+
+  MSimdBinaryArith::Operation operation() const {
+    return this->mir_->toSimdBinaryArith()->operation();
+  }
+  const char* extraName() const {
+    return MSimdBinaryArith::OperationName(operation());
+  }
+};
+
+// Binary SIMD arithmetic operation between two Int8x16 operands
+class LSimdBinaryArithIx16 : public LSimdBinaryArith {
+ public:
+  LIR_HEADER(SimdBinaryArithIx16);
+  LSimdBinaryArithIx16() : LSimdBinaryArith(classOpcode) {}
+};
+
+// Binary SIMD arithmetic operation between two Int16x8 operands
+class LSimdBinaryArithIx8 : public LSimdBinaryArith {
+ public:
+  LIR_HEADER(SimdBinaryArithIx8);
+  LSimdBinaryArithIx8() : LSimdBinaryArith(classOpcode) {}
+};
+
+// Binary SIMD arithmetic operation between two Int32x4 operands
+class LSimdBinaryArithIx4 : public LSimdBinaryArith {
+ public:
+  LIR_HEADER(SimdBinaryArithIx4);
+  LSimdBinaryArithIx4() : LSimdBinaryArith(classOpcode) {}
+};
+
+// Binary SIMD arithmetic operation between two Float32x4 operands
+class LSimdBinaryArithFx4 : public LSimdBinaryArith {
+ public:
+  LIR_HEADER(SimdBinaryArithFx4);
+  LSimdBinaryArithFx4() : LSimdBinaryArith(classOpcode) {}
+};
+
+// Binary SIMD saturating arithmetic operation between two SIMD operands
+class LSimdBinarySaturating : public LInstructionHelper<1, 2, 0> {
+ public:
+  LIR_HEADER(SimdBinarySaturating);
+  LSimdBinarySaturating() : LInstructionHelper(classOpcode) {}
+
+  const LAllocation* lhs() { return this->getOperand(0); }
+  const LAllocation* rhs() { return this->getOperand(1); }
+
+  MSimdBinarySaturating::Operation operation() const {
+    return this->mir_->toSimdBinarySaturating()->operation();
+  }
+  SimdSign signedness() const {
+    return this->mir_->toSimdBinarySaturating()->signedness();
+  }
+  MIRType type() const { return mir_->type(); }
+  const char* extraName() const {
+    return MSimdBinarySaturating::OperationName(operation());
+  }
+};
+
+// Unary SIMD arithmetic operation on a SIMD operand
+class LSimdUnaryArith : public LInstructionHelper<1, 1, 0> {
+ public:
+  LSimdUnaryArith(LNode::Opcode opcode, const LAllocation& in)
+      : LInstructionHelper(opcode) {
+    setOperand(0, in);
+  }
+  MSimdUnaryArith::Operation operation() const {
+    return mir_->toSimdUnaryArith()->operation();
+  }
+};
+
+// Unary SIMD arithmetic operation on a Int8x16 operand
+class LSimdUnaryArithIx16 : public LSimdUnaryArith {
+ public:
+  LIR_HEADER(SimdUnaryArithIx16);
+  explicit LSimdUnaryArithIx16(const LAllocation& in)
+      : LSimdUnaryArith(classOpcode, in) {}
+};
+
+// Unary SIMD arithmetic operation on a Int16x8 operand
+class LSimdUnaryArithIx8 : public LSimdUnaryArith {
+ public:
+  LIR_HEADER(SimdUnaryArithIx8);
+  explicit LSimdUnaryArithIx8(const LAllocation& in)
+      : LSimdUnaryArith(classOpcode, in) {}
+};
+
+// Unary SIMD arithmetic operation on a Int32x4 operand
+class LSimdUnaryArithIx4 : public LSimdUnaryArith {
+ public:
+  LIR_HEADER(SimdUnaryArithIx4);
+  explicit LSimdUnaryArithIx4(const LAllocation& in)
+      : LSimdUnaryArith(classOpcode, in) {}
+};
+
+// Unary SIMD arithmetic operation on a Float32x4 operand
+class LSimdUnaryArithFx4 : public LSimdUnaryArith {
+ public:
+  LIR_HEADER(SimdUnaryArithFx4);
+  explicit LSimdUnaryArithFx4(const LAllocation& in)
+      : LSimdUnaryArith(classOpcode, in) {}
+};
+
+// Binary SIMD bitwise operation between two 128-bit operands.
+class LSimdBinaryBitwise : public LInstructionHelper<1, 2, 0> {
+ public:
+  LIR_HEADER(SimdBinaryBitwise);
+  LSimdBinaryBitwise() : LInstructionHelper(classOpcode) {}
+  const LAllocation* lhs() { return getOperand(0); }
+  const LAllocation* rhs() { return getOperand(1); }
+  MSimdBinaryBitwise::Operation operation() const {
+    return mir_->toSimdBinaryBitwise()->operation();
+  }
+  const char* extraName() const {
+    return MSimdBinaryBitwise::OperationName(operation());
+  }
+  MIRType type() const { return mir_->type(); }
+};
+
+// Shift a SIMD vector by a scalar amount.
+// The temp register is only required if the shift amount is a dynamical
+// value. If it is a constant, use a BogusTemp instead.
+class LSimdShift : public LInstructionHelper<1, 2, 1> {
+ public:
+  LIR_HEADER(SimdShift)
+  LSimdShift(const LAllocation& vec, const LAllocation& val,
+             const LDefinition& temp)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, vec);
+    setOperand(1, val);
+    setTemp(0, temp);
+  }
+  const LAllocation* vector() { return getOperand(0); }
+  const LAllocation* value() { return getOperand(1); }
+  const LDefinition* temp() { return getTemp(0); }
+  MSimdShift::Operation operation() const {
+    return mir_->toSimdShift()->operation();
+  }
+  const char* extraName() const {
+    return MSimdShift::OperationName(operation());
+  }
+  MSimdShift* mir() const { return mir_->toSimdShift(); }
+  MIRType type() const { return mir_->type(); }
+};
+
+// SIMD selection of lanes from two int32x4 or float32x4 arguments based on a
+// int32x4 argument.
+class LSimdSelect : public LInstructionHelper<1, 3, 1> {
+ public:
+  LIR_HEADER(SimdSelect);
+  LSimdSelect() : LInstructionHelper(classOpcode) {}
+  const LAllocation* mask() { return getOperand(0); }
+  const LAllocation* lhs() { return getOperand(1); }
+  const LAllocation* rhs() { return getOperand(2); }
+  const LDefinition* temp() { return getTemp(0); }
+  MSimdSelect* mir() const { return mir_->toSimdSelect(); }
+};
+
+class LSimdAnyTrue : public LInstructionHelper<1, 1, 0> {
+ public:
+  LIR_HEADER(SimdAnyTrue)
+  explicit LSimdAnyTrue(const LAllocation& input)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, input);
+  }
+  const LAllocation* vector() { return getOperand(0); }
+  MSimdAnyTrue* mir() const { return mir_->toSimdAnyTrue(); }
+};
+
+class LSimdAllTrue : public LInstructionHelper<1, 1, 0> {
+ public:
+  LIR_HEADER(SimdAllTrue)
+  explicit LSimdAllTrue(const LAllocation& input)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, input);
+  }
+  const LAllocation* vector() { return getOperand(0); }
+  MSimdAllTrue* mir() const { return mir_->toSimdAllTrue(); }
 };
 
 // Constant 32-bit integer.
@@ -200,6 +694,29 @@ class LFloat32 : public LInstructionHelper<1, 0, 0> {
   explicit LFloat32(float f) : LInstructionHelper(classOpcode), f_(f) {}
 
   const float& getFloat() const { return f_; }
+};
+
+// Constant 128-bit SIMD integer vector (8x16, 16x8, 32x4).
+// Also used for Bool32x4, Bool16x8, etc.
+class LSimd128Int : public LInstructionHelper<1, 0, 0> {
+ public:
+  LIR_HEADER(Simd128Int);
+
+  explicit LSimd128Int() : LInstructionHelper(classOpcode) {}
+  const SimdConstant& getValue() const {
+    return mir_->toSimdConstant()->value();
+  }
+};
+
+// Constant 128-bit SIMD floating point vector (32x4, 64x2).
+class LSimd128Float : public LInstructionHelper<1, 0, 0> {
+ public:
+  LIR_HEADER(Simd128Float);
+
+  explicit LSimd128Float() : LInstructionHelper(classOpcode) {}
+  const SimdConstant& getValue() const {
+    return mir_->toSimdConstant()->value();
+  }
 };
 
 // A constant Value.
@@ -386,46 +903,6 @@ class LNewTypedArrayDynamicLength : public LInstructionHelper<1, 1, 1> {
   }
 };
 
-class LNewTypedArrayFromArray : public LCallInstructionHelper<1, 1, 0> {
- public:
-  LIR_HEADER(NewTypedArrayFromArray)
-
-  explicit LNewTypedArrayFromArray(const LAllocation& array)
-      : LCallInstructionHelper(classOpcode) {
-    setOperand(0, array);
-  }
-
-  const LAllocation* array() { return getOperand(0); }
-
-  MNewTypedArrayFromArray* mir() const {
-    return mir_->toNewTypedArrayFromArray();
-  }
-};
-
-class LNewTypedArrayFromArrayBuffer
-    : public LCallInstructionHelper<1, 1 + 2 * BOX_PIECES, 0> {
- public:
-  LIR_HEADER(NewTypedArrayFromArrayBuffer)
-
-  LNewTypedArrayFromArrayBuffer(const LAllocation& arrayBuffer,
-                                const LBoxAllocation& byteOffset,
-                                const LBoxAllocation& length)
-      : LCallInstructionHelper(classOpcode) {
-    setOperand(0, arrayBuffer);
-    setBoxOperand(ByteOffsetIndex, byteOffset);
-    setBoxOperand(LengthIndex, length);
-  }
-
-  static const size_t ByteOffsetIndex = 1;
-  static const size_t LengthIndex = 1 + BOX_PIECES;
-
-  const LAllocation* arrayBuffer() { return getOperand(0); }
-
-  MNewTypedArrayFromArrayBuffer* mir() const {
-    return mir_->toNewTypedArrayFromArrayBuffer();
-  }
-};
-
 class LNewObject : public LInstructionHelper<1, 0, 1> {
  public:
   LIR_HEADER(NewObject)
@@ -497,6 +974,23 @@ class LNewCallObject : public LInstructionHelper<1, 0, 1> {
   const LDefinition* temp() { return getTemp(0); }
 
   MNewCallObject* mir() const { return mir_->toNewCallObject(); }
+};
+
+// Performs a callVM to allocate a new CallObject with singleton type.
+class LNewSingletonCallObject : public LInstructionHelper<1, 0, 1> {
+ public:
+  LIR_HEADER(NewSingletonCallObject)
+
+  explicit LNewSingletonCallObject(const LDefinition& temp)
+      : LInstructionHelper(classOpcode) {
+    setTemp(0, temp);
+  }
+
+  const LDefinition* temp() { return getTemp(0); }
+
+  MNewSingletonCallObject* mir() const {
+    return mir_->toNewSingletonCallObject();
+  }
 };
 
 class LNewDerivedTypedObject : public LCallInstructionHelper<1, 3, 0> {
@@ -605,11 +1099,16 @@ class LInitPropGetterSetter : public LCallInstructionHelper<0, 2, 0> {
   MInitPropGetterSetter* mir() const { return mir_->toInitPropGetterSetter(); }
 };
 
-class LCheckOverRecursed : public LInstructionHelper<0, 0, 0> {
+class LCheckOverRecursed : public LInstructionHelper<0, 0, 1> {
  public:
   LIR_HEADER(CheckOverRecursed)
 
-  LCheckOverRecursed() : LInstructionHelper(classOpcode) {}
+  explicit LCheckOverRecursed(const LDefinition& temp)
+      : LInstructionHelper(classOpcode) {
+    setTemp(0, temp);
+  }
+
+  const LDefinition* temp() { return getTemp(0); }
 
   MCheckOverRecursed* mir() const { return mir_->toCheckOverRecursed(); }
 };
@@ -702,24 +1201,40 @@ class LRotateI64
   LAllocation* count() { return getOperand(Count); }
 };
 
-class LInterruptCheck : public LInstructionHelper<0, 0, 0> {
+class LInterruptCheck : public LInstructionHelper<0, 0, 1> {
+  Label* oolEntry_;
+
+  // Whether this is an implicit interrupt check. Implicit interrupt checks
+  // use a patchable backedge and signal handlers instead of an explicit
+  // cx->interrupt check.
+  bool implicit_;
+
  public:
   LIR_HEADER(InterruptCheck)
 
-  LInterruptCheck() : LInstructionHelper(classOpcode) {}
-  MInterruptCheck* mir() const { return mir_->toInterruptCheck(); }
-};
-
-class LWasmInterruptCheck : public LInstructionHelper<0, 1, 0> {
- public:
-  LIR_HEADER(WasmInterruptCheck)
-
-  explicit LWasmInterruptCheck(const LAllocation& tlsData)
-      : LInstructionHelper(classOpcode) {
-    setOperand(0, tlsData);
+  explicit LInterruptCheck(const LDefinition& temp)
+      : LInstructionHelper(classOpcode), oolEntry_(nullptr), implicit_(false) {
+    setTemp(0, temp);
   }
-  MWasmInterruptCheck* mir() const { return mir_->toWasmInterruptCheck(); }
-  const LAllocation* tlsPtr() { return getOperand(0); }
+
+  Label* oolEntry() {
+    MOZ_ASSERT(implicit_);
+    return oolEntry_;
+  }
+
+  void setOolEntry(Label* oolEntry) {
+    MOZ_ASSERT(implicit_);
+    oolEntry_ = oolEntry;
+  }
+  MInterruptCheck* mir() const { return mir_->toInterruptCheck(); }
+
+  void setImplicit() {
+    implicit_ = true;
+    setTemp(0, LDefinition::BogusTemp());
+  }
+  bool implicit() const { return implicit_; }
+
+  const LDefinition* temp() { return getTemp(0); }
 };
 
 class LDefVar : public LCallInstructionHelper<0, 1, 0> {
@@ -735,16 +1250,12 @@ class LDefVar : public LCallInstructionHelper<0, 1, 0> {
   MDefVar* mir() const { return mir_->toDefVar(); }
 };
 
-class LDefLexical : public LCallInstructionHelper<0, 1, 0> {
+class LDefLexical : public LCallInstructionHelper<0, 0, 0> {
  public:
   LIR_HEADER(DefLexical)
 
-  explicit LDefLexical(const LAllocation& envChain)
-      : LCallInstructionHelper(classOpcode) {
-    setOperand(0, envChain);
-  }
+  LDefLexical() : LCallInstructionHelper(classOpcode) {}
 
-  const LAllocation* environmentChain() { return getOperand(0); }
   MDefLexical* mir() const { return mir_->toDefLexical(); }
 };
 
@@ -778,6 +1289,30 @@ class LTypeOfV : public LInstructionHelper<1, BOX_PIECES, 1> {
   const LDefinition* tempToUnbox() { return getTemp(0); }
 
   MTypeOf* mir() const { return mir_->toTypeOf(); }
+};
+
+class LToAsync : public LCallInstructionHelper<1, 1, 0> {
+ public:
+  LIR_HEADER(ToAsync)
+
+  explicit LToAsync(const LAllocation& input)
+      : LCallInstructionHelper(classOpcode) {
+    setOperand(0, input);
+  }
+
+  const LAllocation* unwrapped() { return getOperand(0); }
+};
+
+class LToAsyncGen : public LCallInstructionHelper<1, 1, 0> {
+ public:
+  LIR_HEADER(ToAsyncGen)
+
+  explicit LToAsyncGen(const LAllocation& input)
+      : LCallInstructionHelper(classOpcode) {
+    setOperand(0, input);
+  }
+
+  const LAllocation* unwrapped() { return getOperand(0); }
 };
 
 class LToAsyncIter : public LCallInstructionHelper<1, 1 + BOX_PIECES, 0> {
@@ -1026,9 +1561,8 @@ class LJSCallInstructionHelper
 
  public:
   uint32_t argslot() const {
-    if (JitStackValueAlignment > 1) {
+    if (JitStackValueAlignment > 1)
       return AlignBytes(mir()->numStackArgs(), JitStackValueAlignment);
-    }
     return mir()->numStackArgs();
   }
   MCall* mir() const { return this->mir_->toCall(); }
@@ -2064,7 +2598,7 @@ class LBitNotI : public LInstructionHelper<1, 1, 0> {
 };
 
 // Call a VM function to perform a BITNOT operation.
-class LBitNotV : public LCallInstructionHelper<BOX_PIECES, BOX_PIECES, 0> {
+class LBitNotV : public LCallInstructionHelper<1, BOX_PIECES, 0> {
  public:
   LIR_HEADER(BitNotV)
 
@@ -2087,9 +2621,8 @@ class LBitOpI : public LInstructionHelper<1, 2, 0> {
   explicit LBitOpI(JSOp op) : LInstructionHelper(classOpcode), op_(op) {}
 
   const char* extraName() const {
-    if (bitop() == JSOP_URSH && mir_->toUrsh()->bailoutsDisabled()) {
+    if (bitop() == JSOP_URSH && mir_->toUrsh()->bailoutsDisabled())
       return "ursh:BailoutsDisabled";
-    }
     return CodeName[op_];
   }
 
@@ -2113,7 +2646,7 @@ class LBitOpI64 : public LInstructionHelper<INT64_PIECES, 2 * INT64_PIECES, 0> {
 };
 
 // Call a VM function to perform a bitwise operation.
-class LBitOpV : public LCallInstructionHelper<BOX_PIECES, 2 * BOX_PIECES, 0> {
+class LBitOpV : public LCallInstructionHelper<1, 2 * BOX_PIECES, 0> {
   JSOp jsop_;
 
  public:
@@ -2540,37 +3073,6 @@ class LPowV : public LCallInstructionHelper<BOX_PIECES, 2 * BOX_PIECES, 0> {
   static const size_t PowerInput = BOX_PIECES;
 };
 
-// Sign value of an integer.
-class LSignI : public LInstructionHelper<1, 1, 0> {
- public:
-  LIR_HEADER(SignI)
-  explicit LSignI(const LAllocation& input) : LInstructionHelper(classOpcode) {
-    setOperand(0, input);
-  }
-};
-
-// Sign value of a double.
-class LSignD : public LInstructionHelper<1, 1, 0> {
- public:
-  LIR_HEADER(SignD)
-  explicit LSignD(const LAllocation& input) : LInstructionHelper(classOpcode) {
-    setOperand(0, input);
-  }
-};
-
-// Sign value of a double with expected int32 result.
-class LSignDI : public LInstructionHelper<1, 1, 1> {
- public:
-  LIR_HEADER(SignDI)
-  explicit LSignDI(const LAllocation& input, const LDefinition& temp)
-      : LInstructionHelper(classOpcode) {
-    setOperand(0, input);
-    setTemp(0, temp);
-  }
-
-  const LDefinition* temp() { return getTemp(0); }
-};
-
 class LMathFunctionD : public LCallInstructionHelper<1, 1, 1> {
  public:
   LIR_HEADER(MathFunctionD)
@@ -2652,9 +3154,9 @@ class LSubI : public LBinaryMath<0> {
 
 inline bool LNode::recoversInput() const {
   switch (op()) {
-    case Opcode::AddI:
+    case LOp_AddI:
       return toAddI()->recoversInput();
-    case Opcode::SubI:
+    case LOp_SubI:
       return toSubI()->recoversInput();
     default:
       return false;
@@ -3211,6 +3713,45 @@ class LValueToObjectOrNull : public LInstructionHelper<1, BOX_PIECES, 0> {
   const MToObjectOrNull* mir() { return mir_->toToObjectOrNull(); }
 };
 
+class LInt32x4ToFloat32x4 : public LInstructionHelper<1, 1, 0> {
+ public:
+  LIR_HEADER(Int32x4ToFloat32x4);
+  explicit LInt32x4ToFloat32x4(const LAllocation& input)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, input);
+  }
+};
+
+class LFloat32x4ToInt32x4 : public LInstructionHelper<1, 1, 1> {
+ public:
+  LIR_HEADER(Float32x4ToInt32x4);
+  explicit LFloat32x4ToInt32x4(const LAllocation& input,
+                               const LDefinition& temp)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, input);
+    setTemp(0, temp);
+  }
+  const LDefinition* temp() { return getTemp(0); }
+  const MSimdConvert* mir() const { return mir_->toSimdConvert(); }
+};
+
+// Float32x4 to Uint32x4 needs one GPR temp and one FloatReg temp.
+class LFloat32x4ToUint32x4 : public LInstructionHelper<1, 1, 2> {
+ public:
+  LIR_HEADER(Float32x4ToUint32x4);
+  explicit LFloat32x4ToUint32x4(const LAllocation& input,
+                                const LDefinition& tempR,
+                                const LDefinition& tempF)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, input);
+    setTemp(0, tempR);
+    setTemp(1, tempF);
+  }
+  const LDefinition* tempR() { return getTemp(0); }
+  const LDefinition* tempF() { return getTemp(1); }
+  const MSimdConvert* mir() const { return mir_->toSimdConvert(); }
+};
+
 // Double raised to a half power.
 class LPowHalfD : public LInstructionHelper<1, 1, 0> {
  public:
@@ -3466,65 +4007,45 @@ class LStringReplace : public LCallInstructionHelper<1, 3, 0> {
   const LAllocation* replacement() { return getOperand(2); }
 };
 
-class LBinaryValueCache
-    : public LInstructionHelper<BOX_PIECES, 2 * BOX_PIECES, 2> {
+class LBinarySharedStub
+    : public LCallInstructionHelper<BOX_PIECES, 2 * BOX_PIECES, 0> {
  public:
-  LIR_HEADER(BinaryValueCache)
+  LIR_HEADER(BinarySharedStub)
 
-  // Takes two temps: these are intendend to be FloatReg0 and FloatReg1
-  // To allow the actual cache code to safely clobber those values without
-  // save and restore.
-  LBinaryValueCache(const LBoxAllocation& lhs, const LBoxAllocation& rhs,
-                    const LDefinition& temp0, const LDefinition& temp1)
-      : LInstructionHelper(classOpcode) {
+  LBinarySharedStub(const LBoxAllocation& lhs, const LBoxAllocation& rhs)
+      : LCallInstructionHelper(classOpcode) {
     setBoxOperand(LhsInput, lhs);
     setBoxOperand(RhsInput, rhs);
-    setTemp(0, temp0);
-    setTemp(1, temp1);
   }
 
-  const MBinaryCache* mir() const { return mir_->toBinaryCache(); }
+  const MBinarySharedStub* mir() const { return mir_->toBinarySharedStub(); }
 
   static const size_t LhsInput = 0;
   static const size_t RhsInput = BOX_PIECES;
 };
 
-class LBinaryBoolCache : public LInstructionHelper<1, 2 * BOX_PIECES, 2> {
+class LUnarySharedStub
+    : public LCallInstructionHelper<BOX_PIECES, BOX_PIECES, 0> {
  public:
-  LIR_HEADER(BinaryBoolCache)
+  LIR_HEADER(UnarySharedStub)
 
-  // Takes two temps: these are intendend to be FloatReg0 and FloatReg1
-  // To allow the actual cache code to safely clobber those values without
-  // save and restore.
-  LBinaryBoolCache(const LBoxAllocation& lhs, const LBoxAllocation& rhs,
-                   const LDefinition& temp0, const LDefinition& temp1)
-      : LInstructionHelper(classOpcode) {
-    setBoxOperand(LhsInput, lhs);
-    setBoxOperand(RhsInput, rhs);
-    setTemp(0, temp0);
-    setTemp(1, temp1);
-  }
-
-  const MBinaryCache* mir() const { return mir_->toBinaryCache(); }
-
-  static const size_t LhsInput = 0;
-  static const size_t RhsInput = BOX_PIECES;
-};
-
-class LUnaryCache : public LInstructionHelper<BOX_PIECES, BOX_PIECES, 0> {
- public:
-  LIR_HEADER(UnaryCache)
-
-  explicit LUnaryCache(const LBoxAllocation& input)
-      : LInstructionHelper(classOpcode) {
+  explicit LUnarySharedStub(const LBoxAllocation& input)
+      : LCallInstructionHelper(classOpcode) {
     setBoxOperand(Input, input);
   }
 
-  const MUnaryCache* mir() const { return mir_->toUnaryCache(); }
-
-  const LAllocation* input() { return getOperand(Input); }
+  const MUnarySharedStub* mir() const { return mir_->toUnarySharedStub(); }
 
   static const size_t Input = 0;
+};
+
+class LNullarySharedStub : public LCallInstructionHelper<BOX_PIECES, 0, 0> {
+ public:
+  LIR_HEADER(NullarySharedStub)
+
+  const MNullarySharedStub* mir() const { return mir_->toNullarySharedStub(); }
+
+  LNullarySharedStub() : LCallInstructionHelper(classOpcode) {}
 };
 
 class LClassConstructor : public LCallInstructionHelper<1, 0, 0> {
@@ -3534,29 +4055,6 @@ class LClassConstructor : public LCallInstructionHelper<1, 0, 0> {
   const MClassConstructor* mir() const { return mir_->toClassConstructor(); }
 
   LClassConstructor() : LCallInstructionHelper(classOpcode) {}
-};
-
-class LModuleMetadata : public LCallInstructionHelper<1, 0, 0> {
- public:
-  LIR_HEADER(ModuleMetadata)
-
-  const MModuleMetadata* mir() const { return mir_->toModuleMetadata(); }
-
-  LModuleMetadata() : LCallInstructionHelper(classOpcode) {}
-};
-
-class LDynamicImport : public LCallInstructionHelper<1, BOX_PIECES, 0> {
- public:
-  LIR_HEADER(DynamicImport)
-
-  static const size_t SpecifierIndex = 0;
-
-  explicit LDynamicImport(const LBoxAllocation& specifier)
-      : LCallInstructionHelper(classOpcode) {
-    setBoxOperand(SpecifierIndex, specifier);
-  }
-
-  const MDynamicImport* mir() const { return mir_->toDynamicImport(); }
 };
 
 class LLambdaForSingleton : public LCallInstructionHelper<1, 1, 0> {
@@ -3809,19 +4307,6 @@ class LTypedArrayLength : public LInstructionHelper<1, 1, 0> {
   const LAllocation* object() { return getOperand(0); }
 };
 
-// Read the byteOffset of a typed array.
-class LTypedArrayByteOffset : public LInstructionHelper<1, 1, 0> {
- public:
-  LIR_HEADER(TypedArrayByteOffset)
-
-  explicit LTypedArrayByteOffset(const LAllocation& obj)
-      : LInstructionHelper(classOpcode) {
-    setOperand(0, obj);
-  }
-
-  const LAllocation* object() { return getOperand(0); }
-};
-
 // Load a typed array's elements vector.
 class LTypedArrayElements : public LInstructionHelper<1, 1, 0> {
  public:
@@ -3831,19 +4316,6 @@ class LTypedArrayElements : public LInstructionHelper<1, 1, 0> {
       : LInstructionHelper(classOpcode) {
     setOperand(0, object);
   }
-  const LAllocation* object() { return getOperand(0); }
-};
-
-// Return the element shift of a typed array.
-class LTypedArrayElementShift : public LInstructionHelper<1, 1, 0> {
- public:
-  LIR_HEADER(TypedArrayElementShift)
-
-  explicit LTypedArrayElementShift(const LAllocation& obj)
-      : LInstructionHelper(classOpcode) {
-    setOperand(0, obj);
-  }
-
   const LAllocation* object() { return getOperand(0); }
 };
 
@@ -4323,6 +4795,24 @@ class LStoreUnboxedPointer : public LInstructionHelper<0, 3, 0> {
   const LAllocation* elements() { return getOperand(0); }
   const LAllocation* index() { return getOperand(1); }
   const LAllocation* value() { return getOperand(2); }
+};
+
+// If necessary, convert an unboxed object in a particular group to its native
+// representation.
+class LConvertUnboxedObjectToNative : public LInstructionHelper<1, 1, 1> {
+ public:
+  LIR_HEADER(ConvertUnboxedObjectToNative)
+
+  LConvertUnboxedObjectToNative(const LAllocation& object,
+                                const LDefinition& temp)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, object);
+    setTemp(0, temp);
+  }
+  const LDefinition* temp() { return getTemp(0); }
+  MConvertUnboxedObjectToNative* mir() {
+    return mir_->toConvertUnboxedObjectToNative();
+  }
 };
 
 class LArrayPopShiftV : public LInstructionHelper<BOX_PIECES, 1, 2> {
@@ -4980,17 +5470,20 @@ class LGetPropertyPolymorphicV : public LInstructionHelper<BOX_PIECES, 1, 1> {
 
 // Emit code to load a typed value from an object's slots if its shape matches
 // one of the shapes observed by the baseline IC, else bails out.
-class LGetPropertyPolymorphicT : public LInstructionHelper<1, 1, 1> {
+class LGetPropertyPolymorphicT : public LInstructionHelper<1, 1, 2> {
  public:
   LIR_HEADER(GetPropertyPolymorphicT)
 
-  LGetPropertyPolymorphicT(const LAllocation& obj, const LDefinition& temp)
+  LGetPropertyPolymorphicT(const LAllocation& obj, const LDefinition& temp1,
+                           const LDefinition& temp2)
       : LInstructionHelper(classOpcode) {
     setOperand(0, obj);
-    setTemp(0, temp);
+    setTemp(0, temp1);
+    setTemp(1, temp2);
   }
   const LAllocation* obj() { return getOperand(0); }
-  const LDefinition* temp() { return getTemp(0); }
+  const LDefinition* temp1() { return getTemp(0); }
+  const LDefinition* temp2() { return getTemp(1); }
   const MGetPropertyPolymorphic* mir() const {
     return mir_->toGetPropertyPolymorphic();
   }
@@ -5002,22 +5495,24 @@ class LGetPropertyPolymorphicT : public LInstructionHelper<1, 1, 1> {
 // Emit code to store a boxed value to an object's slots if its shape matches
 // one of the shapes observed by the baseline IC, else bails out.
 class LSetPropertyPolymorphicV
-    : public LInstructionHelper<0, 1 + BOX_PIECES, 1> {
+    : public LInstructionHelper<0, 1 + BOX_PIECES, 2> {
  public:
   LIR_HEADER(SetPropertyPolymorphicV)
 
   LSetPropertyPolymorphicV(const LAllocation& obj, const LBoxAllocation& value,
-                           const LDefinition& temp)
+                           const LDefinition& temp1, const LDefinition& temp2)
       : LInstructionHelper(classOpcode) {
     setOperand(0, obj);
     setBoxOperand(Value, value);
-    setTemp(0, temp);
+    setTemp(0, temp1);
+    setTemp(1, temp2);
   }
 
   static const size_t Value = 1;
 
   const LAllocation* obj() { return getOperand(0); }
-  const LDefinition* temp() { return getTemp(0); }
+  const LDefinition* temp1() { return getTemp(0); }
+  const LDefinition* temp2() { return getTemp(1); }
   const MSetPropertyPolymorphic* mir() const {
     return mir_->toSetPropertyPolymorphic();
   }
@@ -5025,23 +5520,26 @@ class LSetPropertyPolymorphicV
 
 // Emit code to store a typed value to an object's slots if its shape matches
 // one of the shapes observed by the baseline IC, else bails out.
-class LSetPropertyPolymorphicT : public LInstructionHelper<0, 2, 1> {
+class LSetPropertyPolymorphicT : public LInstructionHelper<0, 2, 2> {
   MIRType valueType_;
 
  public:
   LIR_HEADER(SetPropertyPolymorphicT)
 
   LSetPropertyPolymorphicT(const LAllocation& obj, const LAllocation& value,
-                           MIRType valueType, const LDefinition& temp)
+                           MIRType valueType, const LDefinition& temp1,
+                           const LDefinition& temp2)
       : LInstructionHelper(classOpcode), valueType_(valueType) {
     setOperand(0, obj);
     setOperand(1, value);
-    setTemp(0, temp);
+    setTemp(0, temp1);
+    setTemp(1, temp2);
   }
 
   const LAllocation* obj() { return getOperand(0); }
   const LAllocation* value() { return getOperand(1); }
-  const LDefinition* temp() { return getTemp(0); }
+  const LDefinition* temp1() { return getTemp(0); }
+  const LDefinition* temp2() { return getTemp(1); }
   MIRType valueType() const { return valueType_; }
   const MSetPropertyPolymorphic* mir() const {
     return mir_->toSetPropertyPolymorphic();
@@ -5226,28 +5724,6 @@ class LRoundF : public LInstructionHelper<1, 1, 1> {
 
   const LDefinition* temp() { return getTemp(0); }
   MRound* mir() const { return mir_->toRound(); }
-};
-
-// Truncates a double precision number and converts it to an int32.
-// Implements Math.trunc().
-class LTrunc : public LInstructionHelper<1, 1, 0> {
- public:
-  LIR_HEADER(Trunc)
-
-  explicit LTrunc(const LAllocation& num) : LInstructionHelper(classOpcode) {
-    setOperand(0, num);
-  }
-};
-
-// Truncates a single precision number and converts it to an int32.
-// Implements Math.trunc().
-class LTruncF : public LInstructionHelper<1, 1, 0> {
- public:
-  LIR_HEADER(TruncF)
-
-  explicit LTruncF(const LAllocation& num) : LInstructionHelper(classOpcode) {
-    setOperand(0, num);
-  }
 };
 
 // Rounds a double precision number accordingly to mir()->roundingMode(),
@@ -5491,9 +5967,7 @@ class LSetPropertyCache : public LInstructionHelper<0, 1 + 2 * BOX_PIECES, 3> {
   const LDefinition* temp() { return getTemp(0); }
   const LDefinition* tempDouble() { return getTemp(1); }
   const LDefinition* tempFloat32() {
-    if (hasUnaliasedDouble()) {
-      return getTemp(2);
-    }
+    if (hasUnaliasedDouble()) return getTemp(2);
     return getTemp(1);
   }
 };
@@ -5630,6 +6104,15 @@ class LSetFrameArgumentV : public LInstructionHelper<0, BOX_PIECES, 0> {
   MSetFrameArgument* mir() const { return mir_->toSetFrameArgument(); }
 };
 
+class LRunOncePrologue : public LCallInstructionHelper<0, 0, 0> {
+ public:
+  LIR_HEADER(RunOncePrologue)
+
+  MRunOncePrologue* mir() const { return mir_->toRunOncePrologue(); }
+
+  LRunOncePrologue() : LCallInstructionHelper(classOpcode) {}
+};
+
 // Create the rest parameter.
 class LRest : public LCallInstructionHelper<1, 1, 3> {
  public:
@@ -5647,36 +6130,51 @@ class LRest : public LCallInstructionHelper<1, 1, 3> {
   MRest* mir() const { return mir_->toRest(); }
 };
 
-class LGuardReceiverPolymorphic : public LInstructionHelper<1, 1, 1> {
+class LGuardReceiverPolymorphic : public LInstructionHelper<1, 1, 2> {
  public:
   LIR_HEADER(GuardReceiverPolymorphic)
 
-  LGuardReceiverPolymorphic(const LAllocation& in, const LDefinition& temp)
+  LGuardReceiverPolymorphic(const LAllocation& in, const LDefinition& temp1,
+                            const LDefinition& temp2)
       : LInstructionHelper(classOpcode) {
     setOperand(0, in);
-    setTemp(0, temp);
+    setTemp(0, temp1);
+    setTemp(1, temp2);
   }
   const LAllocation* object() { return getOperand(0); }
-  const LDefinition* temp() { return getTemp(0); }
+  const LDefinition* temp1() { return getTemp(0); }
+  const LDefinition* temp2() { return getTemp(1); }
   const MGuardReceiverPolymorphic* mir() const {
     return mir_->toGuardReceiverPolymorphic();
   }
 };
 
-// Ensure that a value is numeric, possibly via a VM call-out that invokes
-// valueOf().
-class LToNumeric : public LInstructionHelper<BOX_PIECES, BOX_PIECES, 0> {
+class LGuardUnboxedExpando : public LInstructionHelper<0, 1, 0> {
  public:
-  LIR_HEADER(ToNumeric)
+  LIR_HEADER(GuardUnboxedExpando)
 
-  explicit LToNumeric(const LBoxAllocation& input)
+  explicit LGuardUnboxedExpando(const LAllocation& in)
       : LInstructionHelper(classOpcode) {
-    setBoxOperand(Input, input);
+    setOperand(0, in);
   }
+  const LAllocation* object() { return getOperand(0); }
+  const MGuardUnboxedExpando* mir() const {
+    return mir_->toGuardUnboxedExpando();
+  }
+};
 
-  static const size_t Input = 0;
+class LLoadUnboxedExpando : public LInstructionHelper<1, 1, 0> {
+ public:
+  LIR_HEADER(LoadUnboxedExpando)
 
-  const MToNumeric* mir() const { return mir_->toToNumeric(); }
+  explicit LLoadUnboxedExpando(const LAllocation& in)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, in);
+  }
+  const LAllocation* object() { return getOperand(0); }
+  const MLoadUnboxedExpando* mir() const {
+    return mir_->toLoadUnboxedExpando();
+  }
 };
 
 // Guard that a value is in a TypeSet.
@@ -6071,7 +6569,6 @@ class LIsTypedArray : public LInstructionHelper<1, 1, 0> {
     setOperand(0, object);
   }
   const LAllocation* object() { return getOperand(0); }
-  MIsTypedArray* mir() const { return mir_->toIsTypedArray(); }
 };
 
 class LIsObject : public LInstructionHelper<1, BOX_PIECES, 0> {
@@ -6196,39 +6693,6 @@ class LWasmSelectI64
   const LInt64Allocation trueExpr() { return getInt64Operand(TrueExprIndex); }
   const LInt64Allocation falseExpr() { return getInt64Operand(FalseExprIndex); }
   const LAllocation* condExpr() { return getOperand(CondIndex); }
-};
-
-class LWasmCompareAndSelect : public LWasmSelectBase<1, 4> {
-  MCompare::CompareType compareType_;
-  JSOp jsop_;
-
- public:
-  LIR_HEADER(WasmCompareAndSelect);
-
-  static const size_t LeftExprIndex = 0;
-  static const size_t RightExprIndex = 1;
-  static const size_t IfTrueExprIndex = 2;
-  static const size_t IfFalseExprIndex = 3;
-
-  LWasmCompareAndSelect(const LAllocation& leftExpr,
-                        const LAllocation& rightExpr,
-                        MCompare::CompareType compareType, JSOp jsop,
-                        const LAllocation& ifTrueExpr,
-                        const LAllocation& ifFalseExpr)
-      : LWasmSelectBase(classOpcode), compareType_(compareType), jsop_(jsop) {
-    setOperand(LeftExprIndex, leftExpr);
-    setOperand(RightExprIndex, rightExpr);
-    setOperand(IfTrueExprIndex, ifTrueExpr);
-    setOperand(IfFalseExprIndex, ifFalseExpr);
-  }
-
-  const LAllocation* leftExpr() { return getOperand(LeftExprIndex); }
-  const LAllocation* rightExpr() { return getOperand(RightExprIndex); }
-  const LAllocation* ifTrueExpr() { return getOperand(IfTrueExprIndex); }
-  const LAllocation* ifFalseExpr() { return getOperand(IfFalseExprIndex); }
-
-  MCompare::CompareType compareType() { return compareType_; }
-  JSOp jsop() { return jsop_; }
 };
 
 class LWasmAddOffset : public LInstructionHelper<1, 1, 0> {
@@ -6374,7 +6838,7 @@ class LAsmJSLoadHeap : public LInstructionHelper<1, 3, 0> {
  public:
   LIR_HEADER(AsmJSLoadHeap);
   explicit LAsmJSLoadHeap(const LAllocation& ptr,
-                          const LAllocation& boundsCheckLimit,
+                          const LAllocation& boundsCheckLimit = LAllocation(),
                           const LAllocation& memoryBase = LAllocation())
       : LInstructionHelper(classOpcode) {
     setOperand(0, ptr);
@@ -6391,7 +6855,7 @@ class LAsmJSStoreHeap : public LInstructionHelper<0, 4, 0> {
  public:
   LIR_HEADER(AsmJSStoreHeap);
   LAsmJSStoreHeap(const LAllocation& ptr, const LAllocation& value,
-                  const LAllocation& boundsCheckLimit,
+                  const LAllocation& boundsCheckLimit = LAllocation(),
                   const LAllocation& memoryBase = LAllocation())
       : LInstructionHelper(classOpcode) {
     setOperand(0, ptr);
@@ -6608,107 +7072,54 @@ class LWasmAtomicBinopHeapForEffect : public LInstructionHelper<0, 3, 5> {
   MWasmAtomicBinopHeap* mir() const { return mir_->toWasmAtomicBinopHeap(); }
 };
 
-class LWasmLoadSlot : public LInstructionHelper<1, 1, 0> {
-  size_t offset_;
-  MIRType type_;
-
+class LWasmLoadGlobalVar : public LInstructionHelper<1, 1, 0> {
  public:
-  LIR_HEADER(WasmLoadSlot);
-  explicit LWasmLoadSlot(const LAllocation& containerRef, size_t offset,
-                         MIRType type)
-      : LInstructionHelper(classOpcode), offset_(offset), type_(type) {
-    setOperand(0, containerRef);
+  LIR_HEADER(WasmLoadGlobalVar);
+  explicit LWasmLoadGlobalVar(const LAllocation& tlsPtr)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, tlsPtr);
   }
-  const LAllocation* containerRef() { return getOperand(0); }
-  size_t offset() const { return offset_; }
-  MIRType type() const { return type_; }
+  MWasmLoadGlobalVar* mir() const { return mir_->toWasmLoadGlobalVar(); }
+  const LAllocation* tlsPtr() { return getOperand(0); }
 };
 
-class LWasmLoadSlotI64 : public LInstructionHelper<INT64_PIECES, 1, 0> {
-  size_t offset_;
-
+class LWasmLoadGlobalVarI64 : public LInstructionHelper<INT64_PIECES, 1, 0> {
  public:
-  LIR_HEADER(WasmLoadSlotI64);
-  explicit LWasmLoadSlotI64(const LAllocation& containerRef, size_t offset)
-      : LInstructionHelper(classOpcode), offset_(offset) {
-    setOperand(0, containerRef);
+  LIR_HEADER(WasmLoadGlobalVarI64);
+  explicit LWasmLoadGlobalVarI64(const LAllocation& tlsPtr)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, tlsPtr);
   }
-  const LAllocation* containerRef() { return getOperand(0); }
-  size_t offset() const { return offset_; }
+  MWasmLoadGlobalVar* mir() const { return mir_->toWasmLoadGlobalVar(); }
+  const LAllocation* tlsPtr() { return getOperand(0); }
 };
 
-class LWasmStoreSlot : public LInstructionHelper<0, 2, 0> {
-  size_t offset_;
-  MIRType type_;
-
+class LWasmStoreGlobalVar : public LInstructionHelper<0, 2, 0> {
  public:
-  LIR_HEADER(WasmStoreSlot);
-  LWasmStoreSlot(const LAllocation& value, const LAllocation& containerRef,
-                 size_t offset, MIRType type)
-      : LInstructionHelper(classOpcode), offset_(offset), type_(type) {
+  LIR_HEADER(WasmStoreGlobalVar);
+  LWasmStoreGlobalVar(const LAllocation& value, const LAllocation& tlsPtr)
+      : LInstructionHelper(classOpcode) {
     setOperand(0, value);
-    setOperand(1, containerRef);
+    setOperand(1, tlsPtr);
   }
+  MWasmStoreGlobalVar* mir() const { return mir_->toWasmStoreGlobalVar(); }
   const LAllocation* value() { return getOperand(0); }
-  const LAllocation* containerRef() { return getOperand(1); }
-  size_t offset() const { return offset_; }
-  MIRType type() const { return type_; }
+  const LAllocation* tlsPtr() { return getOperand(1); }
 };
 
-class LWasmStoreSlotI64 : public LInstructionHelper<0, INT64_PIECES + 1, 0> {
-  size_t offset_;
-
+class LWasmStoreGlobalVarI64
+    : public LInstructionHelper<0, INT64_PIECES + 1, 0> {
  public:
-  LIR_HEADER(WasmStoreSlotI64);
-  LWasmStoreSlotI64(const LInt64Allocation& value,
-                    const LAllocation& containerRef, size_t offset)
-      : LInstructionHelper(classOpcode), offset_(offset) {
+  LIR_HEADER(WasmStoreGlobalVarI64);
+  LWasmStoreGlobalVarI64(const LInt64Allocation& value,
+                         const LAllocation& tlsPtr)
+      : LInstructionHelper(classOpcode) {
     setInt64Operand(0, value);
-    setOperand(INT64_PIECES, containerRef);
+    setOperand(INT64_PIECES, tlsPtr);
   }
+  MWasmStoreGlobalVar* mir() const { return mir_->toWasmStoreGlobalVar(); }
   const LInt64Allocation value() { return getInt64Operand(0); }
-  const LAllocation* containerRef() { return getOperand(INT64_PIECES); }
-  size_t offset() const { return offset_; }
-};
-
-class LWasmDerivedPointer : public LInstructionHelper<1, 1, 0> {
- public:
-  LIR_HEADER(WasmDerivedPointer);
-  explicit LWasmDerivedPointer(const LAllocation& base)
-      : LInstructionHelper(classOpcode) {
-    setOperand(0, base);
-  }
-  const LAllocation* base() { return getOperand(0); }
-  size_t offset() { return mirRaw()->toWasmDerivedPointer()->offset(); }
-};
-
-class LWasmLoadRef : public LInstructionHelper<1, 1, 0> {
- public:
-  LIR_HEADER(WasmLoadRef);
-  explicit LWasmLoadRef(const LAllocation& ptr)
-      : LInstructionHelper(classOpcode) {
-    setOperand(0, ptr);
-  }
-  MWasmLoadRef* mir() const { return mirRaw()->toWasmLoadRef(); }
-  const LAllocation* ptr() { return getOperand(0); }
-};
-
-class LWasmStoreRef : public LInstructionHelper<0, 3, 1> {
- public:
-  LIR_HEADER(WasmStoreRef);
-  LWasmStoreRef(const LAllocation& tls, const LAllocation& valueAddr,
-                const LAllocation& value, const LDefinition& temp)
-      : LInstructionHelper(classOpcode) {
-    setOperand(0, tls);
-    setOperand(1, valueAddr);
-    setOperand(2, value);
-    setTemp(0, temp);
-  }
-  MWasmStoreRef* mir() const { return mirRaw()->toWasmStoreRef(); }
-  const LAllocation* tls() { return getOperand(0); }
-  const LAllocation* valueAddr() { return getOperand(1); }
-  const LAllocation* value() { return getOperand(2); }
-  const LDefinition* temp() { return getTemp(0); }
+  const LAllocation* tlsPtr() { return getOperand(INT64_PIECES); }
 };
 
 class LWasmParameter : public LInstructionHelper<1, 0, 0> {
@@ -6772,26 +7183,9 @@ class LWasmStackArgI64 : public LInstructionHelper<0, INT64_PIECES, 0> {
 };
 
 inline bool IsWasmCall(LNode::Opcode op) {
-  return (op == LNode::Opcode::WasmCall || op == LNode::Opcode::WasmCallVoid ||
-          op == LNode::Opcode::WasmCallI64);
+  return (op == LNode::LOp_WasmCall || op == LNode::LOp_WasmCallVoid ||
+          op == LNode::LOp_WasmCallI64);
 }
-
-class LWasmNullConstant : public LInstructionHelper<1, 0, 0> {
- public:
-  LIR_HEADER(WasmNullConstant);
-  explicit LWasmNullConstant() : LInstructionHelper(classOpcode) {}
-};
-
-class LIsNullPointer : public LInstructionHelper<1, 1, 0> {
- public:
-  LIR_HEADER(IsNullPointer);
-  explicit LIsNullPointer(const LAllocation& value)
-      : LInstructionHelper(classOpcode) {
-    setOperand(0, value);
-  }
-  MIsNullPointer* mir() const { return mirRaw()->toIsNullPointer(); }
-  const LAllocation* value() { return getOperand(0); }
-};
 
 template <size_t Defs>
 class LWasmCallBase : public LVariadicInstruction<Defs, 0> {
@@ -6846,9 +7240,7 @@ class LWasmCallI64 : public LWasmCallBase<INT64_PIECES> {
 };
 
 inline bool LNode::isCallPreserved(AnyRegister reg) const {
-  if (IsWasmCall(op())) {
-    return LWasmCallBase<0>::isCallPreserved(reg);
-  }
+  if (IsWasmCall(op())) return LWasmCallBase<0>::isCallPreserved(reg);
   return false;
 }
 
@@ -7049,9 +7441,9 @@ class LArrowNewTarget : public LInstructionHelper<BOX_PIECES, 1, 0> {
 
 // Math.random().
 #ifdef JS_PUNBOX64
-#  define LRANDOM_NUM_TEMPS 3
+#define LRANDOM_NUM_TEMPS 3
 #else
-#  define LRANDOM_NUM_TEMPS 5
+#define LRANDOM_NUM_TEMPS 5
 #endif
 
 class LRandom : public LInstructionHelper<1, 0, LRANDOM_NUM_TEMPS> {
@@ -7202,38 +7594,6 @@ class LGetPrototypeOf : public LInstructionHelper<BOX_PIECES, 1, 0> {
   }
 
   const LAllocation* target() { return getOperand(0); }
-};
-
-template <size_t NumDefs>
-class LIonToWasmCallBase : public LVariadicInstruction<NumDefs, 2> {
-  using Base = LVariadicInstruction<NumDefs, 2>;
-
- public:
-  explicit LIonToWasmCallBase(LNode::Opcode classOpcode, uint32_t numOperands,
-                              const LDefinition& temp, const LDefinition& fp)
-      : Base(classOpcode, numOperands) {
-    this->setIsCall();
-    this->setTemp(0, temp);
-    this->setTemp(1, fp);
-  }
-  MIonToWasmCall* mir() const { return this->mir_->toIonToWasmCall(); }
-  const LDefinition* temp() { return this->getTemp(0); }
-};
-
-class LIonToWasmCall : public LIonToWasmCallBase<1> {
- public:
-  LIR_HEADER(IonToWasmCall);
-  LIonToWasmCall(uint32_t numOperands, const LDefinition& temp,
-                 const LDefinition& fp)
-      : LIonToWasmCallBase<1>(classOpcode, numOperands, temp, fp) {}
-};
-
-class LIonToWasmCallV : public LIonToWasmCallBase<BOX_PIECES> {
- public:
-  LIR_HEADER(IonToWasmCallV);
-  LIonToWasmCallV(uint32_t numOperands, const LDefinition& temp,
-                  const LDefinition& fp)
-      : LIonToWasmCallBase<BOX_PIECES>(classOpcode, numOperands, temp, fp) {}
 };
 
 }  // namespace jit

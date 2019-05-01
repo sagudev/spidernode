@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -206,105 +206,84 @@ enum class ShouldCheckThresholds {
   CheckThresholds = 1
 };
 
-// For each arena kind its free list is represented as the first span with free
-// things. Initially all the spans are initialized as empty. After we find a new
-// arena with available things we move its first free span into the list and set
-// the arena as fully allocated. That way we do not need to update the arena
-// after the initial allocation. When starting the GC we only move the head of
-// the of the list of spans back to the arena only for the arena that was not
-// fully allocated.
-class FreeLists {
-  AllAllocKindArray<FreeSpan*> freeLists_;
+class ArenaLists {
+  JSRuntime* const runtime_;
 
- public:
+  /*
+   * For each arena kind its free list is represented as the first span with
+   * free things. Initially all the spans are initialized as empty. After we
+   * find a new arena with available things we move its first free span into
+   * the list and set the arena as fully allocated. way we do not need to
+   * update the arena after the initial allocation. When starting the
+   * GC we only move the head of the of the list of spans back to the arena
+   * only for the arena that was not fully allocated.
+   */
+  ZoneGroupData<AllAllocKindArray<FreeSpan*>> freeLists_;
+  AllAllocKindArray<FreeSpan*>& freeLists() { return freeLists_.ref(); }
+  const AllAllocKindArray<FreeSpan*>& freeLists() const {
+    return freeLists_.ref();
+  }
+
+  FreeSpan* freeList(AllocKind i) const { return freeLists()[i]; }
+
+  inline void setFreeList(AllocKind i, FreeSpan* span);
+  inline void clearFreeList(AllocKind i);
+
   // Because the JITs can allocate from the free lists, they cannot be null.
   // We use a placeholder FreeSpan that is empty (and wihout an associated
   // Arena) so the JITs can fall back gracefully.
-  static FreeSpan emptySentinel;
+  static FreeSpan placeholder;
 
-  FreeLists();
-
-#ifdef DEBUG
-  inline bool allEmpty() const;
-  inline bool isEmpty(AllocKind kind) const;
-#endif
-
-  inline void clear();
-
-  MOZ_ALWAYS_INLINE TenuredCell* allocate(AllocKind kind);
-
-  inline TenuredCell* setArenaAndAllocate(Arena* arena, AllocKind kind);
-
-  inline void unmarkPreMarkedFreeCells(AllocKind kind);
-
-  FreeSpan** addressOfFreeList(AllocKind thingKind) {
-    return &freeLists_[thingKind];
-  }
-};
-
-class ArenaLists {
-  JS::Zone* zone_;
-
-  ZoneData<FreeLists> freeLists_;
-
-  ArenaListData<AllAllocKindArray<ArenaList>> arenaLists_;
-
+  ZoneGroupOrGCTaskData<AllAllocKindArray<ArenaList>> arenaLists_;
   ArenaList& arenaLists(AllocKind i) { return arenaLists_.ref()[i]; }
   const ArenaList& arenaLists(AllocKind i) const {
     return arenaLists_.ref()[i];
   }
 
-  enum class ConcurrentUse : uint32_t {
-    None,
-    BackgroundFinalize,
-    ParallelAlloc
-  };
+  enum BackgroundFinalizeStateEnum { BFS_DONE, BFS_RUN };
 
-  using ConcurrentUseState =
-      mozilla::Atomic<ConcurrentUse, mozilla::SequentiallyConsistent,
-                      mozilla::recordreplay::Behavior::DontPreserve>;
+  typedef mozilla::Atomic<BackgroundFinalizeStateEnum,
+                          mozilla::SequentiallyConsistent>
+      BackgroundFinalizeState;
 
-  // Whether this structure can be accessed by other threads.
-  UnprotectedData<AllAllocKindArray<ConcurrentUseState>> concurrentUseState_;
-
-  ConcurrentUseState& concurrentUse(AllocKind i) {
-    return concurrentUseState_.ref()[i];
+  /* The current background finalization state, accessed atomically. */
+  UnprotectedData<AllAllocKindArray<BackgroundFinalizeState>>
+      backgroundFinalizeState_;
+  BackgroundFinalizeState& backgroundFinalizeState(AllocKind i) {
+    return backgroundFinalizeState_.ref()[i];
   }
-  ConcurrentUse concurrentUse(AllocKind i) const {
-    return concurrentUseState_.ref()[i];
+  const BackgroundFinalizeState& backgroundFinalizeState(AllocKind i) const {
+    return backgroundFinalizeState_.ref()[i];
   }
 
   /* For each arena kind, a list of arenas remaining to be swept. */
-  MainThreadOrGCTaskData<AllAllocKindArray<Arena*>> arenaListsToSweep_;
+  ActiveThreadOrGCTaskData<AllAllocKindArray<Arena*>> arenaListsToSweep_;
   Arena*& arenaListsToSweep(AllocKind i) { return arenaListsToSweep_.ref()[i]; }
   Arena* arenaListsToSweep(AllocKind i) const {
     return arenaListsToSweep_.ref()[i];
   }
 
   /* During incremental sweeping, a list of the arenas already swept. */
-  ZoneOrGCTaskData<AllocKind> incrementalSweptArenaKind;
-  ZoneOrGCTaskData<ArenaList> incrementalSweptArenas;
+  ZoneGroupOrGCTaskData<AllocKind> incrementalSweptArenaKind;
+  ZoneGroupOrGCTaskData<ArenaList> incrementalSweptArenas;
 
   // Arena lists which have yet to be swept, but need additional foreground
   // processing before they are swept.
-  ZoneData<Arena*> gcShapeArenasToUpdate;
-  ZoneData<Arena*> gcAccessorShapeArenasToUpdate;
-  ZoneData<Arena*> gcScriptArenasToUpdate;
-  ZoneData<Arena*> gcObjectGroupArenasToUpdate;
+  ZoneGroupData<Arena*> gcShapeArenasToUpdate;
+  ZoneGroupData<Arena*> gcAccessorShapeArenasToUpdate;
+  ZoneGroupData<Arena*> gcScriptArenasToUpdate;
+  ZoneGroupData<Arena*> gcObjectGroupArenasToUpdate;
 
   // The list of empty arenas which are collected during sweep phase and
   // released at the end of sweeping every sweep group.
-  ZoneData<Arena*> savedEmptyArenas;
+  ZoneGroupData<Arena*> savedEmptyArenas;
 
  public:
-  explicit ArenaLists(JS::Zone* zone);
+  explicit ArenaLists(JSRuntime* rt, ZoneGroup* group);
   ~ArenaLists();
 
-  FreeLists& freeLists() { return freeLists_.ref(); }
-  const FreeLists& freeLists() const { return freeLists_.ref(); }
-
-  FreeSpan** addressOfFreeList(AllocKind thingKind) {
-    return freeLists_.refNoCheck().addressOfFreeList(thingKind);
+  const void* addressOfFreeList(AllocKind thingKind) const {
+    return reinterpret_cast<const void*>(&freeLists_.refNoCheck()[thingKind]);
   }
 
   inline Arena* getFirstArena(AllocKind thingKind) const;
@@ -324,10 +303,18 @@ class ArenaLists {
 
   inline void unmarkPreMarkedFreeCells();
 
-  MOZ_ALWAYS_INLINE TenuredCell* allocateFromFreeList(AllocKind thingKind);
+  /* Check if this arena is in use. */
+  inline bool arenaIsInUse(Arena* arena, AllocKind kind) const;
+
+  MOZ_ALWAYS_INLINE TenuredCell* allocateFromFreeList(AllocKind thingKind,
+                                                      size_t thingSize);
 
   /* Moves all arenas from |fromArenaLists| into |this|. */
-  void adoptArenas(ArenaLists* fromArenaLists, bool targetZoneIsCollecting);
+  void adoptArenas(JSRuntime* runtime, ArenaLists* fromArenaLists,
+                   bool targetZoneIsCollecting);
+
+  /* True if the Arena in question is found in this ArenaLists */
+  bool containsArena(JSRuntime* runtime, Arena* arena);
 
   inline void checkEmptyFreeLists();
   inline bool checkEmptyArenaLists();
@@ -335,8 +322,9 @@ class ArenaLists {
 
   bool checkEmptyArenaList(AllocKind kind);
 
-  bool relocateArenas(Arena*& relocatedListOut, JS::GCReason reason,
-                      js::SliceBudget& sliceBudget, gcstats::Statistics& stats);
+  bool relocateArenas(JS::Zone* zone, Arena*& relocatedListOut,
+                      JS::gcreason::Reason reason, js::SliceBudget& sliceBudget,
+                      gcstats::Statistics& stats);
 
   void queueForegroundObjectsForSweep(FreeOp* fop);
   void queueForegroundThingsForSweep();
@@ -348,24 +336,20 @@ class ArenaLists {
                           SortedArenaList& sweepList);
   static void backgroundFinalize(FreeOp* fop, Arena* listHead, Arena** empty);
 
-  void setParallelAllocEnabled(bool enabled);
-
   // When finalizing arenas, whether to keep empty arenas on the list or
   // release them immediately.
   enum KeepArenasEnum { RELEASE_ARENAS, KEEP_ARENAS };
 
  private:
-  inline JSRuntime* runtime();
-  inline JSRuntime* runtimeFromAnyThread();
-
   inline void queueForForegroundSweep(FreeOp* fop, const FinalizePhase& phase);
   inline void queueForBackgroundSweep(FreeOp* fop, const FinalizePhase& phase);
   inline void queueForForegroundSweep(AllocKind thingKind);
   inline void queueForBackgroundSweep(AllocKind thingKind);
 
-  TenuredCell* refillFreeListAndAllocate(FreeLists& freeLists,
-                                         AllocKind thingKind,
-                                         ShouldCheckThresholds checkThresholds);
+  TenuredCell* allocateFromArena(JS::Zone* zone, AllocKind thingKind,
+                                 ShouldCheckThresholds checkThresholds);
+  inline TenuredCell* allocateFromArenaInner(JS::Zone* zone, Arena* arena,
+                                             AllocKind kind);
 
   friend class GCRuntime;
   friend class js::Nursery;

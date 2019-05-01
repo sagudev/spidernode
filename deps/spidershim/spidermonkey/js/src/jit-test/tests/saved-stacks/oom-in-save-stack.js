@@ -1,4 +1,4 @@
-// |jit-test| skip-if: !('oomTest' in this)
-
+if (!('oomTest' in this))
+    quit();
 let s = saveStack();
 oomTest(() => { saveStack(); });

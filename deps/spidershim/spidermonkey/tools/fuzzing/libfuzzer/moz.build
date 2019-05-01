@@ -11,17 +11,13 @@ EXPORTS += [
 ]
 
 SOURCES += [
-    'FuzzerClangCounters.cpp',
     'FuzzerCrossOver.cpp',
-    'FuzzerDataFlowTrace.cpp',
     'FuzzerDriver.cpp',
     'FuzzerExtFunctionsDlsym.cpp',
     'FuzzerExtFunctionsDlsymWin.cpp',
     'FuzzerExtFunctionsWeak.cpp',
     'FuzzerExtFunctionsWeakAlias.cpp',
-    'FuzzerExtFunctionsWindows.cpp',
     'FuzzerExtraCounters.cpp',
-    'FuzzerFork.cpp',
     'FuzzerIO.cpp',
     'FuzzerIOPosix.cpp',
     'FuzzerIOWindows.cpp',
@@ -29,13 +25,12 @@ SOURCES += [
     'FuzzerMerge.cpp',
     'FuzzerMutate.cpp',
     'FuzzerSHA1.cpp',
-    'FuzzerShmemFuchsia.cpp',
     'FuzzerShmemPosix.cpp',
     'FuzzerShmemWindows.cpp',
     'FuzzerTracePC.cpp',
+    'FuzzerTraceState.cpp',
     'FuzzerUtil.cpp',
     'FuzzerUtilDarwin.cpp',
-    'FuzzerUtilFuchsia.cpp',
     'FuzzerUtilLinux.cpp',
     'FuzzerUtilPosix.cpp',
     'FuzzerUtilWindows.cpp'

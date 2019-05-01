@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,7 +41,7 @@ class ICStubSpace {
   }
 };
 
-// Space for optimized stubs. Every JitRealm has a single
+// Space for optimized stubs. Every JitCompartment has a single
 // OptimizedICStubSpace.
 struct OptimizedICStubSpace : public ICStubSpace {
   static const size_t STUB_DEFAULT_CHUNK_SIZE = 4096;
@@ -57,6 +57,10 @@ struct FallbackICStubSpace : public ICStubSpace {
 
  public:
   FallbackICStubSpace() : ICStubSpace(STUB_DEFAULT_CHUNK_SIZE) {}
+
+  inline void adoptFrom(FallbackICStubSpace* other) {
+    allocator_.steal(&(other->allocator_));
+  }
 };
 
 }  // namespace jit

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,14 +20,12 @@ ABIArg ABIArgGenerator::next(MIRType type) {
   switch (type) {
     case MIRType::Int32:
     case MIRType::Int64:
-    case MIRType::Pointer:
-    case MIRType::RefOrNull: {
+    case MIRType::Pointer: {
       Register destReg;
-      if (GetIntArgReg(usedArgSlots_, &destReg)) {
+      if (GetIntArgReg(usedArgSlots_, &destReg))
         current_ = ABIArg(destReg);
-      } else {
+      else
         current_ = ABIArg(GetArgStackDisp(usedArgSlots_));
-      }
       usedArgSlots_++;
       break;
     }
@@ -35,16 +33,13 @@ ABIArg ABIArgGenerator::next(MIRType type) {
     case MIRType::Double: {
       FloatRegister destFReg;
       FloatRegister::ContentType contentType;
-      if (!usedArgSlots_) {
-        firstArgFloat = true;
-      }
+      if (!usedArgSlots_) firstArgFloat = true;
       contentType = (type == MIRType::Double) ? FloatRegisters::Double
                                               : FloatRegisters::Single;
-      if (GetFloatArgReg(usedArgSlots_, &destFReg)) {
+      if (GetFloatArgReg(usedArgSlots_, &destFReg))
         current_ = ABIArg(FloatRegister(destFReg.id(), contentType));
-      } else {
+      else
         current_ = ABIArg(GetArgStackDisp(usedArgSlots_));
-      }
       usedArgSlots_++;
       break;
     }
@@ -75,22 +70,50 @@ uint32_t js::jit::SA(FloatRegister r) {
 }
 
 // Used to patch jumps created by MacroAssemblerMIPS64Compat::jumpWithPatch.
-void jit::PatchJump(CodeLocationJump& jump_, CodeLocationLabel label) {
+void jit::PatchJump(CodeLocationJump& jump_, CodeLocationLabel label,
+                    ReprotectCode reprotect) {
   Instruction* inst = (Instruction*)jump_.raw();
 
+  // Six instructions used in load 64-bit imm.
+  MaybeAutoWritableJitCode awjc(inst, 6 * sizeof(uint32_t), reprotect);
   Assembler::UpdateLoad64Value(inst, (uint64_t)label.raw());
 
-  // Six instructions used in load 64-bit imm.
   AutoFlushICache::flush(uintptr_t(inst), 6 * sizeof(uint32_t));
+}
+
+// For more infromation about backedges look at comment in
+// MacroAssemblerMIPS64Compat::backedgeJump()
+void jit::PatchBackedge(CodeLocationJump& jump, CodeLocationLabel label,
+                        JitZoneGroup::BackedgeTarget target) {
+  uintptr_t sourceAddr = (uintptr_t)jump.raw();
+  uintptr_t targetAddr = (uintptr_t)label.raw();
+  InstImm* branch = (InstImm*)jump.raw();
+
+  MOZ_ASSERT(branch->extractOpcode() == (uint32_t(op_beq) >> OpcodeShift));
+
+  if (BOffImm16::IsInRange(targetAddr - sourceAddr)) {
+    branch->setBOffImm16(BOffImm16(targetAddr - sourceAddr));
+  } else {
+    if (target == JitZoneGroup::BackedgeLoopHeader) {
+      Instruction* inst = &branch[1];
+      Assembler::UpdateLoad64Value(inst, targetAddr);
+      // Jump to first ori. The lui will be executed in delay slot.
+      branch->setBOffImm16(BOffImm16(2 * sizeof(uint32_t)));
+    } else {
+      Instruction* inst = &branch[6];
+      Assembler::UpdateLoad64Value(inst, targetAddr);
+      // Jump to first ori of interrupt loop.
+      branch->setBOffImm16(BOffImm16(6 * sizeof(uint32_t)));
+    }
+  }
 }
 
 void Assembler::executableCopy(uint8_t* buffer, bool flushICache) {
   MOZ_ASSERT(isFinished);
   m_buffer.executableCopy(buffer);
 
-  if (flushICache) {
+  if (flushICache)
     AutoFlushICache::setRange(uintptr_t(buffer), m_buffer.size());
-  }
 }
 
 uintptr_t Assembler::GetPointer(uint8_t* instPtr) {
@@ -135,13 +158,41 @@ static void TraceOneDataRelocation(JSTracer* trc, Instruction* inst) {
   }
 }
 
-/* static */
-void Assembler::TraceDataRelocations(JSTracer* trc, JitCode* code,
-                                     CompactBufferReader& reader) {
+static void TraceDataRelocations(JSTracer* trc, uint8_t* buffer,
+                                 CompactBufferReader& reader) {
   while (reader.more()) {
     size_t offset = reader.readUnsigned();
-    Instruction* inst = (Instruction*)(code->raw() + offset);
+    Instruction* inst = (Instruction*)(buffer + offset);
     TraceOneDataRelocation(trc, inst);
+  }
+}
+
+static void TraceDataRelocations(JSTracer* trc, MIPSBuffer* buffer,
+                                 CompactBufferReader& reader) {
+  while (reader.more()) {
+    BufferOffset bo(reader.readUnsigned());
+    MIPSBuffer::AssemblerBufferInstIterator iter(bo, buffer);
+    TraceOneDataRelocation(trc, iter.cur());
+  }
+}
+
+void Assembler::TraceDataRelocations(JSTracer* trc, JitCode* code,
+                                     CompactBufferReader& reader) {
+  ::TraceDataRelocations(trc, code->raw(), reader);
+}
+
+void Assembler::trace(JSTracer* trc) {
+  for (size_t i = 0; i < jumps_.length(); i++) {
+    RelativePatch& rp = jumps_[i];
+    if (rp.kind == Relocation::JITCODE) {
+      JitCode* code = JitCode::FromExecutable((uint8_t*)rp.target);
+      TraceManuallyBarrieredEdge(trc, &code, "masmrel32");
+      MOZ_ASSERT(code == JitCode::FromExecutable((uint8_t*)rp.target));
+    }
+  }
+  if (dataRelocations_.length()) {
+    CompactBufferReader reader(dataRelocations_);
+    ::TraceDataRelocations(trc, &m_buffer, reader);
   }
 }
 

@@ -242,11 +242,11 @@ let obj = { 'foo': foo,
             'baz': baz };
 check(obj);
 
-for (obj of getTestContent())
+for (obj of new getTestContent)
     check(obj);
 
 // Stolen wholesale from postMessage_structured_clone_helper.js
-function* getTestContent()
+function getTestContent()
 {
   yield "hello";
   yield 2+3;

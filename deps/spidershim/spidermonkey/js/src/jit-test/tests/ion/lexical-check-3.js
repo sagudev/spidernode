@@ -1,6 +1,3 @@
-// |jit-test| skip-if: getBuildConfiguration()['arm64']
-//
-// Test skipped on ARM64 due to bug 1546742.
 function f() {
 
     function g(n) {

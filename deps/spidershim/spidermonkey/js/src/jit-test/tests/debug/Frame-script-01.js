@@ -1,6 +1,6 @@
 // Frame.prototype.script for eval frames.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 
 // Apply |f| to each frame that is |skip| frames up from each frame that

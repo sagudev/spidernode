@@ -6,7 +6,7 @@ var allocTimes = [];
 
 allocTimes.push(timeSinceCreation());
 
-const root = newGlobal({newCompartment: true});
+const root = newGlobal();
 const dbg = new Debugger(root);
 
 dbg.memory.trackingAllocationSites = true;

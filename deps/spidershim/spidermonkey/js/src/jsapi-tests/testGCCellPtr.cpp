@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -9,8 +9,7 @@
 #include "jspubtd.h"
 
 #include "gc/Heap.h"
-#include "js/CompilationAndEvaluation.h"  // JS::CompileDontInflate
-#include "js/SourceText.h"                // JS::Source{Ownership,Text}
+
 #include "jsapi-tests/tests.h"
 
 JS::GCCellPtr GivesAndTakesCells(JS::GCCellPtr cell) { return cell; }
@@ -23,13 +22,9 @@ BEGIN_TEST(testGCCellPtr) {
   CHECK(str);
 
   const char* code = "function foo() { return 'bar'; }";
-
   JS::CompileOptions opts(cx);
-
-  JS::SourceText<mozilla::Utf8Unit> srcBuf;
-  CHECK(srcBuf.init(cx, code, strlen(code), JS::SourceOwnership::Borrowed));
-
-  JS::RootedScript script(cx, JS::CompileDontInflate(cx, opts, srcBuf));
+  JS::RootedScript script(cx);
+  CHECK(JS_CompileScript(cx, code, strlen(code), opts, &script));
   CHECK(script);
 
   CHECK(!JS::GCCellPtr(nullptr));

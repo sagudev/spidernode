@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,16 +8,14 @@
 
 #include "mozilla/PodOperations.h"
 #include "mozilla/Printf.h"
-#include "mozilla/RangedPtr.h"
 
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 
 #include "jsutil.h"
 
 #include "ds/LifoAlloc.h"
-#include "js/CharacterEncoding.h"
-#include "util/Text.h"
 #include "util/Windows.h"
 #include "vm/JSContext.h"
 
@@ -41,10 +39,10 @@ class GenericPrinterPrintfTarget : public mozilla::PrintfTarget {
 
 namespace js {
 
+GenericPrinter::GenericPrinter() : hadOOM_(false) {}
+
 void GenericPrinter::reportOutOfMemory() {
-  if (hadOOM_) {
-    return;
-  }
+  if (hadOOM_) return;
   hadOOM_ = true;
 }
 
@@ -60,9 +58,7 @@ bool GenericPrinter::printf(const char* fmt, ...) {
 
 bool GenericPrinter::vprintf(const char* fmt, va_list ap) {
   // Simple shortcut to avoid allocating strings.
-  if (strchr(fmt, '%') == nullptr) {
-    return put(fmt);
-  }
+  if (strchr(fmt, '%') == nullptr) return put(fmt);
 
   GenericPrinterPrintfTarget printer(*this);
   if (!printer.vprint(fmt, ap)) {
@@ -83,7 +79,7 @@ bool Sprinter::realloc_(size_t newSize) {
   }
   base = newBuf;
   size = newSize;
-  base[size - 1] = '\0';
+  base[size - 1] = 0;
   return true;
 }
 
@@ -100,16 +96,14 @@ Sprinter::Sprinter(JSContext* cx, bool shouldReportOOM)
 
 Sprinter::~Sprinter() {
 #ifdef DEBUG
-  if (initialized) {
-    checkInvariants();
-  }
+  if (initialized) checkInvariants();
 #endif
   js_free(base);
 }
 
 bool Sprinter::init() {
   MOZ_ASSERT(!initialized);
-  base = js_pod_malloc<char>(DefaultSize);
+  base = (char*)js_malloc(DefaultSize);
   if (!base) {
     reportOutOfMemory();
     return false;
@@ -117,23 +111,21 @@ bool Sprinter::init() {
 #ifdef DEBUG
   initialized = true;
 #endif
-  *base = '\0';
+  *base = 0;
   size = DefaultSize;
-  base[size - 1] = '\0';
+  base[size - 1] = 0;
   return true;
 }
 
 void Sprinter::checkInvariants() const {
   MOZ_ASSERT(initialized);
   MOZ_ASSERT((size_t)offset < size);
-  MOZ_ASSERT(base[size - 1] == '\0');
+  MOZ_ASSERT(base[size - 1] == 0);
 }
 
-UniqueChars Sprinter::release() {
+char* Sprinter::release() {
   checkInvariants();
-  if (hadOOM_) {
-    return nullptr;
-  }
+  if (hadOOM_) return nullptr;
 
   char* str = base;
   base = nullptr;
@@ -141,7 +133,7 @@ UniqueChars Sprinter::release() {
 #ifdef DEBUG
   initialized = false;
 #endif
-  return UniqueChars(str);
+  return str;
 }
 
 char* Sprinter::stringAt(ptrdiff_t off) const {
@@ -158,9 +150,7 @@ char* Sprinter::reserve(size_t len) {
   InvariantChecker ic(this);
 
   while (len + 1 > size - offset) { /* Include trailing \0 */
-    if (!realloc_(size * 2)) {
-      return nullptr;
-    }
+    if (!realloc_(size * 2)) return nullptr;
   }
 
   char* sb = base + offset;
@@ -175,55 +165,51 @@ bool Sprinter::put(const char* s, size_t len) {
   const char* oldEnd = base + size;
 
   char* bp = reserve(len);
-  if (!bp) {
-    return false;
-  }
+  if (!bp) return false;
 
   /* s is within the buffer already */
   if (s >= oldBase && s < oldEnd) {
     /* buffer was realloc'ed */
-    if (base != oldBase) {
+    if (base != oldBase)
       s = stringAt(s - oldBase); /* this is where it lives now */
-    }
     memmove(bp, s, len);
   } else {
     js_memcpy(bp, s, len);
   }
 
-  bp[len] = '\0';
+  bp[len] = 0;
   return true;
 }
 
 bool Sprinter::putString(JSString* s) {
   InvariantChecker ic(this);
 
-  JSFlatString* flat = s->ensureFlat(context);
-  if (!flat) {
-    return false;
-  }
+  size_t length = s->length();
+  size_t size = length;
 
-  size_t length = JS::GetDeflatedUTF8StringLength(flat);
+  char* buffer = reserve(size);
+  if (!buffer) return false;
 
-  char* buffer = reserve(length);
-  if (!buffer) {
-    return false;
-  }
+  JSLinearString* linear = s->ensureLinear(context);
+  if (!linear) return false;
 
-  JS::DeflateStringToUTF8Buffer(flat, mozilla::RangedPtr<char>(buffer, length));
+  JS::AutoCheckCannotGC nogc;
+  if (linear->hasLatin1Chars())
+    PodCopy(reinterpret_cast<Latin1Char*>(buffer), linear->latin1Chars(nogc),
+            length);
+  else
+    DeflateStringToBuffer(nullptr, linear->twoByteChars(nogc), length, buffer,
+                          &size);
 
-  buffer[length] = '\0';
+  buffer[size] = 0;
   return true;
 }
 
 ptrdiff_t Sprinter::getOffset() const { return offset; }
 
 void Sprinter::reportOutOfMemory() {
-  if (hadOOM_) {
-    return;
-  }
-  if (context && shouldReportOOM) {
-    ReportOutOfMemory(context);
-  }
+  if (hadOOM_) return;
+  if (context && shouldReportOOM) ReportOutOfMemory(context);
   hadOOM_ = true;
 }
 
@@ -252,35 +238,16 @@ const char js_EscapeMap[] = {
     // clang-format on
 };
 
-static const char JSONEscapeMap[] = {
-    // clang-format off
-    '\b', 'b',
-    '\f', 'f',
-    '\n', 'n',
-    '\r', 'r',
-    '\t', 't',
-    '"',  '"',
-    '\\', '\\',
-    '\0'
-    // clang-format on
-};
-
-enum class QuoteTarget { String, JSON };
-
-template <QuoteTarget target, typename CharT>
-static bool QuoteString(Sprinter* sp, const mozilla::Range<const CharT> chars,
-                        char quote) {
-  MOZ_ASSERT_IF(target == QuoteTarget::JSON, quote == '\0');
-
+template <typename CharT>
+static char* QuoteString(Sprinter* sp, const mozilla::Range<const CharT> chars,
+                         char16_t quote) {
   using CharPtr = mozilla::RangedPtr<const CharT>;
 
-  const char* escapeMap =
-      (target == QuoteTarget::String) ? js_EscapeMap : JSONEscapeMap;
+  /* Sample off first for later return value pointer computation. */
+  ptrdiff_t offset = sp->getOffset();
 
   if (quote) {
-    if (!sp->putChar(quote)) {
-      return false;
-    }
+    if (!sp->jsprintf("%c", char(quote))) return nullptr;
   }
 
   const CharPtr end = chars.end();
@@ -290,119 +257,83 @@ static bool QuoteString(Sprinter* sp, const mozilla::Range<const CharT> chars,
     /* Move t forward from s past un-quote-worthy characters. */
     const CharPtr s = t;
     char16_t c = *t;
-    while (c < 127 && c != '\\') {
-      if (target == QuoteTarget::String) {
-        if (!IsAsciiPrintable(c) || c == quote || c == '\t') {
-          break;
-        }
-      } else {
-        if (c < ' ' || c == '"') {
-          break;
-        }
-      }
-
+    while (c < 127 && isprint(c) && c != quote && c != '\\' && c != '\t') {
       ++t;
-      if (t == end) {
-        break;
-      }
+      if (t == end) break;
       c = *t;
     }
 
     {
       ptrdiff_t len = t - s;
       ptrdiff_t base = sp->getOffset();
-      if (!sp->reserve(len)) {
-        return false;
-      }
+      if (!sp->reserve(len)) return nullptr;
 
-      for (ptrdiff_t i = 0; i < len; ++i) {
-        (*sp)[base + i] = char(s[i]);
-      }
-      (*sp)[base + len] = '\0';
+      for (ptrdiff_t i = 0; i < len; ++i) (*sp)[base + i] = char(s[i]);
+      (*sp)[base + len] = 0;
     }
 
-    if (t == end) {
-      break;
-    }
+    if (t == end) break;
 
-    /* Use escapeMap, \u, or \x only if necessary. */
+    /* Use js_EscapeMap, \u, or \x only if necessary. */
     const char* escape;
     if (!(c >> 8) && c != 0 &&
-        (escape = strchr(escapeMap, int(c))) != nullptr) {
-      if (!sp->jsprintf("\\%c", escape[1])) {
-        return false;
-      }
+        (escape = strchr(js_EscapeMap, int(c))) != nullptr) {
+      if (!sp->jsprintf("\\%c", escape[1])) return nullptr;
     } else {
       /*
        * Use \x only if the high byte is 0 and we're in a quoted string,
        * because ECMA-262 allows only \u, not \x, in Unicode identifiers
        * (see bug 621814).
        */
-      if (!sp->jsprintf((quote && !(c >> 8)) ? "\\x%02X" : "\\u%04X", c)) {
-        return false;
-      }
+      if (!sp->jsprintf((quote && !(c >> 8)) ? "\\x%02X" : "\\u%04X", c))
+        return nullptr;
     }
   }
 
   /* Sprint the closing quote and return the quoted string. */
   if (quote) {
-    if (!sp->putChar(quote)) {
-      return false;
-    }
+    if (!sp->jsprintf("%c", char(quote))) return nullptr;
   }
 
-  return true;
+  /*
+   * If we haven't Sprint'd anything yet, Sprint an empty string so that
+   * the return below gives a valid result.
+   */
+  if (offset == sp->getOffset()) {
+    if (!sp->put("")) return nullptr;
+  }
+
+  return sp->stringAt(offset);
 }
 
-bool QuoteString(Sprinter* sp, JSString* str, char quote /*= '\0' */) {
+char* QuoteString(Sprinter* sp, JSString* str, char16_t quote) {
   JSLinearString* linear = str->ensureLinear(sp->context);
-  if (!linear) {
-    return false;
-  }
+  if (!linear) return nullptr;
 
   JS::AutoCheckCannotGC nogc;
-  return linear->hasLatin1Chars() ? QuoteString<QuoteTarget::String>(
-                                        sp, linear->latin1Range(nogc), quote)
-                                  : QuoteString<QuoteTarget::String>(
-                                        sp, linear->twoByteRange(nogc), quote);
+  return linear->hasLatin1Chars()
+             ? QuoteString(sp, linear->latin1Range(nogc), quote)
+             : QuoteString(sp, linear->twoByteRange(nogc), quote);
 }
 
-UniqueChars QuoteString(JSContext* cx, JSString* str, char quote /* = '\0' */) {
+JSString* QuoteString(JSContext* cx, JSString* str, char16_t quote) {
   Sprinter sprinter(cx);
-  if (!sprinter.init()) {
-    return nullptr;
-  }
-  if (!QuoteString(&sprinter, str, quote)) {
-    return nullptr;
-  }
-  return sprinter.release();
-}
-
-bool JSONQuoteString(Sprinter* sp, JSString* str) {
-  JSLinearString* linear = str->ensureLinear(sp->context);
-  if (!linear) {
-    return false;
-  }
-
-  JS::AutoCheckCannotGC nogc;
-  return linear->hasLatin1Chars() ? QuoteString<QuoteTarget::JSON>(
-                                        sp, linear->latin1Range(nogc), '\0')
-                                  : QuoteString<QuoteTarget::JSON>(
-                                        sp, linear->twoByteRange(nogc), '\0');
+  if (!sprinter.init()) return nullptr;
+  char* bytes = QuoteString(&sprinter, str, quote);
+  if (!bytes) return nullptr;
+  return NewStringCopyZ<CanGC>(cx, bytes);
 }
 
 Fprinter::Fprinter(FILE* fp) : file_(nullptr), init_(false) { init(fp); }
 
-#ifdef DEBUG
+Fprinter::Fprinter() : file_(nullptr), init_(false) {}
+
 Fprinter::~Fprinter() { MOZ_ASSERT_IF(init_, !file_); }
-#endif
 
 bool Fprinter::init(const char* path) {
   MOZ_ASSERT(!file_);
   file_ = fopen(path, "w");
-  if (!file_) {
-    return false;
-  }
+  if (!file_) return false;
   init_ = true;
   return true;
 }
@@ -420,9 +351,7 @@ void Fprinter::flush() {
 
 void Fprinter::finish() {
   MOZ_ASSERT(file_);
-  if (init_) {
-    fclose(file_);
-  }
+  if (init_) fclose(file_);
   file_ = nullptr;
 }
 
@@ -433,13 +362,15 @@ bool Fprinter::put(const char* s, size_t len) {
     reportOutOfMemory();
     return false;
   }
-#ifdef XP_WIN
+#ifdef XP_WIN32
   if ((file_ == stderr) && (IsDebuggerPresent())) {
-    UniqueChars buf = DuplicateString(s, len);
+    UniqueChars buf(static_cast<char*>(js_malloc(len + 1)));
     if (!buf) {
       reportOutOfMemory();
       return false;
     }
+    PodCopy(buf.get(), s, len);
+    buf[len] = '\0';
     OutputDebugStringA(buf.get());
   }
 #endif
@@ -455,13 +386,10 @@ LSprinter::~LSprinter() {
 }
 
 void LSprinter::exportInto(GenericPrinter& out) const {
-  if (!head_) {
-    return;
-  }
+  if (!head_) return;
 
-  for (Chunk* it = head_; it != tail_; it = it->next) {
+  for (Chunk* it = head_; it != tail_; it = it->next)
     out.put(it->chars(), it->length);
-  }
   out.put(tail_->chars(), tail_->length - unused_);
 }
 
@@ -520,11 +448,10 @@ bool LSprinter::put(const char* s, size_t len) {
       last->length = availableSpace;
 
       unused_ = availableSpace;
-      if (!head_) {
+      if (!head_)
         head_ = last;
-      } else {
+      else
         tail_->next = last;
-      }
 
       tail_ = last;
     }

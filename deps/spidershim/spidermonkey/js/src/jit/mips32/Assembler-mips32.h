@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,9 +37,7 @@ class ABIArgGenerator {
   void enforceO32ABI() { useGPRForFloats_ = true; }
 
   uint32_t stackBytesConsumedSoFar() const {
-    if (usedArgSlots_ <= 4) {
-      return ShadowStackSpace;
-    }
+    if (usedArgSlots_ <= 4) return ShadowStackSpace;
 
     return usedArgSlots_ * sizeof(intptr_t);
   }
@@ -49,7 +47,6 @@ class ABIArgGenerator {
 static constexpr Register ABINonArgReg0 = t0;
 static constexpr Register ABINonArgReg1 = t1;
 static constexpr Register ABINonArgReg2 = t2;
-static constexpr Register ABINonArgReg3 = t3;
 
 // This register may be volatile or nonvolatile. Avoid f18 which is the
 // ScratchDoubleReg.
@@ -60,7 +57,6 @@ static constexpr FloatRegister ABINonArgDoubleReg{FloatRegisters::f16,
 // Note: these three registers are all guaranteed to be different
 static constexpr Register ABINonArgReturnReg0 = t0;
 static constexpr Register ABINonArgReturnReg1 = t1;
-static constexpr Register ABINonVolatileReg = s0;
 
 // This register is guaranteed to be clobberable during the prologue and
 // epilogue of an ABI call which must preserve both ABI argument, return
@@ -74,10 +70,9 @@ static constexpr Register WasmTlsReg = s5;
 
 // Registers used for asm.js/wasm table calls. These registers must be disjoint
 // from the ABI argument registers, WasmTlsReg and each other.
-static constexpr Register WasmTableCallScratchReg0 = ABINonArgReg0;
-static constexpr Register WasmTableCallScratchReg1 = ABINonArgReg1;
-static constexpr Register WasmTableCallSigReg = ABINonArgReg2;
-static constexpr Register WasmTableCallIndexReg = ABINonArgReg3;
+static constexpr Register WasmTableCallScratchReg = ABINonArgReg0;
+static constexpr Register WasmTableCallSigReg = ABINonArgReg1;
+static constexpr Register WasmTableCallIndexReg = ABINonArgReg2;
 
 static constexpr Register JSReturnReg_Type = a3;
 static constexpr Register JSReturnReg_Data = a2;
@@ -100,6 +95,12 @@ struct ScratchDoubleScope : public AutoFloatRegisterScope {
   explicit ScratchDoubleScope(MacroAssembler& masm)
       : AutoFloatRegisterScope(masm, ScratchDoubleReg) {}
 };
+
+// Registers used in the GenerateFFIIonExit Disable Activation block.
+// None of these may be the second scratch register (t8).
+static constexpr Register WasmIonExitRegReturnData = JSReturnReg_Data;
+static constexpr Register WasmIonExitRegReturnType = JSReturnReg_Type;
+static constexpr Register WasmIonExitTlsReg = s5;
 
 static constexpr FloatRegister f0 = {FloatRegisters::f0, FloatRegister::Double};
 static constexpr FloatRegister f2 = {FloatRegisters::f2, FloatRegister::Double};
@@ -145,7 +146,6 @@ static_assert(JitStackAlignment % sizeof(Value) == 0 &&
 // TODO Copy the static_asserts from x64/x86 assembler files.
 static constexpr uint32_t SimdMemoryAlignment = 8;
 static constexpr uint32_t WasmStackAlignment = SimdMemoryAlignment;
-static const uint32_t WasmTrapInstructionLength = 4;
 
 // Does this architecture support SIMD conversions between Uint32x4 and
 // Float32x4?
@@ -164,6 +164,9 @@ class Assembler : public AssemblerMIPSShared {
 
   static Condition UnsignedCondition(Condition cond);
   static Condition ConditionWithoutEqual(Condition cond);
+
+  // MacroAssemblers hold onto gcthings, so they are traced by the GC.
+  void trace(JSTracer* trc);
 
   static uintptr_t GetPointer(uint8_t*);
 
@@ -236,16 +239,12 @@ static inline bool GetTempRegForIntArg(uint32_t usedIntArgs,
   // float arguments. If this is needed, we will have to guess.
   MOZ_ASSERT(usedFloatArgs == 0);
 
-  if (GetIntArgReg(usedIntArgs, out)) {
-    return true;
-  }
+  if (GetIntArgReg(usedIntArgs, out)) return true;
   // Unfortunately, we have to assume things about the point at which
   // GetIntArgReg returns false, because we need to know how many registers it
   // can allocate.
   usedIntArgs -= NumIntArgRegs;
-  if (usedIntArgs >= NumCallTempNonArgRegs) {
-    return false;
-  }
+  if (usedIntArgs >= NumCallTempNonArgRegs) return false;
   *out = CallTempNonArgRegs[usedIntArgs];
   return true;
 }

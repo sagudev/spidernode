@@ -1,4 +1,4 @@
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 var visibleFrames = 0;
 dbg.onEnterFrame = function (frame) {

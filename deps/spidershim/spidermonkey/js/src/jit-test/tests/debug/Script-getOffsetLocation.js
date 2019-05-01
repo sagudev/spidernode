@@ -1,6 +1,6 @@
 // getOffsetLocation agrees with getAllColumnOffsets
 
-var global = newGlobal({newCompartment: true});
+var global = newGlobal();
 Debugger(global).onDebuggerStatement = function (frame) {
     var script = frame.script;
     var byOffset = [];

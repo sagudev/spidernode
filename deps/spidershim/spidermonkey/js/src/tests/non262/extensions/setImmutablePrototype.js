@@ -144,12 +144,11 @@ function runNormalTests(global)
   }
   catch (e)
   {
-    // Note: In the cross-compartment case, this is a TypeError from |global|,
-    //       because the proxy's |setImmutablePrototype| method is what actually
-    //       throws here. That's why we check for TypeError from either global.
+    // Note: This is a TypeError from |global|, because the proxy's
+    //       |setImmutablePrototype| method is what actually throws here.
     //       (Usually the method simply sets |*succeeded| to false and the
     //       caller handles or throws as needed after that.  But not here.)
-    assertEq(e instanceof global.TypeError || e instanceof TypeError, true,
+    assertEq(e instanceof global.TypeError, true,
              "expected TypeError, instead threw " + e);
   }
 
@@ -168,8 +167,8 @@ function runNormalTests(global)
   }
   catch (e)
   {
-    // NOTE: Again from |global| or |this|, as above.
-    assertEq(e instanceof global.TypeError || e instanceof TypeError, true,
+    // NOTE: Again from |global|, as above.
+    assertEq(e instanceof global.TypeError, true,
              "expected TypeError, instead threw " + e);
   }
 }

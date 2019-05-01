@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,7 +14,7 @@
 
 #include "jit/CompactBuffer.h"
 #include "jit/IonCode.h"
-#include "jit/JitRealm.h"
+#include "jit/JitCompartment.h"
 #include "jit/JitSpewer.h"
 #include "jit/mips-shared/Architecture-mips-shared.h"
 #include "jit/shared/Assembler-shared.h"
@@ -107,6 +107,17 @@ static constexpr FloatRegister ScratchSimd128Reg = InvalidFloatReg;
 // negative immediate offsets which doubles the range of global data that can be
 // accessed with a single instruction.
 static const int32_t WasmGlobalRegBias = 32768;
+
+// Registers used in the GenerateFFIIonExit Enable Activation block.
+static constexpr Register WasmIonExitRegCallee = t0;
+static constexpr Register WasmIonExitRegE0 = a0;
+static constexpr Register WasmIonExitRegE1 = a1;
+
+// Registers used in the GenerateFFIIonExit Disable Activation block.
+// None of these may be the second scratch register (t8).
+static constexpr Register WasmIonExitRegD0 = a0;
+static constexpr Register WasmIonExitRegD1 = a1;
+static constexpr Register WasmIonExitRegD2 = t0;
 
 // Registerd used in RegExpMatcher instruction (do not use JSReturnOperand).
 static constexpr Register RegExpMatcherRegExpReg = CallTempReg0;
@@ -481,12 +492,8 @@ class BOffImm16 {
     MOZ_ASSERT(IsInRange(offset));
   }
   static bool IsInRange(int offset) {
-    if ((offset - 4) < int(unsigned(INT16_MIN) << 2)) {
-      return false;
-    }
-    if ((offset - 4) > (INT16_MAX << 2)) {
-      return false;
-    }
+    if ((offset - 4) < int(unsigned(INT16_MIN) << 2)) return false;
+    if ((offset - 4) > (INT16_MAX << 2)) return false;
     return true;
   }
   static const uint32_t INVALID = 0x00020000;
@@ -517,12 +524,8 @@ class JOffImm26 {
     MOZ_ASSERT(IsInRange(offset));
   }
   static bool IsInRange(int offset) {
-    if ((offset - 4) < -536870912) {
-      return false;
-    }
-    if ((offset - 4) > 536870908) {
-      return false;
-    }
+    if ((offset - 4) < -536870912) return false;
+    if ((offset - 4) > 536870908) return false;
     return true;
   }
   static const uint32_t INVALID = 0x20000000;
@@ -645,7 +648,11 @@ inline Imm32 Imm64::firstHalf() const { return low(); }
 
 inline Imm32 Imm64::secondHalf() const { return hi(); }
 
-void PatchJump(CodeLocationJump& jump_, CodeLocationLabel label);
+void PatchJump(CodeLocationJump& jump_, CodeLocationLabel label,
+               ReprotectCode reprotect = DontReprotect);
+
+void PatchBackedge(CodeLocationJump& jump_, CodeLocationLabel label,
+                   JitZoneGroup::BackedgeTarget target);
 
 static constexpr int32_t SliceSize = 1024;
 typedef js::jit::AssemblerBuffer<SliceSize, Instruction> MIPSBuffer;
@@ -653,9 +660,7 @@ typedef js::jit::AssemblerBuffer<SliceSize, Instruction> MIPSBuffer;
 class MIPSBufferWithExecutableCopy : public MIPSBuffer {
  public:
   void executableCopy(uint8_t* buffer) {
-    if (this->oom()) {
-      return;
-    }
+    if (this->oom()) return;
 
     for (Slice* cur = head; cur != nullptr; cur = cur->getNext()) {
       memcpy(buffer, &cur->instructions, cur->length());
@@ -664,9 +669,7 @@ class MIPSBufferWithExecutableCopy : public MIPSBuffer {
   }
 
   bool appendRawCode(const uint8_t* code, size_t numBytes) {
-    if (this->oom()) {
-      return false;
-    }
+    if (this->oom()) return false;
     while (numBytes > SliceSize) {
       this->putBytes(SliceSize, code);
       numBytes -= SliceSize;
@@ -760,9 +763,9 @@ class AssemblerMIPSShared : public AssemblerShared {
     // we want to fix-up
     BufferOffset offset;
     void* target;
-    RelocationKind kind;
+    Relocation::Kind kind;
 
-    RelativePatch(BufferOffset offset, void* target, RelocationKind kind)
+    RelativePatch(BufferOffset offset, void* target, Relocation::Kind kind)
         : offset(offset), target(target), kind(kind) {}
   };
 
@@ -797,24 +800,12 @@ class AssemblerMIPSShared : public AssemblerShared {
   // before to recover the pointer, and not after.
   void writeDataRelocation(ImmGCPtr ptr) {
     if (ptr.value) {
-      if (gc::IsInsideNursery(ptr.value)) {
-        embedsNurseryPointers_ = true;
-      }
+      if (gc::IsInsideNursery(ptr.value)) embedsNurseryPointers_ = true;
       dataRelocations_.writeUnsigned(nextOffset().getOffset());
     }
   }
 
-  void assertNoGCThings() const {
-#ifdef DEBUG
-    MOZ_ASSERT(dataRelocations_.length() == 0);
-    for (auto& j : jumps_) {
-      MOZ_ASSERT(j.kind == RelocationKind::HARDCODED);
-    }
-#endif
-  }
-
  public:
-  void setUnlimitedBuffer() { m_buffer.setUnlimited(); }
   bool oom() const;
 
   void setPrinter(Sprinter* sp) {
@@ -846,9 +837,7 @@ class AssemblerMIPSShared : public AssemblerShared {
 
     int i = VsprintfLiteral(buf, fmt, va);
     if (i > -1) {
-      if (printer) {
-        printer->printf("%s\n", buf);
-      }
+      if (printer) printer->printf("%s\n", buf);
       js::jit::JitSpew(js::jit::JitSpew_Codegen, "%s", buf);
     }
   }
@@ -1154,6 +1143,7 @@ class AssemblerMIPSShared : public AssemblerShared {
 
   // label operations
   void bind(Label* label, BufferOffset boff = BufferOffset());
+  void bindLater(Label* label, wasm::OldTrapDesc target);
   virtual void bind(InstImm* inst, uintptr_t branch, uintptr_t target) = 0;
   void bind(CodeLabel* label) { label->target()->bind(currentOffset()); }
   uint32_t currentOffset() { return nextOffset().getOffset(); }
@@ -1181,11 +1171,9 @@ class AssemblerMIPSShared : public AssemblerShared {
 
  protected:
   InstImm invertBranch(InstImm branch, BOffImm16 skipOffset);
-  void addPendingJump(BufferOffset src, ImmPtr target, RelocationKind kind) {
+  void addPendingJump(BufferOffset src, ImmPtr target, Relocation::Kind kind) {
     enoughMemory_ &= jumps_.append(RelativePatch(src, target.value, kind));
-    if (kind == RelocationKind::JITCODE) {
-      writeRelocation(src);
-    }
+    if (kind == Relocation::JITCODE) writeRelocation(src);
   }
 
   void addLongJump(BufferOffset src, BufferOffset dst) {
@@ -1193,7 +1181,7 @@ class AssemblerMIPSShared : public AssemblerShared {
     cl.patchAt()->bind(src.getOffset());
     cl.target()->bind(dst.getOffset());
     cl.setLinkMode(CodeLabel::JumpImmediate);
-    addCodeLabel(std::move(cl));
+    addCodeLabel(mozilla::Move(cl));
   }
 
  public:
@@ -1217,6 +1205,8 @@ class AssemblerMIPSShared : public AssemblerShared {
 
   static void UpdateLuiOriValue(Instruction* inst0, Instruction* inst1,
                                 uint32_t value);
+
+  bool bailed() { return m_buffer.bail(); }
 
   void verifyHeapAccessDisassembly(uint32_t begin, uint32_t end,
                                    const Disassembler::HeapAccess& heapAccess) {
@@ -1420,14 +1410,10 @@ class InstGS : public Instruction {
 };
 
 inline bool IsUnaligned(const wasm::MemoryAccessDesc& access) {
-  if (!access.align()) {
-    return false;
-  }
+  if (!access.align()) return false;
 
 #ifdef JS_CODEGEN_MIPS32
-  if (access.type() == Scalar::Int64 && access.align() >= 4) {
-    return false;
-  }
+  if (access.type() == Scalar::Int64 && access.align() >= 4) return false;
 #endif
 
   return access.align() < access.byteSize();

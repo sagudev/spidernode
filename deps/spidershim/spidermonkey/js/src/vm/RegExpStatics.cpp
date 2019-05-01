@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +21,7 @@ using namespace js;
  */
 
 static void resc_finalize(FreeOp* fop, JSObject* obj) {
-  MOZ_ASSERT(fop->onMainThread());
+  MOZ_ASSERT(fop->onActiveCooperatingThread());
   RegExpStatics* res =
       static_cast<RegExpStatics*>(obj->as<RegExpStaticsObject>().getPrivate());
   fop->delete_(res);
@@ -29,9 +29,7 @@ static void resc_finalize(FreeOp* fop, JSObject* obj) {
 
 static void resc_trace(JSTracer* trc, JSObject* obj) {
   void* pdata = obj->as<RegExpStaticsObject>().getPrivate();
-  if (pdata) {
-    static_cast<RegExpStatics*>(pdata)->trace(trc);
-  }
+  if (pdata) static_cast<RegExpStatics*>(pdata)->trace(trc);
 }
 
 static const ClassOps RegExpStaticsObjectClassOps = {nullptr, /* addProperty */
@@ -53,21 +51,15 @@ const Class RegExpStaticsObject::class_ = {
 RegExpStaticsObject* RegExpStatics::create(JSContext* cx) {
   RegExpStaticsObject* obj =
       NewObjectWithGivenProto<RegExpStaticsObject>(cx, nullptr);
-  if (!obj) {
-    return nullptr;
-  }
+  if (!obj) return nullptr;
   RegExpStatics* res = cx->new_<RegExpStatics>();
-  if (!res) {
-    return nullptr;
-  }
+  if (!res) return nullptr;
   obj->setPrivate(static_cast<void*>(res));
   return obj;
 }
 
 bool RegExpStatics::executeLazy(JSContext* cx) {
-  if (!pendingLazyEvaluation) {
-    return true;
-  }
+  if (!pendingLazyEvaluation) return true;
 
   MOZ_ASSERT(lazySource);
   MOZ_ASSERT(matchesInput);
@@ -75,11 +67,8 @@ bool RegExpStatics::executeLazy(JSContext* cx) {
 
   /* Retrieve or create the RegExpShared in this zone. */
   RootedAtom source(cx, lazySource);
-  RootedRegExpShared shared(cx,
-                            cx->zone()->regExps().get(cx, source, lazyFlags));
-  if (!shared) {
-    return false;
-  }
+  RootedRegExpShared shared(cx, cx->zone()->regExps.get(cx, source, lazyFlags));
+  if (!shared) return false;
 
   /*
    * It is not necessary to call aboutToWrite(): evaluation of
@@ -90,9 +79,7 @@ bool RegExpStatics::executeLazy(JSContext* cx) {
   RootedLinearString input(cx, matchesInput);
   RegExpRunStatus status = RegExpShared::execute(cx, &shared, input, lazyIndex,
                                                  &this->matches, nullptr);
-  if (status == RegExpRunStatus_Error) {
-    return false;
-  }
+  if (status == RegExpRunStatus_Error) return false;
 
   /*
    * RegExpStatics are only updated on successful (matching) execution.

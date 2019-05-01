@@ -1,7 +1,7 @@
 // Dynamically generated sources should have their introduction script and
 // offset set correctly.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger;
 var gDO = dbg.addDebuggee(g);
 var log;

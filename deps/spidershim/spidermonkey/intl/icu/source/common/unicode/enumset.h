@@ -28,7 +28,6 @@ U_NAMESPACE_BEGIN
  * enum bitset for boolean fields. Similar to Java EnumSet<>. 
  * Needs to range check. Used for private instance variables.
  * @internal
- * \cond
  */
 template<typename T, uint32_t minValue, uint32_t limitValue>
 class EnumSet {
@@ -60,8 +59,6 @@ private:
 private:
     uint32_t fBools;
 };
-
-/** \endcond */
 
 U_NAMESPACE_END
 

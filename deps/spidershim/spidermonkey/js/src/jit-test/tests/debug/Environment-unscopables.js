@@ -2,7 +2,7 @@
 
 load(libdir + "asserts.js");
 
-let g = newGlobal({newCompartment: true});
+let g = newGlobal();
 g.eval(`
     let x = 'global';
     function f() {

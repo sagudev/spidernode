@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -30,10 +30,14 @@ BEGIN_TEST(testDefineGetterSetterNonEnumerable) {
   JS::RootedValue vset(cx, JS::ObjectValue(*funSetObj));
 
   JS::RootedObject vObject(cx, vobj.toObjectOrNull());
-  CHECK(JS_DefineProperty(cx, vObject, PROPERTY_NAME, funGetObj, funSetObj,
+  CHECK(JS_DefineProperty(cx, vObject, PROPERTY_NAME,
+                          JS_DATA_TO_FUNC_PTR(JSNative, (JSObject*)funGetObj),
+                          JS_DATA_TO_FUNC_PTR(JSNative, (JSObject*)funSetObj),
                           JSPROP_GETTER | JSPROP_SETTER | JSPROP_ENUMERATE));
 
-  CHECK(JS_DefineProperty(cx, vObject, PROPERTY_NAME, funGetObj, funSetObj,
+  CHECK(JS_DefineProperty(cx, vObject, PROPERTY_NAME,
+                          JS_DATA_TO_FUNC_PTR(JSNative, (JSObject*)funGetObj),
+                          JS_DATA_TO_FUNC_PTR(JSNative, (JSObject*)funSetObj),
                           JSPROP_GETTER | JSPROP_SETTER | JSPROP_PERMANENT));
 
   JS::Rooted<JS::PropertyDescriptor> desc(cx);

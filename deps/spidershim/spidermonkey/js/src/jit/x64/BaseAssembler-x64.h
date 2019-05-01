@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -51,11 +51,10 @@ class BaseAssemblerX64 : public BaseAssembler {
       m_formatter.oneByteOp64(OP_GROUP1_EvIb, dst, GROUP1_OP_ADD);
       m_formatter.immediate8s(imm);
     } else {
-      if (dst == rax) {
+      if (dst == rax)
         m_formatter.oneByteOp64(OP_ADD_EAXIv);
-      } else {
+      else
         m_formatter.oneByteOp64(OP_GROUP1_EvIz, dst, GROUP1_OP_ADD);
-      }
       m_formatter.immediate32(imm);
     }
   }
@@ -63,11 +62,10 @@ class BaseAssemblerX64 : public BaseAssembler {
   void addq_i32r(int32_t imm, RegisterID dst) {
     // 32-bit immediate always, for patching.
     spew("addq       $0x%04x, %s", imm, GPReg64Name(dst));
-    if (dst == rax) {
+    if (dst == rax)
       m_formatter.oneByteOp64(OP_ADD_EAXIv);
-    } else {
+    else
       m_formatter.oneByteOp64(OP_GROUP1_EvIz, dst, GROUP1_OP_ADD);
-    }
     m_formatter.immediate32(imm);
   }
 
@@ -200,11 +198,10 @@ class BaseAssemblerX64 : public BaseAssembler {
       m_formatter.oneByteOp64(OP_GROUP1_EvIb, dst, GROUP1_OP_AND);
       m_formatter.immediate8s(imm);
     } else {
-      if (dst == rax) {
+      if (dst == rax)
         m_formatter.oneByteOp64(OP_AND_EAXIv);
-      } else {
+      else
         m_formatter.oneByteOp64(OP_GROUP1_EvIz, dst, GROUP1_OP_AND);
-      }
       m_formatter.immediate32(imm);
     }
   }
@@ -225,11 +222,10 @@ class BaseAssemblerX64 : public BaseAssembler {
       m_formatter.oneByteOp64(OP_GROUP1_EvIb, dst, GROUP1_OP_OR);
       m_formatter.immediate8s(imm);
     } else {
-      if (dst == rax) {
+      if (dst == rax)
         m_formatter.oneByteOp64(OP_OR_EAXIv);
-      } else {
+      else
         m_formatter.oneByteOp64(OP_GROUP1_EvIz, dst, GROUP1_OP_OR);
-      }
       m_formatter.immediate32(imm);
     }
   }
@@ -272,11 +268,10 @@ class BaseAssemblerX64 : public BaseAssembler {
       m_formatter.oneByteOp64(OP_GROUP1_EvIb, dst, GROUP1_OP_SUB);
       m_formatter.immediate8s(imm);
     } else {
-      if (dst == rax) {
+      if (dst == rax)
         m_formatter.oneByteOp64(OP_SUB_EAXIv);
-      } else {
+      else
         m_formatter.oneByteOp64(OP_GROUP1_EvIz, dst, GROUP1_OP_SUB);
-      }
       m_formatter.immediate32(imm);
     }
   }
@@ -292,11 +287,10 @@ class BaseAssemblerX64 : public BaseAssembler {
       m_formatter.oneByteOp64(OP_GROUP1_EvIb, dst, GROUP1_OP_XOR);
       m_formatter.immediate8s(imm);
     } else {
-      if (dst == rax) {
+      if (dst == rax)
         m_formatter.oneByteOp64(OP_XOR_EAXIv);
-      } else {
+      else
         m_formatter.oneByteOp64(OP_GROUP1_EvIz, dst, GROUP1_OP_XOR);
-      }
       m_formatter.immediate32(imm);
     }
   }
@@ -319,9 +313,9 @@ class BaseAssemblerX64 : public BaseAssembler {
   void sarq_ir(int32_t imm, RegisterID dst) {
     MOZ_ASSERT(imm < 64);
     spew("sarq       $%d, %s", imm, GPReg64Name(dst));
-    if (imm == 1) {
+    if (imm == 1)
       m_formatter.oneByteOp64(OP_GROUP2_Ev1, dst, GROUP2_OP_SAR);
-    } else {
+    else {
       m_formatter.oneByteOp64(OP_GROUP2_EvIb, dst, GROUP2_OP_SAR);
       m_formatter.immediate8u(imm);
     }
@@ -330,9 +324,9 @@ class BaseAssemblerX64 : public BaseAssembler {
   void shlq_ir(int32_t imm, RegisterID dst) {
     MOZ_ASSERT(imm < 64);
     spew("shlq       $%d, %s", imm, GPReg64Name(dst));
-    if (imm == 1) {
+    if (imm == 1)
       m_formatter.oneByteOp64(OP_GROUP2_Ev1, dst, GROUP2_OP_SHL);
-    } else {
+    else {
       m_formatter.oneByteOp64(OP_GROUP2_EvIb, dst, GROUP2_OP_SHL);
       m_formatter.immediate8u(imm);
     }
@@ -341,9 +335,9 @@ class BaseAssemblerX64 : public BaseAssembler {
   void shrq_ir(int32_t imm, RegisterID dst) {
     MOZ_ASSERT(imm < 64);
     spew("shrq       $%d, %s", imm, GPReg64Name(dst));
-    if (imm == 1) {
+    if (imm == 1)
       m_formatter.oneByteOp64(OP_GROUP2_Ev1, dst, GROUP2_OP_SHR);
-    } else {
+    else {
       m_formatter.oneByteOp64(OP_GROUP2_EvIb, dst, GROUP2_OP_SHR);
       m_formatter.immediate8u(imm);
     }
@@ -352,9 +346,9 @@ class BaseAssemblerX64 : public BaseAssembler {
   void rolq_ir(int32_t imm, RegisterID dst) {
     MOZ_ASSERT(imm < 64);
     spew("rolq       $%d, %s", imm, GPReg64Name(dst));
-    if (imm == 1) {
+    if (imm == 1)
       m_formatter.oneByteOp64(OP_GROUP2_Ev1, dst, GROUP2_OP_ROL);
-    } else {
+    else {
       m_formatter.oneByteOp64(OP_GROUP2_EvIb, dst, GROUP2_OP_ROL);
       m_formatter.immediate8u(imm);
     }
@@ -367,9 +361,9 @@ class BaseAssemblerX64 : public BaseAssembler {
   void rorq_ir(int32_t imm, RegisterID dst) {
     MOZ_ASSERT(imm < 64);
     spew("rorq       $%d, %s", imm, GPReg64Name(dst));
-    if (imm == 1) {
+    if (imm == 1)
       m_formatter.oneByteOp64(OP_GROUP2_Ev1, dst, GROUP2_OP_ROR);
-    } else {
+    else {
       m_formatter.oneByteOp64(OP_GROUP2_EvIb, dst, GROUP2_OP_ROR);
       m_formatter.immediate8u(imm);
     }
@@ -432,11 +426,10 @@ class BaseAssemblerX64 : public BaseAssembler {
       m_formatter.oneByteOp64(OP_GROUP1_EvIb, lhs, GROUP1_OP_CMP);
       m_formatter.immediate8s(rhs);
     } else {
-      if (lhs == rax) {
+      if (lhs == rax)
         m_formatter.oneByteOp64(OP_CMP_EAXIv);
-      } else {
+      else
         m_formatter.oneByteOp64(OP_GROUP1_EvIz, lhs, GROUP1_OP_CMP);
-      }
       m_formatter.immediate32(rhs);
     }
   }
@@ -495,11 +488,10 @@ class BaseAssemblerX64 : public BaseAssembler {
       return;
     }
     spew("testq      $0x%" PRIx64 ", %s", int64_t(rhs), GPReg64Name(lhs));
-    if (lhs == rax) {
+    if (lhs == rax)
       m_formatter.oneByteOp64(OP_TEST_EAXIv);
-    } else {
+    else
       m_formatter.oneByteOp64(OP_GROUP3_EvIz, lhs, GROUP3_OP_TEST);
-    }
     m_formatter.immediate32(rhs);
   }
 
@@ -888,26 +880,24 @@ class BaseAssemblerX64 : public BaseAssembler {
       m_formatter.legacySSEPrefix(ty);
       m_formatter.twoByteRipOp(opcode, 0, dst);
       JmpSrc label(m_formatter.size());
-      if (IsXMMReversedOperands(opcode)) {
+      if (IsXMMReversedOperands(opcode))
         spew("%-11s%s, " MEM_o32r "", legacySSEOpName(name), XMMRegName(dst),
              ADDR_o32r(label.offset()));
-      } else {
+      else
         spew("%-11s" MEM_o32r ", %s", legacySSEOpName(name),
              ADDR_o32r(label.offset()), XMMRegName(dst));
-      }
       return label;
     }
 
     m_formatter.twoByteRipOpVex(ty, opcode, 0, src0, dst);
     JmpSrc label(m_formatter.size());
     if (src0 == invalid_xmm) {
-      if (IsXMMReversedOperands(opcode)) {
+      if (IsXMMReversedOperands(opcode))
         spew("%-11s%s, " MEM_o32r "", name, XMMRegName(dst),
              ADDR_o32r(label.offset()));
-      } else {
+      else
         spew("%-11s" MEM_o32r ", %s", name, ADDR_o32r(label.offset()),
              XMMRegName(dst));
-      }
     } else {
       spew("%-11s" MEM_o32r ", %s, %s", name, ADDR_o32r(label.offset()),
            XMMRegName(src0), XMMRegName(dst));
@@ -919,24 +909,22 @@ class BaseAssemblerX64 : public BaseAssembler {
                           TwoByteOpcodeID opcode, RegisterID rm,
                           XMMRegisterID src0, XMMRegisterID dst) {
     if (useLegacySSEEncoding(src0, dst)) {
-      if (IsXMMReversedOperands(opcode)) {
+      if (IsXMMReversedOperands(opcode))
         spew("%-11s%s, %s", legacySSEOpName(name), XMMRegName(dst),
              GPRegName(rm));
-      } else {
+      else
         spew("%-11s%s, %s", legacySSEOpName(name), GPRegName(rm),
              XMMRegName(dst));
-      }
       m_formatter.legacySSEPrefix(ty);
       m_formatter.twoByteOp64(opcode, rm, dst);
       return;
     }
 
     if (src0 == invalid_xmm) {
-      if (IsXMMReversedOperands(opcode)) {
+      if (IsXMMReversedOperands(opcode))
         spew("%-11s%s, %s", name, XMMRegName(dst), GPRegName(rm));
-      } else {
+      else
         spew("%-11s%s, %s", name, GPRegName(rm), XMMRegName(dst));
-      }
     } else {
       spew("%-11s%s, %s, %s", name, GPRegName(rm), XMMRegName(src0),
            XMMRegName(dst));
@@ -948,29 +936,27 @@ class BaseAssemblerX64 : public BaseAssembler {
                           TwoByteOpcodeID opcode, XMMRegisterID rm,
                           RegisterID dst) {
     if (useLegacySSEEncodingForOtherOutput()) {
-      if (IsXMMReversedOperands(opcode)) {
+      if (IsXMMReversedOperands(opcode))
         spew("%-11s%s, %s", legacySSEOpName(name), GPRegName(dst),
              XMMRegName(rm));
-      } else if (opcode == OP2_MOVD_EdVd) {
+      else if (opcode == OP2_MOVD_EdVd)
         spew("%-11s%s, %s", legacySSEOpName(name),
              XMMRegName((XMMRegisterID)dst), GPRegName((RegisterID)rm));
-      } else {
+      else
         spew("%-11s%s, %s", legacySSEOpName(name), XMMRegName(rm),
              GPRegName(dst));
-      }
       m_formatter.legacySSEPrefix(ty);
       m_formatter.twoByteOp64(opcode, (RegisterID)rm, dst);
       return;
     }
 
-    if (IsXMMReversedOperands(opcode)) {
+    if (IsXMMReversedOperands(opcode))
       spew("%-11s%s, %s", name, GPRegName(dst), XMMRegName(rm));
-    } else if (opcode == OP2_MOVD_EdVd) {
+    else if (opcode == OP2_MOVD_EdVd)
       spew("%-11s%s, %s", name, XMMRegName((XMMRegisterID)dst),
            GPRegName((RegisterID)rm));
-    } else {
+    else
       spew("%-11s%s, %s", name, XMMRegName(rm), GPRegName(dst));
-    }
     m_formatter.twoByteOpVex64(ty, opcode, (RegisterID)rm, invalid_xmm,
                                (XMMRegisterID)dst);
   }

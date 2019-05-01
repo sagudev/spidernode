@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -18,9 +18,7 @@ struct TestState {
 
   explicit TestState(bool createThread = true)
       : mutex(js::mutexid::TestMutex), flag(false) {
-    if (createThread) {
-      MOZ_RELEASE_ASSERT(testThread.init(setFlag, this));
-    }
+    if (createThread) MOZ_RELEASE_ASSERT(testThread.init(setFlag, this));
   }
 
   static void setFlag(TestState* state) {
@@ -36,9 +34,7 @@ BEGIN_TEST(testThreadingConditionVariable) {
   auto state = mozilla::MakeUnique<TestState>();
   {
     js::UniqueLock<js::Mutex> lock(state->mutex);
-    while (!state->flag) {
-      state->condition.wait(lock);
-    }
+    while (!state->flag) state->condition.wait(lock);
   }
   state->join();
 
@@ -89,9 +85,7 @@ BEGIN_TEST(testThreadingConditionVariableUntilTimeout) {
       auto to = mozilla::TimeStamp::Now() +
                 mozilla::TimeDuration::FromMilliseconds(10);
       js::CVStatus res = state->condition.wait_until(lock, to);
-      if (res == js::CVStatus::Timeout) {
-        break;
-      }
+      if (res == js::CVStatus::Timeout) break;
     }
   }
   CHECK(!state->flag);
@@ -168,9 +162,7 @@ BEGIN_TEST(testThreadingConditionVariableForTimeout) {
     while (!state->flag) {
       auto duration = mozilla::TimeDuration::FromMilliseconds(10);
       js::CVStatus res = state->condition.wait_for(lock, duration);
-      if (res == js::CVStatus::Timeout) {
-        break;
-      }
+      if (res == js::CVStatus::Timeout) break;
     }
   }
   CHECK(!state->flag);

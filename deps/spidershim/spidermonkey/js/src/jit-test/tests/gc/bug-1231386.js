@@ -1,4 +1,5 @@
-// |jit-test| slow; skip-if: !('oomTest' in this)
+if (!('oomTest' in this))
+    quit();
 
 function f1() {}
 function f2() {}
@@ -10,7 +11,7 @@ function f3() {
     };
 }
 var x = f3();
-var h = newGlobal({newCompartment: true});
+var h = newGlobal();
 var dbg = new Debugger;
 dbg.addDebuggee(h);
 oomTest(() => getBacktrace({

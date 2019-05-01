@@ -16,13 +16,17 @@ using mozilla::Reversed;
 const size_t kMaxNumber = 50;
 const size_t kArraySize = 256;
 
-template <typename IntType>
-static IntType GenerateNumber() {
+template<typename IntType>
+static IntType
+GenerateNumber()
+{
   return static_cast<IntType>(rand() % kMaxNumber + 1);
 }
 
-template <typename IntType>
-static void TestSingleParamRange(const IntType aN) {
+template<typename IntType>
+static void
+TestSingleParamRange(const IntType aN)
+{
   IntType array[kArraySize];
   IntType* ptr = array;
   for (auto i : IntegerRange(aN)) {
@@ -39,8 +43,10 @@ static void TestSingleParamRange(const IntType aN) {
   }
 }
 
-template <typename IntType>
-static void TestSingleParamReverseRange(const IntType aN) {
+template<typename IntType>
+static void
+TestSingleParamReverseRange(const IntType aN)
+{
   IntType array[kArraySize];
   IntType* ptr = array;
   for (auto i : Reversed(IntegerRange(aN))) {
@@ -57,8 +63,10 @@ static void TestSingleParamReverseRange(const IntType aN) {
   }
 }
 
-template <typename IntType>
-static void TestSingleParamIntegerRange() {
+template<typename IntType>
+static void
+TestSingleParamIntegerRange()
+{
   const auto kN = GenerateNumber<IntType>();
   TestSingleParamRange<IntType>(0);
   TestSingleParamReverseRange<IntType>(0);
@@ -66,13 +74,14 @@ static void TestSingleParamIntegerRange() {
   TestSingleParamReverseRange<IntType>(kN);
 }
 
-template <typename IntType1, typename IntType2>
-static void TestDoubleParamRange(const IntType1 aBegin, const IntType2 aEnd) {
+template<typename IntType1, typename IntType2>
+static void
+TestDoubleParamRange(const IntType1 aBegin, const IntType2 aEnd)
+{
   IntType2 array[kArraySize];
   IntType2* ptr = array;
   for (auto i : IntegerRange(aBegin, aEnd)) {
-    static_assert(IsSame<decltype(i), IntType2>::value,
-                  "type of the loop var "
+    static_assert(IsSame<decltype(i), IntType2>::value, "type of the loop var "
                   "should be same as that of the second param");
     *ptr++ = i;
   }
@@ -85,14 +94,14 @@ static void TestDoubleParamRange(const IntType1 aBegin, const IntType2 aEnd) {
   }
 }
 
-template <typename IntType1, typename IntType2>
-static void TestDoubleParamReverseRange(const IntType1 aBegin,
-                                        const IntType2 aEnd) {
+template<typename IntType1, typename IntType2>
+static void
+TestDoubleParamReverseRange(const IntType1 aBegin, const IntType2 aEnd)
+{
   IntType2 array[kArraySize];
   IntType2* ptr = array;
   for (auto i : Reversed(IntegerRange(aBegin, aEnd))) {
-    static_assert(IsSame<decltype(i), IntType2>::value,
-                  "type of the loop var "
+    static_assert(IsSame<decltype(i), IntType2>::value, "type of the loop var "
                   "should be same as that of the second param");
     *ptr++ = i;
   }
@@ -100,14 +109,15 @@ static void TestDoubleParamReverseRange(const IntType1 aBegin,
   MOZ_RELEASE_ASSERT(ptr - array == static_cast<ptrdiff_t>(aEnd - aBegin),
                      "Should iterates (aEnd - aBegin) times");
   for (size_t i = 0; i < static_cast<size_t>(aEnd - aBegin); i++) {
-    MOZ_RELEASE_ASSERT(
-        array[i] == static_cast<IntType2>(aEnd - i - 1),
-        "Should iterate integers in [aBegin, aEnd) in reverse order");
+    MOZ_RELEASE_ASSERT(array[i] == static_cast<IntType2>(aEnd - i - 1),
+                       "Should iterate integers in [aBegin, aEnd) in reverse order");
   }
 }
 
-template <typename IntType1, typename IntType2>
-static void TestDoubleParamIntegerRange() {
+template<typename IntType1, typename IntType2>
+static void
+TestDoubleParamIntegerRange()
+{
   const auto kStart = GenerateNumber<IntType1>();
   const auto kEnd = static_cast<IntType2>(kStart + GenerateNumber<IntType2>());
   TestDoubleParamRange(kStart, static_cast<IntType2>(kStart));
@@ -116,7 +126,9 @@ static void TestDoubleParamIntegerRange() {
   TestDoubleParamReverseRange(kStart, kEnd);
 }
 
-int main() {
+int
+main()
+{
   TestSingleParamIntegerRange<int8_t>();
   TestSingleParamIntegerRange<int16_t>();
   TestSingleParamIntegerRange<int32_t>();

@@ -1,15 +1,12 @@
-// |jit-test| test-also=--wasm-compiler=ion; skip-if: !wasmDebuggingIsSupported()
+// |jit-test| test-also-no-wasm-baseline
 // Tests that wasm module can accept URL and sourceMapURL from response
 // when instantiateStreaming is used.
 
-ignoreUnhandledRejections();
+if (!wasmDebuggingIsSupported())
+  quit();
 
 try {
     WebAssembly.compileStreaming();
-    // Avoid mixing the test's jobs with the debuggee's, so that
-    // automated checks can make sure AutoSaveJobQueue only
-    // suspends debuggee work.
-    drainJobQueue();
 } catch (err) {
     assertEq(String(err).indexOf("not supported with --no-threads") !== -1, true);
     quit();
@@ -17,7 +14,7 @@ try {
 
 load(libdir + "asserts.js");
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 
 var source = new g.Uint8Array(wasmTextToBinary('(module (func unreachable))'));
 source.url = "http://example.org/test.wasm";

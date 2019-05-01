@@ -1,4 +1,4 @@
-// |reftest| skip error:SyntaxError module -- export-star-as-namespace-from-module is not supported
+// |reftest| error:SyntaxError module
 // Copyright (C) 2016 the V8 project authors. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
@@ -8,9 +8,8 @@ esid: sec-exports
 info: |
     ExportDeclaration:
       export * FromClause;
-      export * as IdentifierName FromClause;
-      export NamedExports FromClause;
-      export NamedExports;
+      export ExportClause FromClause;
+      export ExportClause;
       export VariableStatement
       export Declaration
       export default HoistableDeclaration[Default]
@@ -20,9 +19,8 @@ negative:
   phase: parse
   type: SyntaxError
 flags: [module]
-features: [export-star-as-namespace-from-module]
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 export * from './parse-err-semi-export-star.js' null;

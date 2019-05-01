@@ -1,6 +1,6 @@
 // Regression test for bug 1370648.
 
-let g = newGlobal({newCompartment: true});
+let g = newGlobal();
 
 let dbg = Debugger(g);
 let lines = [0, 0, 0, 0, 0];

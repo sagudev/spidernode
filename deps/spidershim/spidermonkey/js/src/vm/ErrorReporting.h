@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,8 +11,7 @@
 
 #include <stdarg.h>
 
-#include "jsapi.h"        // for JSErrorNotes, JSErrorReport
-#include "jsfriendapi.h"  // for ScriptEnvironmentPreparer
+#include "jsapi.h"  // for JSErrorNotes, JSErrorReport
 
 #include "js/UniquePtr.h"  // for UniquePtr
 #include "js/Utility.h"    // for UniqueTwoByteChars
@@ -67,16 +66,6 @@ class CompileError : public JSErrorReport {
   void throwError(JSContext* cx);
 };
 
-class MOZ_STACK_CLASS ReportExceptionClosure final
-    : public ScriptEnvironmentPreparer::Closure {
-  JS::HandleValue exn_;
-
- public:
-  explicit ReportExceptionClosure(JS::HandleValue exn) : exn_(exn) {}
-
-  bool operator()(JSContext* cx) override;
-};
-
 /** Send a JSErrorReport to the warningReporter callback. */
 extern void CallWarningReporter(JSContext* cx, JSErrorReport* report);
 
@@ -86,7 +75,7 @@ extern void CallWarningReporter(JSContext* cx, JSErrorReport* report);
  */
 extern void ReportCompileError(JSContext* cx, ErrorMetadata&& metadata,
                                UniquePtr<JSErrorNotes> notes, unsigned flags,
-                               unsigned errorNumber, va_list* args);
+                               unsigned errorNumber, va_list args);
 
 /**
  * Report a compile warning during script processing prior to execution of the
@@ -98,17 +87,14 @@ extern void ReportCompileError(JSContext* cx, ErrorMetadata&& metadata,
  */
 extern MOZ_MUST_USE bool ReportCompileWarning(
     JSContext* cx, ErrorMetadata&& metadata, UniquePtr<JSErrorNotes> notes,
-    unsigned flags, unsigned errorNumber, va_list* args);
-
-class GlobalObject;
+    unsigned flags, unsigned errorNumber, va_list args);
 
 /**
  * Report the given error Value to the given global.  The JSContext is not
- * assumed to be in any particular realm, but the global and error are
+ * assumed to be in any particular compartment, but the global and error are
  * expected to be same-compartment.
  */
-extern void ReportErrorToGlobal(JSContext* cx,
-                                JS::Handle<js::GlobalObject*> global,
+extern void ReportErrorToGlobal(JSContext* cx, JS::HandleObject global,
                                 JS::HandleValue error);
 
 }  // namespace js

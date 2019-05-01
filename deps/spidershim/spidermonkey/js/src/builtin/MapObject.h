@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,8 +25,6 @@ namespace js {
  * All values except ropes are hashable as-is.
  */
 class HashableValue {
-  // This is used for map and set keys. We use OrderedHashTableRef to update all
-  // nursery keys on minor GC, so a post barrier is not required here.
   PreBarrieredValue value;
 
  public:
@@ -334,42 +332,28 @@ static MOZ_MUST_USE bool IsOptimizableInitForSet(JSContext* cx,
                                                  bool* optimized) {
   MOZ_ASSERT(!*optimized);
 
-  if (!iterable.isObject()) {
-    return true;
-  }
+  if (!iterable.isObject()) return true;
 
   RootedObject array(cx, &iterable.toObject());
-  if (!IsPackedArray(array)) {
-    return true;
-  }
+  if (!IsPackedArray(array)) return true;
 
   // Get the canonical prototype object.
   RootedNativeObject setProto(cx, getPrototypeOp(cx, cx->global()));
-  if (!setProto) {
-    return false;
-  }
+  if (!setProto) return false;
 
   // Ensures setObject's prototype is the canonical prototype.
-  if (setObject->staticPrototype() != setProto) {
-    return true;
-  }
+  if (setObject->staticPrototype() != setProto) return true;
 
   // Look up the 'add' value on the prototype object.
   Shape* addShape = setProto->lookup(cx, cx->names().add);
-  if (!addShape || !addShape->isDataProperty()) {
-    return true;
-  }
+  if (!addShape || !addShape->isDataProperty()) return true;
 
   // Get the referred value, ensure it holds the canonical add function.
   RootedValue add(cx, setProto->getSlot(addShape->slot()));
-  if (!isBuiltinOp(add)) {
-    return true;
-  }
+  if (!isBuiltinOp(add)) return true;
 
   ForOfPIC::Chain* stubChain = ForOfPIC::getOrCreate(cx);
-  if (!stubChain) {
-    return false;
-  }
+  if (!stubChain) return false;
 
   return stubChain->tryOptimizeArray(cx, array.as<ArrayObject>(), optimized);
 }

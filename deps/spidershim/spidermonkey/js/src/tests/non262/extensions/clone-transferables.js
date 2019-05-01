@@ -97,31 +97,14 @@ function test() {
         // Detach the buffer during the clone operation. Should throw an
         // exception.
         if (size >= 4) {
-            const b1 = new ArrayBuffer(size);
-            let mutator = {
+            old = new ArrayBuffer(size);
+            var mutator = {
                 get foo() {
-                    serialize(b1, [b1], { scope });
+                    deserialize(serialize(old, [old], { scope }), { scope });
                 }
             };
-
-            assertThrowsInstanceOf(
-                () => serialize([ b1, mutator ], [b1]),
-                TypeError,
-                "detaching (due to Transferring) while serializing should throw"
-            );
-
-            const b2 = new ArrayBuffer(size);
-            mutator = {
-                get foo() {
-                    detachArrayBuffer(b2);
-                }
-            };
-
-            assertThrowsInstanceOf(
-                () => serialize([ b2, mutator ], [b2]),
-                TypeError,
-                "detaching (due to detachArrayBuffer) while serializing should throw"
-            );
+            // The throw is not yet implemented, bug 919259.
+            //var copy = deserialize(serialize([ old, mutator ], [old]));
         }
     }
 }

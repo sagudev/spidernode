@@ -1,5 +1,5 @@
 // Frame.this and evalInFrame in arrow function that uses 'this'.
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.eval("x = 4");
 g.eval("var foo = function() { 'use strict'; return () => this; }; var arrow = foo.call(3);");
 var dbg = new Debugger(g);

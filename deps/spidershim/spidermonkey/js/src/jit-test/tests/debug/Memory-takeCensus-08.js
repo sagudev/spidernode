@@ -1,6 +1,6 @@
 // Debugger.Memory.prototype.takeCensus: test by: 'count' breakdown
 
-let g = newGlobal({newCompartment: true});
+let g = newGlobal();
 let dbg = new Debugger(g);
 
 g.eval(`

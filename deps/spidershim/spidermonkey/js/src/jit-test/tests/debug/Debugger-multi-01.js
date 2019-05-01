@@ -1,6 +1,6 @@
 // When there are multiple debuggers, their hooks are called in order.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var log;
 var arr = [];
 

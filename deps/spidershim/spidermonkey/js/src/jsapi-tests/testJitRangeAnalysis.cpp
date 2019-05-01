@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -19,33 +19,16 @@ using namespace js;
 using namespace js::jit;
 
 static bool EquivalentRanges(const Range* a, const Range* b) {
-  if (a->hasInt32UpperBound() != b->hasInt32UpperBound()) {
+  if (a->hasInt32UpperBound() != b->hasInt32UpperBound()) return false;
+  if (a->hasInt32LowerBound() != b->hasInt32LowerBound()) return false;
+  if (a->hasInt32UpperBound() && (a->upper() != b->upper())) return false;
+  if (a->hasInt32LowerBound() && (a->lower() != b->lower())) return false;
+  if (a->canHaveFractionalPart() != b->canHaveFractionalPart()) return false;
+  if (a->canBeNegativeZero() != b->canBeNegativeZero()) return false;
+  if (a->canBeNaN() != b->canBeNaN()) return false;
+  if (a->canBeInfiniteOrNaN() != b->canBeInfiniteOrNaN()) return false;
+  if (!a->canBeInfiniteOrNaN() && (a->exponent() != b->exponent()))
     return false;
-  }
-  if (a->hasInt32LowerBound() != b->hasInt32LowerBound()) {
-    return false;
-  }
-  if (a->hasInt32UpperBound() && (a->upper() != b->upper())) {
-    return false;
-  }
-  if (a->hasInt32LowerBound() && (a->lower() != b->lower())) {
-    return false;
-  }
-  if (a->canHaveFractionalPart() != b->canHaveFractionalPart()) {
-    return false;
-  }
-  if (a->canBeNegativeZero() != b->canBeNegativeZero()) {
-    return false;
-  }
-  if (a->canBeNaN() != b->canBeNaN()) {
-    return false;
-  }
-  if (a->canBeInfiniteOrNaN() != b->canBeInfiniteOrNaN()) {
-    return false;
-  }
-  if (!a->canBeInfiniteOrNaN() && (a->exponent() != b->exponent())) {
-    return false;
-  }
   return true;
 }
 
@@ -127,6 +110,7 @@ END_TEST(testJitRangeAnalysis_MathSign)
 
 BEGIN_TEST(testJitRangeAnalysis_MathSignBeta) {
   MinimalFunc func;
+  MathCache cache;
 
   MBasicBlock* entry = func.createEntryBlock();
   MBasicBlock* thenBlock = func.createBlock(entry);
@@ -151,7 +135,8 @@ BEGIN_TEST(testJitRangeAnalysis_MathSignBeta) {
   // }
   MAdd* thenAdd = MAdd::New(func.alloc, p, cm0, MIRType::Double);
   thenBlock->add(thenAdd);
-  MSign* thenSign = MSign::New(func.alloc, thenAdd, MIRType::Double);
+  MMathFunction* thenSign =
+      MMathFunction::New(func.alloc, thenAdd, MMathFunction::Sign, &cache);
   thenBlock->add(thenSign);
   MReturn* thenRet = MReturn::New(func.alloc, thenSign);
   thenBlock->end(thenRet);
@@ -169,7 +154,8 @@ BEGIN_TEST(testJitRangeAnalysis_MathSignBeta) {
   //   }
   MAdd* elseThenAdd = MAdd::New(func.alloc, p, cm0, MIRType::Double);
   elseThenBlock->add(elseThenAdd);
-  MSign* elseThenSign = MSign::New(func.alloc, elseThenAdd, MIRType::Double);
+  MMathFunction* elseThenSign =
+      MMathFunction::New(func.alloc, elseThenAdd, MMathFunction::Sign, &cache);
   elseThenBlock->add(elseThenSign);
   MReturn* elseThenRet = MReturn::New(func.alloc, elseThenSign);
   elseThenBlock->end(elseThenRet);
@@ -181,14 +167,13 @@ BEGIN_TEST(testJitRangeAnalysis_MathSignBeta) {
   // }
   MAdd* elseElseAdd = MAdd::New(func.alloc, p, cm0, MIRType::Double);
   elseElseBlock->add(elseElseAdd);
-  MSign* elseElseSign = MSign::New(func.alloc, elseElseAdd, MIRType::Double);
+  MMathFunction* elseElseSign =
+      MMathFunction::New(func.alloc, elseElseAdd, MMathFunction::Sign, &cache);
   elseElseBlock->add(elseElseSign);
   MReturn* elseElseRet = MReturn::New(func.alloc, elseElseSign);
   elseElseBlock->end(elseElseRet);
 
-  if (!func.runRangeAnalysis()) {
-    return false;
-  }
+  if (!func.runRangeAnalysis()) return false;
 
   CHECK(!p->range());
   CHECK(EquivalentRanges(c0->range(),
@@ -273,18 +258,14 @@ BEGIN_TEST(testJitRangeAnalysis_StrictCompareBeta) {
       MCompare::Compare_Bitwise, MCompare::Compare_String};
   for (size_t i = 0; i < mozilla::ArrayLength(nonNumerics); ++i) {
     cmp->setCompareType(nonNumerics[i]);
-    if (!func.runRangeAnalysis()) {
-      return false;
-    }
+    if (!func.runRangeAnalysis()) return false;
     CHECK(!thenAdd->range() || thenAdd->range()->isUnknown());
     ClearDominatorTree(func.graph);
   }
 
   // We can do it with a numeric comparison.
   cmp->setCompareType(MCompare::Compare_Double);
-  if (!func.runRangeAnalysis()) {
-    return false;
-  }
+  if (!func.runRangeAnalysis()) return false;
   CHECK(EquivalentRanges(thenAdd->range(),
                          Range::NewDoubleRange(func.alloc, 0.0, 0.0)));
 
@@ -319,9 +300,7 @@ static bool checkShiftRightRange(int32_t lhsLow, int32_t lhsHigh,
       Range* lhsRange = Range::NewInt32Range(func.alloc, lhsLower, lhsUpper);
       for (rhsLower = rhsLow; rhsLower <= rhsHigh; rhsLower += rhsInc) {
         for (rhsUpper = rhsLower; rhsUpper <= rhsHigh; rhsUpper += rhsInc) {
-          if (!func.alloc.ensureBallast()) {
-            return false;
-          }
+          if (!func.alloc.ensureBallast()) return false;
 
           Range* rhsRange =
               Range::NewInt32Range(func.alloc, rhsLower, rhsUpper);

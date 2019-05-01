@@ -18,7 +18,6 @@ class GeckoPrettyPrinter(object):
         GeckoPrettyPrinter.pp.add_printer(self.name, self.regexp, wrapped)
         return wrapped
 
-import gdbpp.enumset
 import gdbpp.linkedlist
 import gdbpp.owningthread
 import gdbpp.smartptr

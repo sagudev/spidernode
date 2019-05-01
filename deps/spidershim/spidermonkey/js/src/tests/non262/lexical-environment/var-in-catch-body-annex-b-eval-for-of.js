@@ -1,12 +1,12 @@
 // |reftest| skip-if(!xulRuntime.shell)
 
-evaluate(`
+assertThrowsInstanceOf(() => evaluate(`
     try { throw null; } catch (e) { eval("for (var e of []) {}") }
-`);
+`), SyntaxError);
 
-new Function(`
+assertThrowsInstanceOf(new Function(`
     try { throw null; } catch (e) { eval("for (var e of []) {}") }
-`)();
+`), SyntaxError);
 
 if (typeof reportCompare === "function")
     reportCompare(true, true);

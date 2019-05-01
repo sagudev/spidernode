@@ -6,7 +6,7 @@ function ViewedArrayBufferIfReified(tarray) {
     assert(IsTypedArray(tarray), "non-typed array asked for its buffer");
 
     var buf = UnsafeGetReservedSlot(tarray, JS_TYPEDARRAYLAYOUT_BUFFER_SLOT);
-    assert(buf === null || (IsObject(buf) && (GuardToArrayBuffer(buf) !== null || GuardToSharedArrayBuffer(buf) !== null)),
+    assert(buf === null || (IsObject(buf) && (IsArrayBuffer(buf) || IsSharedArrayBuffer(buf))),
            "unexpected value in buffer slot");
     return buf;
 }
@@ -17,7 +17,7 @@ function IsDetachedBuffer(buffer) {
     if (buffer === null)
         return false;
 
-    assert(GuardToArrayBuffer(buffer) !== null || GuardToSharedArrayBuffer(buffer) !== null,
+    assert(IsArrayBuffer(buffer) || IsSharedArrayBuffer(buffer),
            "non-ArrayBuffer passed to IsDetachedBuffer");
 
     // Shared array buffers are not detachable.
@@ -26,7 +26,7 @@ function IsDetachedBuffer(buffer) {
     // only hot for non-shared memory in SetFromNonTypedArray, so there is an
     // optimization in place there to avoid incurring the cost here.  An
     // alternative is to give SharedArrayBuffer the same layout as ArrayBuffer.
-    if ((buffer = GuardToArrayBuffer(buffer)) === null)
+    if (IsSharedArrayBuffer(buffer))
         return false;
 
     var flags = UnsafeGetInt32FromReservedSlot(buffer, JS_ARRAYBUFFER_FLAGS_SLOT);
@@ -35,10 +35,6 @@ function IsDetachedBuffer(buffer) {
 
 function TypedArrayLengthMethod() {
     return TypedArrayLength(this);
-}
-
-function TypedArrayByteOffsetMethod() {
-    return TypedArrayByteOffset(this);
 }
 
 function GetAttachedArrayBuffer(tarray) {
@@ -68,45 +64,9 @@ function IsTypedArrayEnsuringArrayBuffer(arg) {
     return false;
 }
 
-// ES2019 draft rev 85ce767c86a1a8ed719fe97e978028bff819d1f2
-// 7.3.20 SpeciesConstructor ( O, defaultConstructor )
-//
-// SpeciesConstructor function optimized for TypedArrays to avoid calling
-// _ConstructorForTypedArray, a non-inlineable runtime function, in the normal
-// case.
-function TypedArraySpeciesConstructor(obj) {
-    // Step 1.
-    assert(IsObject(obj), "not passed an object");
-
-    // Step 2.
-    var ctor = obj.constructor;
-
-    // Step 3.
-    if (ctor === undefined)
-        return _ConstructorForTypedArray(obj);
-
-    // Step 4.
-    if (!IsObject(ctor))
-        ThrowTypeError(JSMSG_NOT_NONNULL_OBJECT, "object's 'constructor' property");
-
-    // Steps 5.
-    var s = ctor[std_species];
-
-    // Step 6.
-    if (s === undefined || s === null)
-        return _ConstructorForTypedArray(obj);
-
-    // Step 7.
-    if (IsConstructor(s))
-        return s;
-
-    // Step 8.
-    ThrowTypeError(JSMSG_NOT_CONSTRUCTOR, "@@species property of object's constructor");
-}
-
 // ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
 // 22.2.3.5.1 Runtime Semantics: ValidateTypedArray ( O )
-function ValidateTypedArray(obj) {
+function ValidateTypedArray(obj, error) {
     if (IsObject(obj)) {
         /* Steps 3-5 (non-wrapped typed arrays). */
         if (IsTypedArray(obj)) {
@@ -124,7 +84,7 @@ function ValidateTypedArray(obj) {
     }
 
     /* Steps 1-2. */
-    ThrowTypeError(JSMSG_NON_TYPED_ARRAY_RETURNED);
+    ThrowTypeError(error);
 }
 
 // ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
@@ -134,7 +94,7 @@ function TypedArrayCreateWithLength(constructor, length) {
     var newTypedArray = new constructor(length);
 
     // Step 2.
-    var isTypedArray = ValidateTypedArray(newTypedArray);
+    var isTypedArray = ValidateTypedArray(newTypedArray, JSMSG_NON_TYPED_ARRAY_RETURNED);
 
     // Step 3.
     var len;
@@ -159,7 +119,7 @@ function TypedArrayCreateWithBuffer(constructor, buffer, byteOffset, length) {
     var newTypedArray = new constructor(buffer, byteOffset, length);
 
     // Step 2.
-    ValidateTypedArray(newTypedArray);
+    ValidateTypedArray(newTypedArray, JSMSG_NON_TYPED_ARRAY_RETURNED);
 
     // Step 3 (not applicable).
 
@@ -172,8 +132,11 @@ function TypedArrayCreateWithBuffer(constructor, buffer, byteOffset, length) {
 function TypedArraySpeciesCreateWithLength(exemplar, length) {
     // Step 1 (omitted).
 
-    // Steps 2-3.
-    var C = TypedArraySpeciesConstructor(exemplar);
+    // Step 2.
+    var defaultConstructor = _ConstructorForTypedArray(exemplar);
+
+    // Step 3.
+    var C = SpeciesConstructor(exemplar, defaultConstructor);
 
     // Step 4.
     return TypedArrayCreateWithLength(C, length);
@@ -184,8 +147,11 @@ function TypedArraySpeciesCreateWithLength(exemplar, length) {
 function TypedArraySpeciesCreateWithBuffer(exemplar, buffer, byteOffset, length) {
     // Step 1 (omitted).
 
-    // Steps 2-3.
-    var C = TypedArraySpeciesConstructor(exemplar);
+    // Step 2.
+    var defaultConstructor = _ConstructorForTypedArray(exemplar);
+
+    // Step 3.
+    var C = SpeciesConstructor(exemplar, defaultConstructor);
 
     // Step 4.
     return TypedArrayCreateWithBuffer(C, buffer, byteOffset, length);
@@ -351,12 +317,7 @@ function TypedArrayFill(value, start = 0, end = undefined) {
     var len = TypedArrayLength(O);
 
     // Step 4.
-    var kind = GetTypedArrayKind(O);
-    if (kind === TYPEDARRAY_KIND_BIGINT64 || kind === TYPEDARRAY_KIND_BIGUINT64) {
-        value = ToBigInt(value);
-    } else {
-        value = ToNumber(value);
-    }
+    value = ToNumber(value);
 
     // Step 5.
     var relativeStart = ToInteger(start);
@@ -930,8 +891,7 @@ function SetFromNonTypedArray(target, array, targetOffset, targetLength, targetB
     // Optimization: if the buffer is shared then it is not detachable
     // and also not inline, so avoid checking overhead inside the loop in
     // that case.
-    var isShared = targetBuffer !== null
-                   && (targetBuffer = GuardToSharedArrayBuffer(targetBuffer)) !== null;
+    var isShared = targetBuffer !== null && IsSharedArrayBuffer(targetBuffer);
 
     // Steps 12-15, 21, 23-24.
     while (targetOffset < limitOffset) {
@@ -1020,7 +980,7 @@ function TypedArraySet(overloaded, offset = 0) {
     var targetLength = TypedArrayLength(target);
 
     // Steps 12 et seq.
-    if (IsObject(overloaded) && IsPossiblyWrappedTypedArray(overloaded))
+    if (IsPossiblyWrappedTypedArray(overloaded))
         return SetFromTypedArray(target, overloaded, targetOffset, targetLength);
 
     return SetFromNonTypedArray(target, overloaded, targetOffset, targetLength, targetBuffer);
@@ -1064,8 +1024,13 @@ function TypedArraySlice(start, end) {
     // Step 9.
     var A = TypedArraySpeciesCreateWithLength(O, count);
 
+    // Steps 10-13 (Not implemented, bug 1140152).
+
     // Steps 14-15.
     if (count > 0) {
+        // Step 14.a.
+        var n = 0;
+
         // Steps 14.b.ii, 15.b.
         if (buffer === null) {
             // A typed array previously using inline storage may acquire a
@@ -1076,20 +1041,13 @@ function TypedArraySlice(start, end) {
         if (IsDetachedBuffer(buffer))
             ThrowTypeError(JSMSG_TYPED_ARRAY_DETACHED);
 
-        // Steps 10-13, 15.
-        var sliced = TypedArrayBitwiseSlice(O, A, k | 0, count | 0);
-
-        // Step 14.
-        if (!sliced) {
-            // Step 14.a.
-            var n = 0;
-
-            // Step 14.b.
-            while (k < final) {
-                // Steps 14.b.i-v.
-                A[n++] = O[k++];
-            }
+        // Step 14.b.
+        while (k < final) {
+            // Steps 14.b.i-v.
+            A[n++] = O[k++];
         }
+
+        // FIXME: Implement step 15 (bug 1140152).
     }
 
     // Step 16.
@@ -1193,31 +1151,7 @@ function TypedArrayCompareInt(x, y) {
     return 0;
 }
 
-// https://tc39.github.io/proposal-bigint/#sec-%typedarray%.prototype.sort
-// TypedArray SortCompare specialization for BigInt values.
-function TypedArrayCompareBigInt(x, y) {
-    // Step 1.
-    // eslint-disable-next-line valid-typeof
-    assert(typeof x === "bigint" && typeof y === "bigint",
-           "x and y are not BigInts.");
-
-    // Step 2 (Implemented in TypedArraySort).
-
-    // Step 6.
-    if (x < y)
-        return -1;
-
-    // Step 7.
-    if (x > y)
-        return 1;
-
-    // Steps 3-5, 8-9 (Not applicable when sorting BigInt values).
-
-    // Step 10.
-    return 0;
-}
-
-// ES2019 draft rev 8a16cb8d18660a1106faae693f0f39b9f1a30748
+// ES2018 draft rev 3bbc87cd1b9d3bf64c3e68ca2fe9c5a3f2c304c0
 // 22.2.3.26 %TypedArray%.prototype.sort ( comparefn )
 function TypedArraySort(comparefn) {
     // This function is not generic.
@@ -1254,50 +1188,29 @@ function TypedArraySort(comparefn) {
         return obj;
 
     if (comparefn === undefined) {
-        var kind = GetTypedArrayKind(obj);
-        switch (kind) {
-          case TYPEDARRAY_KIND_UINT8:
-          case TYPEDARRAY_KIND_UINT8CLAMPED:
+        if (IsUint8TypedArray(obj)) {
             return CountingSort(obj, len, false /* signed */, TypedArrayCompareInt);
-          case TYPEDARRAY_KIND_INT8:
+        } else if (IsInt8TypedArray(obj)) {
             return CountingSort(obj, len, true /* signed */, TypedArrayCompareInt);
-          case TYPEDARRAY_KIND_UINT16:
-            return RadixSort(obj, len, buffer,
-                             2 /* nbytes */, false /* signed */, false /* floating */,
-                             TypedArrayCompareInt);
-          case TYPEDARRAY_KIND_INT16:
-            return RadixSort(obj, len, buffer,
-                             2 /* nbytes */, true /* signed */, false /* floating */,
-                             TypedArrayCompareInt);
-          case TYPEDARRAY_KIND_UINT32:
-            return RadixSort(obj, len, buffer,
-                             4 /* nbytes */, false /* signed */, false /* floating */,
-                             TypedArrayCompareInt);
-          case TYPEDARRAY_KIND_INT32:
-            return RadixSort(obj, len, buffer,
-                             4 /* nbytes */, true /* signed */, false /* floating */,
-                             TypedArrayCompareInt);
-          case TYPEDARRAY_KIND_BIGINT64:
-          case TYPEDARRAY_KIND_BIGUINT64:
-            return QuickSort(obj, len, TypedArrayCompareBigInt);
-          case TYPEDARRAY_KIND_FLOAT32:
-            return RadixSort(obj, len, buffer,
-                             4 /* nbytes */, true /* signed */, true /* floating */,
-                             TypedArrayCompare);
-          case TYPEDARRAY_KIND_FLOAT64:
-          default:
-            // Include |default| to ensure Ion marks this call as the
-            // last instruction in the if-statement.
-            assert(kind === TYPEDARRAY_KIND_FLOAT64, "unexpected typed array kind");
-            return QuickSort(obj, len, TypedArrayCompare);
+        } else if (IsUint16TypedArray(obj)) {
+            return RadixSort(obj, len, buffer, 2 /* nbytes */, false /* signed */, false /* floating */, TypedArrayCompareInt);
+        } else if (IsInt16TypedArray(obj)) {
+            return RadixSort(obj, len, buffer, 2 /* nbytes */, true /* signed */, false /* floating */, TypedArrayCompareInt);
+        } else if (IsUint32TypedArray(obj)) {
+            return RadixSort(obj, len, buffer, 4 /* nbytes */, false /* signed */, false /* floating */, TypedArrayCompareInt);
+        } else if (IsInt32TypedArray(obj)) {
+            return RadixSort(obj, len, buffer, 4 /* nbytes */, true /* signed */, false /* floating */, TypedArrayCompareInt);
+        } else if (IsFloat32TypedArray(obj)) {
+            return RadixSort(obj, len, buffer, 4 /* nbytes */, true /* signed */, true /* floating */, TypedArrayCompare);
         }
+        return QuickSort(obj, len, TypedArrayCompare);
     }
 
     // To satisfy step 2 from TypedArray SortCompare described in 22.2.3.26
     // the user supplied comparefn is wrapped.
     var wrappedCompareFn = function(x, y) {
         // Step a.
-        var v = +comparefn(x, y);
+        var v = comparefn(x, y);
 
         // Step b.
         var length;
@@ -1315,15 +1228,13 @@ function TypedArraySort(comparefn) {
             ThrowTypeError(JSMSG_TYPED_ARRAY_DETACHED);
         }
 
-        // Step c.
-        if (v !== v)
-            return 0;
-
+        // Step c. is redundant, see:
+        // https://bugzilla.mozilla.org/show_bug.cgi?id=1121937#c36
         // Step d.
         return v;
     };
 
-    return MergeSortTypedArray(obj, len, wrappedCompareFn);
+    return QuickSort(obj, len, wrappedCompareFn);
 }
 
 // ES2017 draft rev f8a9be8ea4bd97237d176907a1e3080dce20c68f
@@ -1411,10 +1322,7 @@ function TypedArraySubarray(begin, end) {
     }
 
     // Steps 4-6.
-    var buffer = ViewedArrayBufferIfReified(obj);
-    if (buffer === null) {
-        buffer = TypedArrayBuffer(obj);
-    }
+    var buffer = TypedArrayBuffer(obj);
     var srcLength = TypedArrayLength(obj);
 
     // Step 14 (Reordered because otherwise it'd be observable that we reset
@@ -1547,47 +1455,6 @@ function TypedArrayStaticFrom(source, mapfn = undefined, thisArg = undefined) {
         if (!IsCallable(usingIterator))
             ThrowTypeError(JSMSG_NOT_ITERABLE, DecompileArg(0, source));
 
-        // Try to take a fast path when there's no mapper function and the
-        // constructor is a built-in TypedArray constructor.
-        if (!mapping && IsTypedArrayConstructor(C) && IsObject(source)) {
-            // The source is a TypedArray using the default iterator.
-            if (usingIterator === TypedArrayValues && IsTypedArray(source) &&
-                ArrayIteratorPrototypeOptimizable())
-            {
-                // Step 7.a.
-                // Omitted but we still need to throw if |source| was detached.
-                GetAttachedArrayBuffer(source);
-
-                // Step 7.b.
-                var len = TypedArrayLength(source);
-
-                // Step 7.c.
-                var targetObj = new C(len);
-
-                // Steps 7.d-f.
-                for (var k = 0; k < len; k++) {
-                    targetObj[k] = source[k];
-                }
-
-                // Step 7.g.
-                return targetObj;
-            }
-
-            // The source is a packed array using the default iterator.
-            if (usingIterator === ArrayValues && IsPackedArray(source) &&
-                ArrayIteratorPrototypeOptimizable())
-            {
-                // Steps 7.b-c.
-                var targetObj = new C(source.length);
-
-                // Steps 7.a, 7.d-f.
-                TypedArrayInitFromPackedArray(targetObj, source);
-
-                // Step 7.g.
-                return targetObj;
-            }
-        }
-
         // Step 7.a.
         var values = IterableToList(source, usingIterator);
 
@@ -1680,6 +1547,21 @@ function TypedArraySpecies() {
 }
 _SetCanonicalName(TypedArraySpecies, "get [Symbol.species]");
 
+// ES 2017 draft June 2, 2016 22.2.3.32
+function TypedArrayToStringTag() {
+    // Step 1.
+    var O = this;
+
+    // Steps 2-3.
+    if (!IsObject(O) || !IsTypedArray(O))
+        return undefined;
+
+    // Steps 4-6.
+    // Modified to retrieve the [[TypedArrayName]] from the constructor.
+    return _NameForTypedArray(O);
+}
+_SetCanonicalName(TypedArrayToStringTag, "get [Symbol.toStringTag]");
+
 // ES2018 draft rev 0525bb33861c7f4e9850f8a222c89642947c4b9c
 // 22.2.2.1.1 Runtime Semantics: IterableToList( items, method )
 function IterableToList(items, method) {
@@ -1726,8 +1608,8 @@ function ArrayBufferSlice(start, end) {
 
     // Steps 2-3,
     // This function is not generic.
-    if (!IsObject(O) || (O = GuardToArrayBuffer(O)) === null) {
-        return callFunction(CallArrayBufferMethodIfWrapped, this, start, end,
+    if (!IsObject(O) || !IsArrayBuffer(O)) {
+        return callFunction(CallArrayBufferMethodIfWrapped, O, start, end,
                             "ArrayBufferSlice");
     }
 
@@ -1763,30 +1645,28 @@ function ArrayBufferSlice(start, end) {
     var new_ = new ctor(newLen);
 
     var isWrapped = false;
-    var newBuffer;
-    if ((newBuffer = GuardToArrayBuffer(new_)) !== null) {
+    if (IsArrayBuffer(new_)) {
         // Step 14.
         if (IsDetachedBuffer(new_))
             ThrowTypeError(JSMSG_TYPED_ARRAY_DETACHED);
     } else {
-        newBuffer = new_;
         // Step 13.
-        if (!IsWrappedArrayBuffer(newBuffer))
+        if (!IsWrappedArrayBuffer(new_))
             ThrowTypeError(JSMSG_NON_ARRAY_BUFFER_RETURNED);
 
         isWrapped = true;
 
         // Step 14.
-        if (callFunction(CallArrayBufferMethodIfWrapped, newBuffer, "IsDetachedBufferThis"))
+        if (callFunction(CallArrayBufferMethodIfWrapped, new_, "IsDetachedBufferThis"))
             ThrowTypeError(JSMSG_TYPED_ARRAY_DETACHED);
     }
 
     // Step 15.
-    if (newBuffer === O)
+    if (new_ === O)
         ThrowTypeError(JSMSG_SAME_ARRAY_BUFFER_RETURNED);
 
     // Step 16.
-    var actualLen = PossiblyWrappedArrayBufferByteLength(newBuffer);
+    var actualLen = PossiblyWrappedArrayBufferByteLength(new_);
     if (actualLen < newLen)
         ThrowTypeError(JSMSG_SHORT_ARRAY_BUFFER_RETURNED, newLen, actualLen);
 
@@ -1795,7 +1675,7 @@ function ArrayBufferSlice(start, end) {
         ThrowTypeError(JSMSG_TYPED_ARRAY_DETACHED);
 
     // Steps 19-21.
-    ArrayBufferCopyData(newBuffer, 0, O, first | 0, newLen | 0, isWrapped);
+    ArrayBufferCopyData(new_, 0, O, first | 0, newLen | 0, isWrapped);
 
     // Step 22.
     return new_;
@@ -1827,8 +1707,8 @@ function SharedArrayBufferSlice(start, end) {
 
     // Steps 2-4,
     // This function is not generic.
-    if (!IsObject(O) || (O = GuardToSharedArrayBuffer(O)) === null) {
-        return callFunction(CallSharedArrayBufferMethodIfWrapped, this, start, end,
+    if (!IsObject(O) || !IsSharedArrayBuffer(O)) {
+        return callFunction(CallSharedArrayBufferMethodIfWrapped, O, start, end,
                             "SharedArrayBufferSlice");
     }
 
@@ -1861,29 +1741,27 @@ function SharedArrayBufferSlice(start, end) {
 
     // Step 13.
     var isWrapped = false;
-    var newObj;
-    if ((newObj = GuardToSharedArrayBuffer(new_)) === null) {
+    if (!IsSharedArrayBuffer(new_)) {
         if (!IsWrappedSharedArrayBuffer(new_))
             ThrowTypeError(JSMSG_NON_SHARED_ARRAY_BUFFER_RETURNED);
         isWrapped = true;
-        newObj = new_;
     }
 
     // Step 14.
-    if (newObj === O)
+    if (new_ === O)
         ThrowTypeError(JSMSG_SAME_SHARED_ARRAY_BUFFER_RETURNED);
 
     // Steb 14b.
-    if (SharedArrayBuffersMemorySame(newObj, O))
+    if (SharedArrayBuffersMemorySame(new_, O))
         ThrowTypeError(JSMSG_SAME_SHARED_ARRAY_BUFFER_RETURNED);
 
     // Step 15.
-    var actualLen = PossiblyWrappedSharedArrayBufferByteLength(newObj);
+    var actualLen = PossiblyWrappedSharedArrayBufferByteLength(new_);
     if (actualLen < newLen)
         ThrowTypeError(JSMSG_SHORT_SHARED_ARRAY_BUFFER_RETURNED, newLen, actualLen);
 
     // Steps 16-18.
-    SharedArrayBufferCopyData(newObj, 0, O, first | 0, newLen | 0, isWrapped);
+    SharedArrayBufferCopyData(new_, 0, O, first | 0, newLen | 0, isWrapped);
 
     // Step 19.
     return new_;

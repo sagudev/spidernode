@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,11 +12,11 @@
 #include "jit/shared/Assembler-shared.h"
 
 #if defined(JS_CODEGEN_X86)
-#  include "jit/x86/BaseAssembler-x86.h"
+#include "jit/x86/BaseAssembler-x86.h"
 #elif defined(JS_CODEGEN_X64)
-#  include "jit/x64/BaseAssembler-x64.h"
+#include "jit/x64/BaseAssembler-x64.h"
 #else
-#  error "Unknown architecture!"
+#error "Unknown architecture!"
 #endif
 
 namespace js {
@@ -177,9 +177,7 @@ class CPUInfo {
   };
 
   static SSEVersion GetSSEVersion() {
-    if (maxSSEVersion == UnknownSSE) {
-      SetSSEVersion();
-    }
+    if (maxSSEVersion == UnknownSSE) SetSSEVersion();
 
     MOZ_ASSERT(maxSSEVersion != UnknownSSE);
     MOZ_ASSERT_IF(maxEnabledSSEVersion != UnknownSSE,
@@ -188,9 +186,7 @@ class CPUInfo {
   }
 
   static bool IsAVXPresent() {
-    if (MOZ_UNLIKELY(maxSSEVersion == UnknownSSE)) {
-      SetSSEVersion();
-    }
+    if (MOZ_UNLIKELY(maxSSEVersion == UnknownSSE)) SetSSEVersion();
 
     MOZ_ASSERT_IF(!avxEnabled, !avxPresent);
     return avxPresent;
@@ -202,25 +198,9 @@ class CPUInfo {
   static bool avxPresent;
   static bool avxEnabled;
   static bool popcntPresent;
-  static bool bmi1Present;
-  static bool bmi2Present;
-  static bool lzcntPresent;
   static bool needAmdBugWorkaround;
 
   static void SetSSEVersion();
-
-  // The flags can become set at startup when we JIT non-JS code eagerly; thus
-  // we reset the flags before setting any flags explicitly during testing, so
-  // that the flags can be in a consistent state.
-
-  static void reset() {
-    maxSSEVersion = UnknownSSE;
-    maxEnabledSSEVersion = UnknownSSE;
-    avxPresent = false;
-    avxEnabled = false;
-    popcntPresent = false;
-    needAmdBugWorkaround = false;
-  }
 
  public:
   static bool IsSSE2Present() {
@@ -235,25 +215,17 @@ class CPUInfo {
   static bool IsSSE41Present() { return GetSSEVersion() >= SSE4_1; }
   static bool IsSSE42Present() { return GetSSEVersion() >= SSE4_2; }
   static bool IsPOPCNTPresent() { return popcntPresent; }
-  static bool IsBMI1Present() { return bmi1Present; }
-  static bool IsBMI2Present() { return bmi2Present; }
-  static bool IsLZCNTPresent() { return lzcntPresent; }
   static bool NeedAmdBugWorkaround() { return needAmdBugWorkaround; }
 
   static void SetSSE3Disabled() {
-    reset();
     maxEnabledSSEVersion = SSE2;
     avxEnabled = false;
   }
   static void SetSSE4Disabled() {
-    reset();
     maxEnabledSSEVersion = SSSE3;
     avxEnabled = false;
   }
-  static void SetAVXEnabled() {
-    reset();
-    avxEnabled = true;
-  }
+  static void SetAVXEnabled() { avxEnabled = true; }
 };
 
 class AssemblerX86Shared : public AssemblerShared {
@@ -261,9 +233,9 @@ class AssemblerX86Shared : public AssemblerShared {
   struct RelativePatch {
     int32_t offset;
     void* target;
-    RelocationKind kind;
+    Relocation::Kind kind;
 
-    RelativePatch(int32_t offset, void* target, RelocationKind kind)
+    RelativePatch(int32_t offset, void* target, Relocation::Kind kind)
         : offset(offset), target(target), kind(kind) {}
   };
 
@@ -273,9 +245,7 @@ class AssemblerX86Shared : public AssemblerShared {
 
   void writeDataRelocation(ImmGCPtr ptr) {
     if (ptr.value) {
-      if (gc::IsInsideNursery(ptr.value)) {
-        embedsNurseryPointers_ = true;
-      }
+      if (gc::IsInsideNursery(ptr.value)) embedsNurseryPointers_ = true;
       dataRelocations_.writeUnsigned(masm.currentOffset());
     }
   }
@@ -288,9 +258,7 @@ class AssemblerX86Shared : public AssemblerShared {
 
  public:
   AssemblerX86Shared() {
-    if (!HasAVX()) {
-      masm.disableVEX();
-    }
+    if (!HasAVX()) masm.disableVEX();
   }
 
   enum Condition {
@@ -400,18 +368,9 @@ class AssemblerX86Shared : public AssemblerShared {
   static void TraceDataRelocations(JSTracer* trc, JitCode* code,
                                    CompactBufferReader& reader);
 
-  void assertNoGCThings() const {
-#ifdef DEBUG
-    MOZ_ASSERT(dataRelocations_.length() == 0);
-    for (auto& j : jumps_) {
-      MOZ_ASSERT(j.kind == RelocationKind::HARDCODED);
-    }
-#endif
-  }
+  // MacroAssemblers hold onto gcthings, so they are traced by the GC.
+  void trace(JSTracer* trc);
 
-  void setUnlimitedBuffer() {
-    // No-op on this platform
-  }
   bool oom() const {
     return AssemblerShared::oom() || masm.oom() || jumpRelocations_.oom() ||
            dataRelocations_.oom();
@@ -885,9 +844,7 @@ class AssemblerX86Shared : public AssemblerShared {
       // Thread the jump list through the unpatched jump targets.
       JmpSrc j = masm.jCC(static_cast<X86Encoding::Condition>(cond));
       JmpSrc prev;
-      if (label->used()) {
-        prev = JmpSrc(label->offset());
-      }
+      if (label->used()) prev = JmpSrc(label->offset());
       label->use(j.offset());
       masm.setNextJump(j, prev);
     }
@@ -900,9 +857,7 @@ class AssemblerX86Shared : public AssemblerShared {
       // Thread the jump list through the unpatched jump targets.
       JmpSrc j = masm.jmp();
       JmpSrc prev;
-      if (label->used()) {
-        prev = JmpSrc(label->offset());
-      }
+      if (label->used()) prev = JmpSrc(label->offset());
       label->use(j.offset());
       masm.setNextJump(j, prev);
     }
@@ -917,9 +872,7 @@ class AssemblerX86Shared : public AssemblerShared {
     } else {
       // Thread the jump list through the unpatched jump targets.
       JmpSrc prev;
-      if (label->used()) {
-        prev = JmpSrc(label->offset());
-      }
+      if (label->used()) prev = JmpSrc(label->offset());
       label->use(j.offset());
       masm.setNextJump(j, prev);
     }
@@ -956,6 +909,17 @@ class AssemblerX86Shared : public AssemblerShared {
   void j(Condition cond, RepatchLabel* label) { jSrc(cond, label); }
   void jmp(RepatchLabel* label) { jmpSrc(label); }
 
+  void j(Condition cond, wasm::OldTrapDesc target) {
+    Label l;
+    j(cond, &l);
+    bindLater(&l, target);
+  }
+  void jmp(wasm::OldTrapDesc target) {
+    Label l;
+    jmp(&l);
+    bindLater(&l, target);
+  }
+
   void jmp(const Operand& op) {
     switch (op.kind()) {
       case Operand::MEM_REG_DISP:
@@ -986,6 +950,15 @@ class AssemblerX86Shared : public AssemblerShared {
     }
     label->bind(dst.offset());
   }
+  void bindLater(Label* label, wasm::OldTrapDesc target) {
+    if (label->used()) {
+      JmpSrc jmp(label->offset());
+      do {
+        append(wasm::OldTrapSite(target, jmp.offset()));
+      } while (masm.nextJump(jmp, &jmp));
+    }
+    label->reset();
+  }
   void bind(RepatchLabel* label) {
     JmpDst dst(masm.label());
     if (label->used()) {
@@ -999,9 +972,7 @@ class AssemblerX86Shared : public AssemblerShared {
 
   // Re-routes pending jumps to a new label.
   void retarget(Label* label, Label* target) {
-    if (!label->used()) {
-      return;
-    }
+    if (!label->used()) return;
     bool more;
     JmpSrc jmp(label->offset());
     do {
@@ -1013,9 +984,7 @@ class AssemblerX86Shared : public AssemblerShared {
       } else {
         // Thread the jump list through the unpatched jump targets.
         JmpSrc prev;
-        if (target->used()) {
-          prev = JmpSrc(target->offset());
-        }
+        if (target->used()) prev = JmpSrc(target->offset());
         target->use(jmp.offset());
         masm.setNextJump(jmp, prev);
       }
@@ -1043,9 +1012,7 @@ class AssemblerX86Shared : public AssemblerShared {
       masm.linkJump(j, JmpDst(label->offset()));
     } else {
       JmpSrc prev;
-      if (label->used()) {
-        prev = JmpSrc(label->offset());
-      }
+      if (label->used()) prev = JmpSrc(label->offset());
       label->use(j.offset());
       masm.setNextJump(j, prev);
     }
@@ -1079,11 +1046,23 @@ class AssemblerX86Shared : public AssemblerShared {
     unsigned char* code = masm.data();
     X86Encoding::SetRel32(code + farJump.offset(), code + targetOffset);
   }
+  static void repatchFarJump(uint8_t* code, uint32_t farJumpOffset,
+                             uint32_t targetOffset) {
+    X86Encoding::SetRel32(code + farJumpOffset, code + targetOffset);
+  }
 
   // This is for patching during code generation, not after.
   void patchAddl(CodeOffset offset, int32_t n) {
     unsigned char* code = masm.data();
     X86Encoding::SetInt32(code + offset.offset(), n);
+  }
+
+  CodeOffset twoByteNop() { return CodeOffset(masm.twoByteNop().offset()); }
+  static void patchTwoByteNopToJump(uint8_t* jump, uint8_t* target) {
+    X86Encoding::BaseAssembler::patchTwoByteNopToJump(jump, target);
+  }
+  static void patchJumpToTwoByteNop(uint8_t* jump) {
+    X86Encoding::BaseAssembler::patchJumpToTwoByteNop(jump);
   }
 
   static void patchFiveByteNopToCall(uint8_t* callsite, uint8_t* target) {
@@ -1104,11 +1083,7 @@ class AssemblerX86Shared : public AssemblerShared {
   static bool HasSSE3() { return CPUInfo::IsSSE3Present(); }
   static bool HasSSSE3() { return CPUInfo::IsSSSE3Present(); }
   static bool HasSSE41() { return CPUInfo::IsSSE41Present(); }
-  static bool HasSSE42() { return CPUInfo::IsSSE42Present(); }
   static bool HasPOPCNT() { return CPUInfo::IsPOPCNTPresent(); }
-  static bool HasBMI1() { return CPUInfo::IsBMI1Present(); }
-  static bool HasBMI2() { return CPUInfo::IsBMI2Present(); }
-  static bool HasLZCNT() { return CPUInfo::IsLZCNTPresent(); }
   static bool SupportsFloatingPoint() { return CPUInfo::IsSSE2Present(); }
   static bool SupportsUnalignedAccesses() { return true; }
   static bool SupportsSimd() { return CPUInfo::IsSSE2Present(); }
@@ -1647,11 +1622,7 @@ class AssemblerX86Shared : public AssemblerShared {
   void popcntl(const Register& src, const Register& dest) {
     masm.popcntl_rr(src.encoding(), dest.encoding());
   }
-  void imull(Register multiplier) {
-    // Consumes eax as the other argument
-    // and clobbers edx, as result is in edx:eax
-    masm.imull_r(multiplier.encoding());
-  }
+  void imull(Register multiplier) { masm.imull_r(multiplier.encoding()); }
   void umull(Register multiplier) { masm.mull_r(multiplier.encoding()); }
   void imull(Imm32 imm, Register dest) {
     masm.imull_ir(imm.value, dest.encoding(), dest.encoding());

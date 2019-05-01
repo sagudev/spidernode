@@ -1,4 +1,4 @@
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger();
 var gw = dbg.addDebuggee(g);
 
@@ -10,7 +10,7 @@ var allScripts = dbg.findScripts();
 var scripts = dbg.findScripts({
   source: o.script.source
 });
-assertEq(scripts.length, allScripts.length);
+assertEq(scripts.length < allScripts.length, true);
 assertEq(scripts.indexOf(o.script) !== -1, true);
 
 scripts = dbg.findScripts({

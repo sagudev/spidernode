@@ -66,7 +66,7 @@ function checkGetOffsetsCoverage(fun) {
 
   // Create a new global and instrument it with a debugger, to find all scripts,
   // created in the current global.
-  var g = newGlobal({newCompartment: true});
+  var g = newGlobal();
   var dbg = Debugger(g);
   dbg.collectCoverageInfo = true;
 

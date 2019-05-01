@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +7,7 @@
 #include "gc/AtomMarking.h"
 
 #include "mozilla/Assertions.h"
-#include "vm/Realm.h"
+#include "vm/JSCompartment.h"
 
 #include "gc/Heap-inl.h"
 
@@ -22,7 +22,7 @@ inline size_t GetAtomBit(TenuredCell* thing) {
   return arena->atomBitmapStart() * JS_BITS_PER_WORD + arenaBit;
 }
 
-inline bool ThingIsPermanent(JSAtom* atom) { return atom->isPinned(); }
+inline bool ThingIsPermanent(JSAtom* atom) { return atom->isPermanentAtom(); }
 
 inline bool ThingIsPermanent(JS::Symbol* symbol) {
   return symbol->isWellKnownSymbol();
@@ -40,14 +40,10 @@ MOZ_ALWAYS_INLINE bool AtomMarkingRuntime::inlinedMarkAtomInternal(
   MOZ_ASSERT(cell->zoneFromAnyThread()->isAtomsZone());
 
   // The context's zone will be null during initialization of the runtime.
-  if (!cx->zone()) {
-    return true;
-  }
+  if (!cx->zone()) return true;
   MOZ_ASSERT(!cx->zone()->isAtomsZone());
 
-  if (ThingIsPermanent(thing)) {
-    return true;
-  }
+  if (ThingIsPermanent(thing)) return true;
 
   size_t bit = GetAtomBit(cell);
   MOZ_ASSERT(bit / JS_BITS_PER_WORD < allocatedWords);

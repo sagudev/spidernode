@@ -1,6 +1,6 @@
 // obj.getOwnPropertyDescriptor works on accessor properties.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger;
 var gdo = dbg.addDebuggee(g);
 

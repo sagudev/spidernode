@@ -160,7 +160,7 @@ function dynamicSlots(i) {
     // beginning of the function.
     resumeHere(); bailout();
     assertEq(obj.p0 + obj.p10 + obj.p20 + obj.p30 + obj.p40, 5 * i + 100);
-    assertRecoveredOnBailout(obj, true);
+    assertRecoveredOnBailout(obj, false);
 }
 
 // Check that we can correctly recover allocations of new objects.

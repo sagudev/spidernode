@@ -1,5 +1,5 @@
 // Setting onPop handlers from a 'debugger' statement handler works.
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 var log;
 

@@ -2,7 +2,7 @@ function x() { n; }
 function f() {
   try  { x(); } catch(ex) {}
 }
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.parent = this;
 g.eval("new Debugger(parent).onExceptionUnwind = function () {};");
 enableGeckoProfiling();

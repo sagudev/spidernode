@@ -23,10 +23,10 @@ endif
 
 # TARGET_OS/TARGET_CPU may be unintuitive, so we hardcode some special formats
 ifeq ($(OS_ARCH),WINNT)
-ifeq ($(CPU_ARCH),x86)
-MOZ_PKG_PLATFORM := win32
-else
+ifeq ($(TARGET_CPU),x86_64)
 MOZ_PKG_PLATFORM := win64
+else
+MOZ_PKG_PLATFORM := win32
 endif
 endif
 ifeq ($(OS_ARCH),Darwin)
@@ -87,21 +87,20 @@ CODE_COVERAGE_ARCHIVE_BASENAME = $(PKG_BASENAME).code-coverage-gcno
 # Mozsearch package naming
 MOZSEARCH_ARCHIVE_BASENAME = $(PKG_BASENAME).mozsearch-index
 MOZSEARCH_RUST_ANALYSIS_BASENAME = $(PKG_BASENAME).mozsearch-rust
-MOZSEARCH_INCLUDEMAP_BASENAME = $(PKG_BASENAME).mozsearch-distinclude
 
 # Mozharness naming
 MOZHARNESS_PACKAGE = mozharness.zip
 
 # Test package naming
-TEST_PACKAGE = $(PKG_BASENAME).common.tests.tar.gz
-CPP_TEST_PACKAGE = $(PKG_BASENAME).cppunittest.tests.tar.gz
-XPC_TEST_PACKAGE = $(PKG_BASENAME).xpcshell.tests.tar.gz
-MOCHITEST_PACKAGE = $(PKG_BASENAME).mochitest.tests.tar.gz
-REFTEST_PACKAGE = $(PKG_BASENAME).reftest.tests.tar.gz
+TEST_PACKAGE = $(PKG_BASENAME).common.tests.zip
+CPP_TEST_PACKAGE = $(PKG_BASENAME).cppunittest.tests.zip
+XPC_TEST_PACKAGE = $(PKG_BASENAME).xpcshell.tests.zip
+MOCHITEST_PACKAGE = $(PKG_BASENAME).mochitest.tests.zip
+REFTEST_PACKAGE = $(PKG_BASENAME).reftest.tests.zip
 WP_TEST_PACKAGE = $(PKG_BASENAME).web-platform.tests.tar.gz
-TALOS_PACKAGE = $(PKG_BASENAME).talos.tests.tar.gz
-AWSY_PACKAGE = $(PKG_BASENAME).awsy.tests.tar.gz
-GTEST_PACKAGE = $(PKG_BASENAME).gtest.tests.tar.gz
+TALOS_PACKAGE = $(PKG_BASENAME).talos.tests.zip
+AWSY_PACKAGE = $(PKG_BASENAME).awsy.tests.zip
+GTEST_PACKAGE = $(PKG_BASENAME).gtest.tests.zip
 
 ifneq (,$(wildcard $(DIST)/bin/application.ini))
 BUILDID = $(shell $(PYTHON) $(MOZILLA_DIR)/config/printconfigsetting.py $(DIST)/bin/application.ini App BuildID)
@@ -123,5 +122,8 @@ else
 JSSHELL_NAME = jsshell-$(MOZ_PKG_PLATFORM).zip
 endif
 PKG_JSSHELL = $(DIST)/$(JSSHELL_NAME)
+
+# Stylo binding files
+STYLO_BINDINGS_PACKAGE = $(PKG_BASENAME).stylo-bindings.zip
 
 endif # PACKAGE_NAME_MK_INCLUDED

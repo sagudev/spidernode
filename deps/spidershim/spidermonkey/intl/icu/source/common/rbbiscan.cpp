@@ -372,7 +372,7 @@ UBool RBBIRuleScanner::doParseActions(int32_t action)
         //  (forward, reverse, safe_forward, safe_reverse)
         //  OR this rule into the appropriate group of them.
         //
-        RBBINode **destRules = (fReverseRule? &fRB->fSafeRevTree : fRB->fDefaultTree);
+        RBBINode **destRules = (fReverseRule? &fRB->fReverseTree : fRB->fDefaultTree);
 
         if (*destRules != NULL) {
             // This is not the first rule encounted.
@@ -380,7 +380,7 @@ UBool RBBIRuleScanner::doParseActions(int32_t action)
             // with the current rule expression (on the Node Stack)
             //  with the resulting OR expression going to *destRules
             //
-                       thisRule    = fNodeStack[fNodeStackPtr];
+            RBBINode  *thisRule    = fNodeStack[fNodeStackPtr];
             RBBINode  *prevRules   = *destRules;
             RBBINode  *orNode      = pushNewNode(RBBINode::opOr);
             if (U_FAILURE(*fRB->fStatus)) {
@@ -822,24 +822,27 @@ static const UChar      chRParen    = 0x29;
 
 //------------------------------------------------------------------------------
 //
-//  stripRules    Return a rules string without extra spaces.
-//                (Comments are removed separately, during rule parsing.)
+//  stripRules    Return a rules string without unnecessary
+//                characters.
 //
 //------------------------------------------------------------------------------
 UnicodeString RBBIRuleScanner::stripRules(const UnicodeString &rules) {
     UnicodeString strippedRules;
-    int32_t rulesLength = rules.length();
-    bool skippingSpaces = false;
-
-    for (int32_t idx=0; idx<rulesLength; idx = rules.moveIndex32(idx, 1)) {
-        UChar32 cp = rules.char32At(idx);
-        bool whiteSpace = u_hasBinaryProperty(cp, UCHAR_PATTERN_WHITE_SPACE);
-        if (skippingSpaces && whiteSpace) {
-            continue;
+    int rulesLength = rules.length();
+    for (int idx = 0; idx < rulesLength; ) {
+        UChar ch = rules[idx++];
+        if (ch == chPound) {
+            while (idx < rulesLength
+                && ch != chCR && ch != chLF && ch != chNEL)
+            {
+                ch = rules[idx++];
+            }
         }
-        strippedRules.append(cp);
-        skippingSpaces = whiteSpace;
+        if (!u_isISOControl(ch)) {
+            strippedRules.append(ch);
+        }
     }
+    // strippedRules = strippedRules.unescape();
     return strippedRules;
 }
 
@@ -939,7 +942,6 @@ void RBBIRuleScanner::nextChar(RBBIRuleChar &c) {
             //  It will be treated as white-space, and serves to break up anything
             //    that might otherwise incorrectly clump together with a comment in
             //    the middle (a variable name, for example.)
-            int32_t commentStart = fScanIndex;
             for (;;) {
                 c.fChar = nextCharLL();
                 if (c.fChar == (UChar32)-1 ||  // EOF
@@ -947,9 +949,6 @@ void RBBIRuleScanner::nextChar(RBBIRuleChar &c) {
                     c.fChar == chLF     ||
                     c.fChar == chNEL    ||
                     c.fChar == chLS)       {break;}
-            }
-            for (int32_t i=commentStart; i<fNextIndex-1; ++i) {
-                fRB->fStrippedRules.setCharAt(i, u' ');
             }
         }
         if (c.fChar == (UChar32)-1) {
@@ -1121,6 +1120,22 @@ void RBBIRuleScanner::parse() {
         error(U_BRK_RULE_SYNTAX);
         return;
     }
+
+    //
+    // If there were NO user specified reverse rules, set up the equivalent of ".*;"
+    //
+    if (fRB->fReverseTree == NULL) {
+        fRB->fReverseTree  = pushNewNode(RBBINode::opStar);
+        RBBINode  *operand = pushNewNode(RBBINode::setRef);
+        if (U_FAILURE(*fRB->fStatus)) {
+            return;
+        }
+        findSetFor(UnicodeString(TRUE, kAny, 3), operand);
+        fRB->fReverseTree->fLeftChild = operand;
+        operand->fParent              = fRB->fReverseTree;
+        fNodeStackPtr -= 2;
+    }
+
 
     //
     // Parsing of the input RBBI rules is complete.

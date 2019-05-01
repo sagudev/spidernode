@@ -1,3 +1,6 @@
+if (typeof parseRegExp === 'undefined')
+    quit();
+
 load(libdir + "regexp_parse.js");
 
 test("[\b]", all_flags,

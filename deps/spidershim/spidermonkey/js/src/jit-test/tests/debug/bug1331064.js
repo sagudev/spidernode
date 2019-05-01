@@ -1,6 +1,9 @@
-// |jit-test| test-also=--wasm-compiler=ion; exitstatus: 3; skip-if: !wasmDebuggingIsSupported()
+// |jit-test| test-also-no-wasm-baseline; exitstatus: 3
 
 load(libdir + "asserts.js");
+
+if (!wasmDebuggingIsSupported())
+    quit(3);
 
 var g = newGlobal();
 g.parent = this;

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -52,88 +52,71 @@ void PushArena(GCMarker* gcmarker, Arena* arena);
 
 /*** Liveness ***/
 
-// The IsMarkedInternal and IsAboutToBeFinalizedInternal function templates are
-// used to implement the IsMarked and IsAboutToBeFinalized set of functions.
-// These internal functions are instantiated for the base GC types and should
-// not be called directly.
-//
-// Note that there are two function templates declared for each, not one
-// template and a specialization. This is necessary so that pointer arguments
-// (e.g. JSObject**) and tagged value arguments (e.g. JS::Value*) are routed to
-// separate implementations.
+// Report whether a thing has been marked.  Things which are in zones that are
+// not currently being collected or are owned by another runtime are always
+// reported as being marked.
+template <typename T>
+bool IsMarkedUnbarriered(JSRuntime* rt, T* thingp);
+
+// Report whether a thing has been marked.  Things which are in zones that are
+// not currently being collected or are owned by another runtime are always
+// reported as being marked.
+template <typename T>
+bool IsMarked(JSRuntime* rt, WriteBarrieredBase<T>* thingp);
 
 template <typename T>
-bool IsMarkedInternal(JSRuntime* rt, T* thing);
-template <typename T>
-bool IsMarkedInternal(JSRuntime* rt, T** thing);
+bool IsAboutToBeFinalizedUnbarriered(T* thingp);
 
 template <typename T>
-bool IsMarkedBlackInternal(JSRuntime* rt, T* thing);
-template <typename T>
-bool IsMarkedBlackInternal(JSRuntime* rt, T** thing);
+bool IsAboutToBeFinalized(WriteBarrieredBase<T>* thingp);
 
 template <typename T>
-bool IsAboutToBeFinalizedInternal(T* thingp);
-template <typename T>
-bool IsAboutToBeFinalizedInternal(T** thingp);
-
-// Report whether a GC thing has been marked with any color. Things which are in
-// zones that are not currently being collected or are owned by another runtime
-// are always reported as being marked.
-template <typename T>
-inline bool IsMarkedUnbarriered(JSRuntime* rt, T* thingp) {
-  return IsMarkedInternal(rt, ConvertToBase(thingp));
-}
-
-// Report whether a GC thing has been marked with any color. Things which are in
-// zones that are not currently being collected or are owned by another runtime
-// are always reported as being marked.
-template <typename T>
-inline bool IsMarked(JSRuntime* rt, WriteBarrieredBase<T>* thingp) {
-  return IsMarkedInternal(rt,
-                          ConvertToBase(thingp->unsafeUnbarrieredForTracing()));
-}
-
-// Report whether a GC thing has been marked black.
-template <typename T>
-inline bool IsMarkedBlackUnbarriered(JSRuntime* rt, T* thingp) {
-  return IsMarkedBlackInternal(rt, ConvertToBase(thingp));
-}
-
-// Report whether a GC thing has been marked black.
-template <typename T>
-inline bool IsMarkedBlack(JSRuntime* rt, WriteBarrieredBase<T>* thingp) {
-  return IsMarkedBlackInternal(
-      rt, ConvertToBase(thingp->unsafeUnbarrieredForTracing()));
-}
-
-template <typename T>
-inline bool IsAboutToBeFinalizedUnbarriered(T* thingp) {
-  return IsAboutToBeFinalizedInternal(ConvertToBase(thingp));
-}
-
-template <typename T>
-inline bool IsAboutToBeFinalized(WriteBarrieredBase<T>* thingp) {
-  return IsAboutToBeFinalizedInternal(
-      ConvertToBase(thingp->unsafeUnbarrieredForTracing()));
-}
-
-template <typename T>
-inline bool IsAboutToBeFinalized(ReadBarrieredBase<T>* thingp) {
-  return IsAboutToBeFinalizedInternal(
-      ConvertToBase(thingp->unsafeUnbarrieredForTracing()));
-}
+bool IsAboutToBeFinalized(ReadBarrieredBase<T>* thingp);
 
 bool IsAboutToBeFinalizedDuringSweep(TenuredCell& tenured);
 
 inline Cell* ToMarkable(const Value& v) {
-  if (v.isGCThing()) {
-    return (Cell*)v.toGCThing();
-  }
+  if (v.isGCThing()) return (Cell*)v.toGCThing();
   return nullptr;
 }
 
 inline Cell* ToMarkable(Cell* cell) { return cell; }
+
+// Wrap a GC thing pointer into a new Value or jsid. The type system enforces
+// that the thing pointer is a wrappable type.
+template <typename S, typename T>
+struct RewrapTaggedPointer {};
+#define DECLARE_REWRAP(S, T, method, prefix)                 \
+  template <>                                                \
+  struct RewrapTaggedPointer<S, T> {                         \
+    static S wrap(T* thing) { return method(prefix thing); } \
+  }
+DECLARE_REWRAP(JS::Value, JSObject, JS::ObjectOrNullValue, );
+DECLARE_REWRAP(JS::Value, JSString, JS::StringValue, );
+DECLARE_REWRAP(JS::Value, JS::Symbol, JS::SymbolValue, );
+DECLARE_REWRAP(jsid, JSString, NON_INTEGER_ATOM_TO_JSID, (JSAtom*));
+DECLARE_REWRAP(jsid, JS::Symbol, SYMBOL_TO_JSID, );
+DECLARE_REWRAP(js::TaggedProto, JSObject, js::TaggedProto, );
+#undef DECLARE_REWRAP
+
+template <typename T>
+struct IsPrivateGCThingInValue
+    : public mozilla::EnableIf<mozilla::IsBaseOf<Cell, T>::value &&
+                                   !mozilla::IsBaseOf<JSObject, T>::value &&
+                                   !mozilla::IsBaseOf<JSString, T>::value &&
+                                   !mozilla::IsBaseOf<JS::Symbol, T>::value,
+                               T> {
+  static_assert(!mozilla::IsSame<Cell, T>::value &&
+                    !mozilla::IsSame<TenuredCell, T>::value,
+                "T must not be Cell or TenuredCell");
+};
+
+template <typename T>
+struct RewrapTaggedPointer<Value, T> {
+  static Value wrap(typename IsPrivateGCThingInValue<T>::Type* thing) {
+    return JS::PrivateGCThingValue(thing);
+  }
+};
 
 } /* namespace gc */
 
@@ -173,6 +156,11 @@ inline Value Forwarded(const JS::Value& value);
 
 template <typename T>
 inline T MaybeForwarded(T t);
+
+inline void MakeAccessibleAfterMovingGC(void* anyp) {}
+
+inline void MakeAccessibleAfterMovingGC(
+    JSObject* obj);  // Defined in jsobjinlines.h.
 
 #ifdef JSGC_HASH_TABLE_CHECKS
 

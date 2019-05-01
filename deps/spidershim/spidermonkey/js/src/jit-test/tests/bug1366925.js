@@ -1,7 +1,8 @@
-// |jit-test| skip-if: helperThreadCount() === 0
-// Avoid crashing with --no-threads
-
 // JS shell shutdown ordering
+
+// Avoid crashing with --no-threads
+if (helperThreadCount() == 0)
+  quit();
 
 evalInWorker(`
   var lfGlobal = newGlobal();

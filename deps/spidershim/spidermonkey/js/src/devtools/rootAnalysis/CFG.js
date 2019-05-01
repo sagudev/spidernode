@@ -4,7 +4,7 @@
 
 var functionBodies;
 
-function findAllPoints(bodies, blockId, limits)
+function findAllPoints(bodies, blockId)
 {
     var points = [];
     var body;
@@ -20,9 +20,9 @@ function findAllPoints(bodies, blockId, limits)
     if (!("PEdge" in body))
         return;
     for (var edge of body.PEdge) {
-        points.push([body, edge.Index[0], limits]);
+        points.push([body, edge.Index[0]]);
         if (edge.Kind == "Loop")
-            points.push(...findAllPoints(bodies, edge.BlockId, limits));
+            Array.prototype.push.apply(points, findAllPoints(bodies, edge.BlockId));
     }
 
     return points;
@@ -78,15 +78,14 @@ function allRAIIGuardedCallPoints(typeInfo, bodies, body, isConstructor)
             continue;
         var variable = callee.Variable;
         assert(variable.Kind == "Func");
-        const limits = isConstructor(typeInfo, edge.Type, variable.Name);
-        if (!limits)
+        if (!isConstructor(typeInfo, edge.Type, variable.Name))
             continue;
         if (!("PEdgeCallInstance" in edge))
             continue;
         if (edge.PEdgeCallInstance.Exp.Kind != "Var")
             continue;
 
-        points.push(...pointsInRAIIScope(bodies, body, edge, limits));
+        Array.prototype.push.apply(points, pointsInRAIIScope(bodies, body, edge));
     }
 
     return points;
@@ -142,7 +141,7 @@ function findMatchingConstructor(destructorEdge, body)
     debugger;
 }
 
-function pointsInRAIIScope(bodies, body, constructorEdge, limits) {
+function pointsInRAIIScope(bodies, body, constructorEdge) {
     var seen = {};
     var worklist = [constructorEdge.Index[1]];
     var points = [];
@@ -151,7 +150,7 @@ function pointsInRAIIScope(bodies, body, constructorEdge, limits) {
         if (point in seen)
             continue;
         seen[point] = true;
-        points.push([body, point, limits]);
+        points.push([body, point]);
         var successors = getSuccessors(body);
         if (!(point in successors))
             continue;
@@ -159,7 +158,7 @@ function pointsInRAIIScope(bodies, body, constructorEdge, limits) {
             if (isMatchingDestructor(constructorEdge, nedge))
                 continue;
             if (nedge.Kind == "Loop")
-                points.push(...findAllPoints(bodies, nedge.BlockId, limits));
+                Array.prototype.push.apply(points, findAllPoints(bodies, nedge.BlockId));
             worklist.push(nedge.Index[1]);
         }
     }

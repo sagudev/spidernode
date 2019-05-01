@@ -15,10 +15,8 @@ info: |
 includes: [propertyHelper.js]
 ---*/
 
-verifyProperty(Intl, 'getCanonicalLocales', {
-  writable: true,
-  enumerable: false,
-  configurable: true,
-});
+verifyNotEnumerable(Intl, "getCanonicalLocales");
+verifyWritable(Intl, "getCanonicalLocales");
+verifyConfigurable(Intl, "getCanonicalLocales");
 
 reportCompare(0, 0);

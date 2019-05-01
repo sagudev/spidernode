@@ -1,4 +1,5 @@
-// |jit-test| skip-if: helperThreadCount() === 0
+if (helperThreadCount() == 0)
+   quit();
 
 gczeal(0);
 gc();

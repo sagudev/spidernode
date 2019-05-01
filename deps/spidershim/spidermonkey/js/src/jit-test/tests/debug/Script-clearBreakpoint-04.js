@@ -1,6 +1,6 @@
 // clearBreakpoint clears breakpoints for the current Debugger object only.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 
 var hits = 0;
 var handler = {

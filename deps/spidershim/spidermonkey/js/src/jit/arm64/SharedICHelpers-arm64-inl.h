@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,7 +36,7 @@ inline void EmitBaselineTailCallVM(TrampolinePtr target, MacroAssembler& masm,
 
   // Push frame descriptor (minus the return address) and perform the tail call.
   MOZ_ASSERT(ICTailCallReg == lr);
-  masm.makeFrameDescriptor(r0, FrameType::BaselineJS, ExitFrameLayout::Size());
+  masm.makeFrameDescriptor(r0, JitFrame_BaselineJS, ExitFrameLayout::Size());
   masm.push(r0);
 
   // The return address will be pushed by the VM wrapper, for compatibility
@@ -45,6 +45,11 @@ inline void EmitBaselineTailCallVM(TrampolinePtr target, MacroAssembler& masm,
   // it there through the stub calls).
 
   masm.jump(target);
+}
+
+inline void EmitIonTailCallVM(TrampolinePtr target, MacroAssembler& masm,
+                              uint32_t stackSize) {
+  MOZ_CRASH("Not implemented yet.");
 }
 
 inline void EmitBaselineCreateStubFrameDescriptor(MacroAssembler& masm,
@@ -56,7 +61,7 @@ inline void EmitBaselineCreateStubFrameDescriptor(MacroAssembler& masm,
   masm.Sub(reg64, masm.GetStackPointer64(), Operand(sizeof(void*) * 2));
   masm.Sub(reg64, BaselineFrameReg64, reg64);
 
-  masm.makeFrameDescriptor(reg, FrameType::BaselineStub, headerSize);
+  masm.makeFrameDescriptor(reg, JitFrame_BaselineStub, headerSize);
 }
 
 inline void EmitBaselineCallVM(TrampolinePtr target, MacroAssembler& masm) {
@@ -85,7 +90,7 @@ inline void EmitBaselineEnterStubFrame(MacroAssembler& masm, Register scratch) {
 
   // Push frame descriptor and return address.
   // Save old frame pointer, stack pointer, and stub reg.
-  masm.makeFrameDescriptor(scratch, FrameType::BaselineJS,
+  masm.makeFrameDescriptor(scratch, JitFrame_BaselineJS,
                            BaselineStubFrameLayout::Size());
   masm.Push(scratch, ICTailCallReg, ICStubReg, BaselineFrameReg);
 

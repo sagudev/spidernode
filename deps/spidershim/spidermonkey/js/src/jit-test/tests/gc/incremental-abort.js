@@ -1,6 +1,7 @@
-// |jit-test| skip-if: !getBuildConfiguration()['has-gczeal']
-
 // Test aborting an incremental GC in all possible states
+
+if (!("gcstate" in this && "gczeal" in this && "abortgc" in this))
+    quit();
 
 gczeal(0);
 gc();
@@ -12,7 +13,7 @@ function testAbort(zoneCount, objectCount, sliceCount, abortState)
 
     var zones = [];
     for (var i = 0; i < zoneCount; i++) {
-        var zone = newGlobal({newCompartment: true});
+        var zone = newGlobal();
         evaluate("var objects; " +
                  "function makeObjectGraph(objectCount) { " +
                  "    objects = []; " +

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,7 +34,7 @@ inline void EmitBaselineTailCallVM(TrampolinePtr target, MacroAssembler& masm,
   // keep it there through the stub calls), but the VMWrapper code being
   // called expects the return address to also be pushed on the stack.
   MOZ_ASSERT(ICTailCallReg == ra);
-  masm.makeFrameDescriptor(scratch, FrameType::BaselineJS,
+  masm.makeFrameDescriptor(scratch, JitFrame_BaselineJS,
                            ExitFrameLayout::Size());
   masm.subPtr(Imm32(sizeof(CommonFrameLayout)), StackPointer);
   masm.storePtr(scratch,
@@ -42,6 +42,23 @@ inline void EmitBaselineTailCallVM(TrampolinePtr target, MacroAssembler& masm,
   masm.storePtr(
       ra, Address(StackPointer, CommonFrameLayout::offsetOfReturnAddress()));
 
+  masm.jump(target);
+}
+
+inline void EmitIonTailCallVM(TrampolinePtr target, MacroAssembler& masm,
+                              uint32_t stackSize) {
+  Register scratch = R2.scratchReg();
+
+  masm.loadPtr(Address(sp, stackSize), scratch);
+  masm.rshiftPtr(Imm32(FRAMESIZE_SHIFT), scratch);
+  masm.addPtr(Imm32(stackSize + JitStubFrameLayout::Size() - sizeof(intptr_t)),
+              scratch);
+
+  // Push frame descriptor and perform the tail call.
+  MOZ_ASSERT(ICTailCallReg == ra);
+  masm.makeFrameDescriptor(scratch, JitFrame_IonJS, ExitFrameLayout::Size());
+  masm.push(scratch);
+  masm.push(ICTailCallReg);
   masm.jump(target);
 }
 
@@ -54,7 +71,7 @@ inline void EmitBaselineCreateStubFrameDescriptor(MacroAssembler& masm,
   masm.addPtr(Imm32(sizeof(intptr_t) * 2), reg);
   masm.subPtr(BaselineStackReg, reg);
 
-  masm.makeFrameDescriptor(reg, FrameType::BaselineStub, headerSize);
+  masm.makeFrameDescriptor(reg, JitFrame_BaselineStub, headerSize);
 }
 
 inline void EmitBaselineCallVM(TrampolinePtr target, MacroAssembler& masm) {
@@ -79,7 +96,7 @@ inline void EmitBaselineEnterStubFrame(MacroAssembler& masm, Register scratch) {
   // BaselineStubFrame if needed.
 
   // Push frame descriptor and return address.
-  masm.makeFrameDescriptor(scratch, FrameType::BaselineJS,
+  masm.makeFrameDescriptor(scratch, JitFrame_BaselineJS,
                            BaselineStubFrameLayout::Size());
   masm.subPtr(Imm32(STUB_FRAME_SIZE), StackPointer);
   masm.storePtr(scratch,

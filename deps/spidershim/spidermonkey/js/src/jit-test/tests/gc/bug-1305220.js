@@ -1,5 +1,6 @@
-// |jit-test| allow-oom; skip-if: !('oomAfterAllocations' in this)
-
+// |jit-test| allow-oom
+if (!('oomAfterAllocations' in this))
+    quit();
 s = newGlobal();
 evalcx("\
     gczeal(10, 2);\

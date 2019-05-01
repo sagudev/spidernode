@@ -22,14 +22,13 @@ lv{
         default{"latn"}
         latn{
             miscPatterns{
-                approximately{"~{0}"}
-                atLeast{"≥{0}"}
-                atMost{"≤{0}"}
+                atLeast{"⩾{0}"}
                 range{"{0}–{1}"}
             }
             patterns{
                 accountingFormat{"#,##0.00 ¤"}
                 currencyFormat{"#,##0.00 ¤"}
+                decimalFormat{"#,##0.###"}
                 percentFormat{"#,##0%"}
                 scientificFormat{"#E0"}
             }
@@ -135,29 +134,29 @@ lv{
                         zero{"0 mljrd'.' ¤"}
                     }
                     10000000000{
-                        one{"00 mljrd'.' ¤"}
-                        other{"00 mljrd'.' ¤"}
-                        zero{"00 mljrd'.' ¤"}
+                        one{"¤00 mljrd'.'"}
+                        other{"¤00 mljrd'.'"}
+                        zero{"¤00 mljrd'.'"}
                     }
                     100000000000{
-                        one{"000 mljrd'.' ¤"}
-                        other{"000 mljrd'.' ¤"}
-                        zero{"000 mljrd'.' ¤"}
+                        one{"¤000 mljrd'.'"}
+                        other{"¤000 mljrd'.'"}
+                        zero{"¤000 mljrd'.'"}
                     }
                     1000000000000{
-                        one{"0 trilj'.' ¤"}
-                        other{"0 trilj'.' ¤"}
-                        zero{"0 trilj'.' ¤"}
+                        one{"¤0 trilj'.'"}
+                        other{"¤0 trilj'.'"}
+                        zero{"¤0 trilj'.'"}
                     }
                     10000000000000{
-                        one{"00 trilj'.' ¤"}
-                        other{"00 trilj'.' ¤"}
-                        zero{"00 trilj'.' ¤"}
+                        one{"¤00 trilj'.'"}
+                        other{"¤00 trilj'.'"}
+                        zero{"¤00 trilj'.'"}
                     }
                     100000000000000{
-                        one{"000 trilj'.' ¤"}
-                        other{"000 trilj'.' ¤"}
-                        zero{"000 trilj'.' ¤"}
+                        one{"¤000 trilj'.'"}
+                        other{"¤000 trilj'.'"}
+                        zero{"¤000 trilj'.'"}
                     }
                 }
                 decimalFormat{
@@ -228,9 +227,12 @@ lv{
                 exponential{"E"}
                 group{" "}
                 infinity{"∞"}
+                list{";"}
+                minusSign{"-"}
                 nan{"NS"}
                 perMille{"‰"}
                 percentSign{"%"}
+                plusSign{"+"}
                 superscriptingExponent{"×"}
                 timeSeparator{":"}
             }
@@ -248,7 +250,7 @@ lv{
         minimumGroupingDigits{"2"}
         native{"latn"}
     }
-    Version{"2.1.48.43"}
+    Version{"2.1.37.5"}
     calendar{
         buddhist{
             eras{
@@ -436,7 +438,7 @@ lv{
                 "EEEE, y. 'gada' d. MMMM G",
                 "y. 'gada' d. MMMM G",
                 "y. 'gada' d. MMM G",
-                "dd.MM.y. GGGGG",
+                "dd.MM.y GGGGG",
                 "{1}, {0}",
                 "{1} 'plkst'. {0}",
                 "{1} 'plkst'. {0}",
@@ -484,46 +486,30 @@ lv{
                 yyyyMMMM{"y. 'g'. MMMM G"}
                 yyyyMMMd{"y. 'g'. d. MMM G"}
                 yyyyMd{"d.MM.y. G"}
-                yyyyQQQ{"y. 'g'. QQQ G"}
+                yyyyQQQ{"QQQ y G"}
                 yyyyQQQQ{"y. 'gada' QQQQ G"}
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h–h B"}
+                H{
+                    H{"HH–HH"}
                 }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm–h:mm B"}
-                    m{"h:mm–h:mm B"}
+                Hm{
+                    H{"HH:mm–HH:mm"}
+                    m{"HH:mm–HH:mm"}
                 }
-                Gy{
-                    G{"G y – G y"}
-                    y{"G y–y"}
+                Hmv{
+                    H{"HH:mm–HH:mm v"}
+                    m{"HH:mm–HH:mm v"}
                 }
-                GyM{
-                    G{"GGGGG y-MM – GGGGG y-MM"}
-                    M{"GGGGG y-MM – y-MM"}
-                    y{"GGGGG y-MM – y-MM"}
-                }
-                GyMEd{
-                    G{"GGGGG y-MM-dd, E – GGGGG y-MM-dd, E"}
-                    M{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    d{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    y{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                }
-                GyMd{
-                    G{"GGGGG y-MM-dd – GGGGG y-MM-dd"}
-                    M{"GGGGG y-MM-dd – y-MM-dd"}
-                    d{"GGGGG y-MM-dd – y-MM-dd"}
-                    y{"GGGGG y-MM-dd – y-MM-dd"}
+                Hv{
+                    H{"HH–HH v"}
                 }
                 M{
                     M{"MM–MM"}
                 }
                 MEd{
-                    M{"E, dd.MM.–E, dd.MM."}
-                    d{"E, dd.MM.–E, dd.MM."}
+                    M{"E, dd.MM–E, dd.MM"}
+                    d{"E, dd.MM–E, dd.MM"}
                 }
                 MMM{
                     M{"MMM–MMM"}
@@ -537,13 +523,31 @@ lv{
                     d{"d.–d. MMM"}
                 }
                 Md{
-                    M{"dd.MM.–dd.MM."}
+                    M{"dd.MM–dd.MM"}
                     d{"dd.MM.–dd.MM."}
                 }
                 d{
                     d{"d.–d."}
                 }
                 fallback{"{0}–{1}"}
+                h{
+                    a{"h a – h a"}
+                    h{"h–h a"}
+                }
+                hm{
+                    a{"h:mm a – h:mm a"}
+                    h{"h:mm–h:mm a"}
+                    m{"h:mm–h:mm a"}
+                }
+                hmv{
+                    a{"h:mm a – h:mm a v"}
+                    h{"h:mm–h:mm a v"}
+                    m{"h:mm–h:mm a v"}
+                }
+                hv{
+                    a{"h a – h a v"}
+                    h{"h–h a v"}
+                }
                 y{
                     y{"y.–y. G"}
                 }
@@ -639,9 +643,9 @@ lv{
                 MMMEd{"E, d. MMM"}
                 MMMMEd{"E, d. MMMM"}
                 MMMMW{
-                    one{"MMMM W. 'nedēļa'"}
-                    other{"MMMM W. 'nedēļa'"}
-                    zero{"MMMM W. 'nedēļa'"}
+                    one{"MMM W. 'nedēļa'"}
+                    other{"MMM W. 'nedēļa'"}
+                    zero{"MMM W. 'nedēļa'"}
                 }
                 MMMMd{"d. MMMM"}
                 MMMd{"d. MMM"}
@@ -823,36 +827,6 @@ lv{
                 }
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h–h B"}
-                }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm–h:mm B"}
-                    m{"h:mm–h:mm B"}
-                }
-                Gy{
-                    G{"G y – G y"}
-                    y{"G y–y"}
-                }
-                GyM{
-                    G{"GGGGG y-MM – GGGGG y-MM"}
-                    M{"GGGGG y-MM – y-MM"}
-                    y{"GGGGG y-MM – y-MM"}
-                }
-                GyMEd{
-                    G{"GGGGG y-MM-dd, E – GGGGG y-MM-dd, E"}
-                    M{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    d{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    y{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                }
-                GyMd{
-                    G{"GGGGG y-MM-dd – GGGGG y-MM-dd"}
-                    M{"GGGGG y-MM-dd – y-MM-dd"}
-                    d{"GGGGG y-MM-dd – y-MM-dd"}
-                    y{"GGGGG y-MM-dd – y-MM-dd"}
-                }
                 H{
                     H{"HH–HH"}
                 }
@@ -871,8 +845,8 @@ lv{
                     M{"MM.–MM."}
                 }
                 MEd{
-                    M{"E, dd.MM. – E, dd.MM."}
-                    d{"E, dd.MM. – E, dd.MM."}
+                    M{"E, dd.MM – E, dd.MM"}
+                    d{"E, dd.MM – E, dd.MM"}
                 }
                 MMM{
                     M{"LLL–LLL"}
@@ -886,7 +860,7 @@ lv{
                     d{"d.–d. MMM"}
                 }
                 Md{
-                    M{"dd.MM.–dd.MM."}
+                    M{"dd.MM–dd.MM"}
                     d{"dd.MM.–dd.MM."}
                 }
                 d{
@@ -1082,6 +1056,12 @@ lv{
         }
         hebrew{
             eras{
+                abbreviated{
+                    "AM",
+                }
+                narrow{
+                    "AM",
+                }
                 wide{
                     "kopš pasaules radīšanas",
                 }
@@ -1158,6 +1138,17 @@ lv{
             }
         }
         indian{
+            eras{
+                abbreviated{
+                    "Saka",
+                }
+                narrow{
+                    "Saka",
+                }
+                wide{
+                    "Saka",
+                }
+            }
             monthNames{
                 format{
                     abbreviated{
@@ -1223,6 +1214,12 @@ lv{
         }
         islamic{
             eras{
+                abbreviated{
+                    "AH",
+                }
+                narrow{
+                    "AH",
+                }
                 wide{
                     "pēc hidžras",
                 }
@@ -1382,7 +1379,7 @@ lv{
         flags{"karogi"}
         food_drink{"ēdieni un dzērieni"}
         format{"formāts"}
-        format_whitespace{"formatēšanas un nedrukājama rakstzīme"}
+        format_whitespace{"formāts un baltstarpas rakstzīme"}
         full_width_form_variant{"pilna platuma formu varianti"}
         geometric_shapes{"ģeometriskās figūras"}
         half_width_form_variant{"pusplatuma formu varianti"}
@@ -1440,7 +1437,7 @@ lv{
         vocalic_jamo{"skanīgie džamo"}
         weather{"laikapstākļi"}
         western_asian_scripts{"Rietumāzijas rakstības"}
-        whitespace{"nedrukājama rakstzīme"}
+        whitespace{"baltstarpa"}
     }
     delimiters{
         alternateQuotationEnd{"’"}
@@ -1555,13 +1552,13 @@ lv{
             }
             relativeTime{
                 future{
-                    one{"pēc {0} piektd."}
-                    other{"pēc {0} piektd."}
+                    one{"pēc {0} piektdienas"}
+                    other{"pēc {0} piektdienām"}
                     zero{"pēc {0} piektdienām"}
                 }
                 past{
-                    one{"pirms {0} piektd."}
-                    other{"pirms {0} piektd."}
+                    one{"pirms {0} piektdienas"}
+                    other{"pirms {0} piektdienām"}
                     zero{"pirms {0} piektdienām"}
                 }
             }
@@ -1574,13 +1571,13 @@ lv{
             }
             relativeTime{
                 future{
-                    one{"pēc {0} piektd."}
-                    other{"pēc {0} piektd."}
+                    one{"pēc {0} piektdienas"}
+                    other{"pēc {0} piektdienām"}
                     zero{"pēc {0} piektdienām"}
                 }
                 past{
-                    one{"pirms {0} piektd."}
-                    other{"pirms {0} piektd."}
+                    one{"pirms {0} piektdienas"}
+                    other{"pirms {0} piektdienām"}
                     zero{"pirms {0} piektdienām"}
                 }
             }
@@ -1708,13 +1705,13 @@ lv{
             }
             relativeTime{
                 future{
-                    one{"pēc {0} pirmd."}
-                    other{"pēc {0} pirmd."}
+                    one{"pēc {0} pirmdienas"}
+                    other{"pēc {0} pirmdienām"}
                     zero{"pēc {0} pirmdienām"}
                 }
                 past{
-                    one{"pirms {0} pirmd."}
-                    other{"pirms {0} pirmd."}
+                    one{"pirms {0} pirmdienas"}
+                    other{"pirms {0} pirmdienām"}
                     zero{"pirms {0} pirmdienām"}
                 }
             }
@@ -1727,13 +1724,13 @@ lv{
             }
             relativeTime{
                 future{
-                    one{"pēc {0} pirmd."}
-                    other{"pēc {0} pirmd."}
+                    one{"pēc {0} pirmdienas"}
+                    other{"pēc {0} pirmdienām"}
                     zero{"pēc {0} pirmdienām"}
                 }
                 past{
-                    one{"pirms {0} pirmd."}
-                    other{"pirms {0} pirmd."}
+                    one{"pirms {0} pirmdienas"}
+                    other{"pirms {0} pirmdienām"}
                     zero{"pirms {0} pirmdienām"}
                 }
             }
@@ -1865,13 +1862,13 @@ lv{
             }
             relativeTime{
                 future{
-                    one{"pēc {0} sestd."}
-                    other{"pēc {0} sestd."}
+                    one{"pēc {0} sestdienas"}
+                    other{"pēc {0} sestdienām"}
                     zero{"pēc {0} sestdienām"}
                 }
                 past{
-                    one{"pirms {0} sestd."}
-                    other{"pirms {0} sestd."}
+                    one{"pirms {0} sestdienas"}
+                    other{"pirms {0} sestdienām"}
                     zero{"pirms {0} sestdienām"}
                 }
             }
@@ -1884,13 +1881,13 @@ lv{
             }
             relativeTime{
                 future{
-                    one{"pēc {0} sestd."}
-                    other{"pēc {0} sestd."}
+                    one{"pēc {0} sestdienas"}
+                    other{"pēc {0} sestdienām"}
                     zero{"pēc {0} sestdienām"}
                 }
                 past{
-                    one{"pirms {0} sestd."}
-                    other{"pirms {0} sestd."}
+                    one{"pirms {0} sestdienas"}
+                    other{"pirms {0} sestdienām"}
                     zero{"pirms {0} sestdienām"}
                 }
             }
@@ -1970,13 +1967,13 @@ lv{
             }
             relativeTime{
                 future{
-                    one{"pēc {0} svētd."}
-                    other{"pēc {0} svētd."}
+                    one{"pēc {0} svētdienas"}
+                    other{"pēc {0} svētdienām"}
                     zero{"pēc {0} svētdienām"}
                 }
                 past{
-                    one{"pirms {0} svētd."}
-                    other{"pirms {0} svētd."}
+                    one{"pirms {0} svētdienas"}
+                    other{"pirms {0} svētdienām"}
                     zero{"pirms {0} svētdienām"}
                 }
             }
@@ -1989,13 +1986,13 @@ lv{
             }
             relativeTime{
                 future{
-                    one{"pēc {0} svētd."}
-                    other{"pēc {0} svētd."}
+                    one{"pēc {0} svētdienas"}
+                    other{"pēc {0} svētdienām"}
                     zero{"pēc {0} svētdienām"}
                 }
                 past{
-                    one{"pirms {0} svētd."}
-                    other{"pirms {0} svētd."}
+                    one{"pirms {0} svētdienas"}
+                    other{"pirms {0} svētdienām"}
                     zero{"pirms {0} svētdienām"}
                 }
             }
@@ -2027,13 +2024,13 @@ lv{
             }
             relativeTime{
                 future{
-                    one{"pēc {0} ceturtd."}
-                    other{"pēc {0} ceturtd."}
+                    one{"pēc {0} ceturtdienas"}
+                    other{"pēc {0} ceturtdienām"}
                     zero{"pēc {0} ceturtdienām"}
                 }
                 past{
-                    one{"pirms {0} ceturtd."}
-                    other{"pirms {0} ceturtd."}
+                    one{"pirms {0} ceturtdienas"}
+                    other{"pirms {0} ceturtdienām"}
                     zero{"pirms {0} ceturtdienām"}
                 }
             }
@@ -2046,13 +2043,13 @@ lv{
             }
             relativeTime{
                 future{
-                    one{"pēc {0} ceturtd."}
-                    other{"pēc {0} ceturtd."}
+                    one{"pēc {0} ceturtdienas"}
+                    other{"pēc {0} ceturtdienām"}
                     zero{"pēc {0} ceturtdienām"}
                 }
                 past{
-                    one{"pirms {0} ceturtd."}
-                    other{"pirms {0} ceturtd."}
+                    one{"pirms {0} ceturtdienas"}
+                    other{"pirms {0} ceturtdienām"}
                     zero{"pirms {0} ceturtdienām"}
                 }
             }
@@ -2084,13 +2081,13 @@ lv{
             }
             relativeTime{
                 future{
-                    one{"pēc {0} otrd."}
-                    other{"pēc {0} otrd."}
+                    one{"pēc {0} otrdienas"}
+                    other{"pēc {0} otrdienām"}
                     zero{"pēc {0} otrdienām"}
                 }
                 past{
-                    one{"pirms {0} otrd."}
-                    other{"pirms {0} otrd."}
+                    one{"pirms {0} otrdienas"}
+                    other{"pirms {0} otrdienām"}
                     zero{"pirms {0} otrdienām"}
                 }
             }
@@ -2103,13 +2100,13 @@ lv{
             }
             relativeTime{
                 future{
-                    one{"pēc {0} otrd."}
-                    other{"pēc {0} otrd."}
+                    one{"pēc {0} otrdienas"}
+                    other{"pēc {0} otrdienām"}
                     zero{"pēc {0} otrdienām"}
                 }
                 past{
-                    one{"pirms {0} otrd."}
-                    other{"pirms {0} otrd."}
+                    one{"pirms {0} otrdienas"}
+                    other{"pirms {0} otrdienām"}
                     zero{"pirms {0} otrdienām"}
                 }
             }
@@ -2141,13 +2138,13 @@ lv{
             }
             relativeTime{
                 future{
-                    one{"pēc {0} trešd."}
-                    other{"pēc {0} trešd."}
+                    one{"pēc {0} trešdienas"}
+                    other{"pēc {0} trešdienām"}
                     zero{"pēc {0} trešdienām"}
                 }
                 past{
-                    one{"pirms {0} trešd."}
-                    other{"pirms {0} trešd."}
+                    one{"pirms {0} trešdienas"}
+                    other{"pirms {0} trešdienām"}
                     zero{"pirms {0} trešdienām"}
                 }
             }
@@ -2160,13 +2157,13 @@ lv{
             }
             relativeTime{
                 future{
-                    one{"pēc {0} trešd."}
-                    other{"pēc {0} trešd."}
+                    one{"pēc {0} trešdienas"}
+                    other{"pēc {0} trešdienām"}
                     zero{"pēc {0} trešdienām"}
                 }
                 past{
-                    one{"pirms {0} trešd."}
-                    other{"pirms {0} trešd."}
+                    one{"pirms {0} trešdienas"}
+                    other{"pirms {0} trešdienām"}
                     zero{"pirms {0} trešdienām"}
                 }
             }
@@ -2324,12 +2321,6 @@ lv{
             middle{"{0}, {1}"}
             start{"{0}, {1}"}
         }
-        standard-narrow{
-            2{"{0} un {1}"}
-            end{"{0} un {1}"}
-            middle{"{0}, {1}"}
-            start{"{0}, {1}"}
-        }
         standard-short{
             2{"{0} un {1}"}
             end{"{0} un {1}"}
@@ -2370,13 +2361,8 @@ lv{
         general{
             lenient{
                 "[.․。︒﹒．｡]",
-                "['ʼ՚᾽᾿’＇]",
-                "[%٪﹪％]",
-                "[؉‰]",
                 "[\$﹩＄$]",
                 "[£₤]",
-                "[¥￥]",
-                "[₩￦]",
                 "[₨₹{Rp}{Rs}]",
             }
         }
@@ -2385,6 +2371,10 @@ lv{
                 "[\\-‒⁻₋−➖﹣－]",
                 "[,،٫、︐︑﹐﹑，､]",
                 "[+⁺₊➕﬩﹢＋]",
+            }
+            stricter{
+                "[,٫︐﹐，]",
+                "[.․﹒．｡]",
             }
         }
     }

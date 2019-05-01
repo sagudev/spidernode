@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -27,20 +27,14 @@ BEGIN_TEST(testJitDCEinGVN_ins) {
   block->add(p);
   MMul* mul0 = MMul::New(func.alloc, p, p, MIRType::Double);
   block->add(mul0);
-  if (!mul0->typePolicy()->adjustInputs(func.alloc, mul0)) {
-    return false;
-  }
+  if (!mul0->typePolicy()->adjustInputs(func.alloc, mul0)) return false;
   MMul* mul1 = MMul::New(func.alloc, mul0, mul0, MIRType::Double);
   block->add(mul1);
-  if (!mul1->typePolicy()->adjustInputs(func.alloc, mul1)) {
-    return false;
-  }
+  if (!mul1->typePolicy()->adjustInputs(func.alloc, mul1)) return false;
   MReturn* ret = MReturn::New(func.alloc, p);
   block->end(ret);
 
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   // mul0 and mul1 should be deleted.
   for (MInstructionIterator ins = block->begin(); ins != block->end(); ins++) {
@@ -134,9 +128,7 @@ BEGIN_TEST(testJitDCEinGVN_phi) {
   MReturn* ret = MReturn::New(func.alloc, y);
   joinBlock->end(ret);
 
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   // c1 should be deleted.
   for (MInstructionIterator ins = block->begin(); ins != block->end(); ins++) {

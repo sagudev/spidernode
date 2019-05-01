@@ -1,6 +1,7 @@
-// |jit-test| skip-if: helperThreadCount() === 0
-
 load(libdir + "asserts.js");
+
+if (helperThreadCount() === 0)
+  quit(0);
 
 function BigInteger(a, b, c) {}
 function montConvert(x) {
@@ -10,7 +11,7 @@ function montConvert(x) {
 var ba = new Array();
 a = new BigInteger(ba);
 g = montConvert(a);
-var lfGlobal = newGlobal({newCompartment: true});
+var lfGlobal = newGlobal();
 for (lfLocal in this) {
     if (!(lfLocal in lfGlobal)) {
         lfGlobal[lfLocal] = this[lfLocal];

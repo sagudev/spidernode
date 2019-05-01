@@ -9,6 +9,7 @@
 
 var weirdCases =
   [
+   "x-u-foo",
    "en-x-u-foo",
    "en-a-bar-x-u-foo",
    "en-x-u-foo-a-bar",
@@ -17,8 +18,6 @@ var weirdCases =
 
 for (let weird of weirdCases)
   assertEqArray(Intl.getCanonicalLocales(weird), [weird]);
-
-assertThrowsInstanceOf(() => Intl.getCanonicalLocales("x-u-foo"), RangeError);
 
 if (typeof reportCompare === 'function')
     reportCompare(0, 0);

@@ -12,9 +12,7 @@ static bool ObjectEmulatingUndefinedConstructor(JSContext* cx, unsigned argc,
   JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
   JSObject* obj =
       JS_NewObjectForConstructor(cx, &ObjectEmulatingUndefinedClass, args);
-  if (!obj) {
-    return false;
-  }
+  if (!obj) return false;
   args.rval().setObject(*obj);
   return true;
 }

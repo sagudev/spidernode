@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,17 +18,17 @@
 using namespace js;
 
 #if MOZ_LITTLE_ENDIAN
-#  define IEEE_8087
+#define IEEE_8087
 #else
-#  define IEEE_MC68k
+#define IEEE_MC68k
 #endif
 
 #ifndef Long
-#  define Long int32_t
+#define Long int32_t
 #endif
 
 #ifndef ULong
-#  define ULong uint32_t
+#define ULong uint32_t
 #endif
 
 /*
@@ -288,11 +288,17 @@ char* js_dtobasestr(DtoaState* state, int base, double dinput) {
   MOZ_ASSERT(base >= 2 && base <= 36);
 
   dval(d) = dinput;
-  buffer = js_pod_malloc<char>(DTOBASESTR_BUFFER_SIZE);
+  buffer = (char*)js_malloc(DTOBASESTR_BUFFER_SIZE);
   if (!buffer) return nullptr;
   p = buffer;
 
-  if (dval(d) < 0.0) {
+  if (dval(d) < 0.0
+#if defined(XP_WIN)
+      && !((word0(d) & Exp_mask) == Exp_mask &&
+           ((word0(d) & Frac_mask) ||
+            word1(d))) /* Visual C++ doesn't know how to compare against NaN */
+#endif
+  ) {
     *p++ = '-';
     dval(d) = -dval(d);
   }

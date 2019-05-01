@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -7,7 +7,6 @@
 
 #include "mozilla/Move.h"
 
-#include "gc/GCLock.h"
 #include "gc/GCRuntime.h"
 #include "gc/Heap.h"
 
@@ -27,9 +26,8 @@ BEGIN_TEST(testGCChunkPool) {
 
   // Iterate.
   uint32_t i = 0;
-  for (js::gc::ChunkPool::Iter iter(pool); !iter.done(); iter.next(), ++i) {
+  for (js::gc::ChunkPool::Iter iter(pool); !iter.done(); iter.next(), ++i)
     CHECK(iter.get());
-  }
   CHECK(i == pool.count());
   MOZ_ASSERT(pool.verify());
 

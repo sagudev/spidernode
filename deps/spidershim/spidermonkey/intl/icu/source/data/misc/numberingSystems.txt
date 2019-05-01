@@ -87,11 +87,6 @@ numberingSystems:table(nofallback){
             desc{"%georgian"}
             radix:int{10}
         }
-        gong{
-            algorithmic:int{0}
-            desc{"𑶠𑶡𑶢𑶣𑶤𑶥𑶦𑶧𑶨𑶩"}
-            radix:int{10}
-        }
         gonm{
             algorithmic:int{0}
             desc{"𑵐𑵑𑵒𑵓𑵔𑵕𑵖𑵗𑵘𑵙"}
@@ -157,11 +152,6 @@ numberingSystems:table(nofallback){
             desc{"𖭐𖭑𖭒𖭓𖭔𖭕𖭖𖭗𖭘𖭙"}
             radix:int{10}
         }
-        hmnp{
-            algorithmic:int{0}
-            desc{"𞅀𞅁𞅂𞅃𞅄𞅅𞅆𞅇𞅈𞅉"}
-            radix:int{10}
-        }
         java{
             algorithmic:int{0}
             desc{"꧐꧑꧒꧓꧔꧕꧖꧗꧘꧙"}
@@ -175,11 +165,6 @@ numberingSystems:table(nofallback){
         jpanfin{
             algorithmic:int{1}
             desc{"ja/SpelloutRules/%spellout-cardinal-financial"}
-            radix:int{10}
-        }
-        jpanyear{
-            algorithmic:int{1}
-            desc{"ja/SpelloutRules/%spellout-numbering-year-latn"}
             radix:int{10}
         }
         kali{
@@ -317,11 +302,6 @@ numberingSystems:table(nofallback){
             desc{"𐒠𐒡𐒢𐒣𐒤𐒥𐒦𐒧𐒨𐒩"}
             radix:int{10}
         }
-        rohg{
-            algorithmic:int{0}
-            desc{"𐴰𐴱𐴲𐴳𐴴𐴵𐴶𐴷𐴸𐴹"}
-            radix:int{10}
-        }
         roman{
             algorithmic:int{1}
             desc{"%roman-upper"}
@@ -410,11 +390,6 @@ numberingSystems:table(nofallback){
         wara{
             algorithmic:int{0}
             desc{"𑣠𑣡𑣢𑣣𑣤𑣥𑣦𑣧𑣨𑣩"}
-            radix:int{10}
-        }
-        wcho{
-            algorithmic:int{0}
-            desc{"𞋰𞋱𞋲𞋳𞋴𞋵𞋶𞋷𞋸𞋹"}
             radix:int{10}
         }
     }

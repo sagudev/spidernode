@@ -1,5 +1,5 @@
 // eval correctly handles optional custom url option
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 var count = 0;
 

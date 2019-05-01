@@ -49,21 +49,6 @@ class Elf;
 class ElfDynamic_Section;
 class ElfStrtab_Section;
 
-template <typename X>
-class FixedSizeData {
- public:
-  struct Wrapper {
-    X value;
-  };
-  typedef Wrapper Type32;
-  typedef Wrapper Type64;
-
-  template <class endian, typename R, typename T>
-  static void swap(T &t, R &r) {
-    r.value = endian::swap(t.value);
-  }
-};
-
 class Elf_Ehdr_Traits {
  public:
   typedef Elf32_Ehdr Type32;
@@ -325,7 +310,7 @@ class ElfSection {
 
   ElfSection(Elf_Shdr &s, std::ifstream *file, Elf *parent);
 
-  virtual ~ElfSection() { free(data); }
+  virtual ~ElfSection() { delete[] data; }
 
   const char *getName() { return name; }
   unsigned int getType() { return shdr.sh_type; }
@@ -385,7 +370,7 @@ class ElfSection {
     insertInSegments(section->segments);
   }
 
-  virtual void insertBefore(ElfSection *section, bool dirty = true) {
+  void insertBefore(ElfSection *section, bool dirty = true) {
     if (previous != nullptr) previous->next = next;
     if (next != nullptr) next->previous = previous;
     next = section;
@@ -465,6 +450,8 @@ class ElfSegment {
   std::list<ElfSection *>::iterator end() { return sections.end(); }
 
   void clear();
+
+  bool isElfHackFillerSegment() { return type == PT_LOAD && flags == 0; }
 
  private:
   unsigned int type;

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,30 +21,27 @@ class Arena;
 // See AtomMarking.cpp for details.
 class AtomMarkingRuntime {
   // Unused arena atom bitmap indexes. Protected by the GC lock.
-  js::GCLockData<Vector<size_t, 0, SystemAllocPolicy>> freeArenaIndexes;
+  js::ExclusiveAccessLockOrGCTaskData<Vector<size_t, 0, SystemAllocPolicy>>
+      freeArenaIndexes;
 
   void markChildren(JSContext* cx, JSAtom*) {}
 
   void markChildren(JSContext* cx, JS::Symbol* symbol) {
-    if (JSAtom* description = symbol->description()) {
-      markAtom(cx, description);
-    }
+    if (JSAtom* description = symbol->description()) markAtom(cx, description);
   }
 
  public:
   // The extent of all allocated and free words in atom mark bitmaps.
   // This monotonically increases and may be read from without locking.
-  mozilla::Atomic<size_t, mozilla::SequentiallyConsistent,
-                  mozilla::recordreplay::Behavior::DontPreserve>
-      allocatedWords;
+  mozilla::Atomic<size_t> allocatedWords;
 
   AtomMarkingRuntime() : allocatedWords(0) {}
 
   // Mark an arena as holding things in the atoms zone.
-  void registerArena(Arena* arena, const AutoLockGC& lock);
+  void registerArena(Arena* arena);
 
   // Mark an arena as no longer holding things in the atoms zone.
-  void unregisterArena(Arena* arena, const AutoLockGC& lock);
+  void unregisterArena(Arena* arena);
 
   // Fill |bitmap| with an atom marking bitmap based on the things that are
   // currently marked in the chunks used by atoms zone arenas. This returns

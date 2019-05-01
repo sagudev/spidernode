@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +11,6 @@
 #include "mozilla/Move.h"
 #include "mozilla/TypeTraits.h"
 
-#include "jit/JitcodeMap.h"
 #include "jit/JitFrames.h"
 #include "jit/LIR.h"
 #include "jit/MacroAssembler.h"
@@ -30,18 +29,43 @@ class CodeGenerator;
 class MacroAssembler;
 class IonIC;
 
+template <class ArgSeq, class StoreOutputTo>
+class OutOfLineCallVM;
+
 class OutOfLineTruncateSlow;
+
+struct PatchableBackedgeInfo {
+  CodeOffsetJump backedge;
+  Label* loopHeader;
+  Label* interruptCheck;
+
+  PatchableBackedgeInfo(CodeOffsetJump backedge, Label* loopHeader,
+                        Label* interruptCheck)
+      : backedge(backedge),
+        loopHeader(loopHeader),
+        interruptCheck(interruptCheck) {}
+};
 
 struct ReciprocalMulConstants {
   int64_t multiplier;
   int32_t shiftAmount;
 };
 
+// This should be nested in CodeGeneratorShared, but it is used in
+// optimization tracking implementation and nested classes cannot be
+// forward-declared.
+struct NativeToTrackedOptimizations {
+  // [startOffset, endOffset]
+  CodeOffset startOffset;
+  CodeOffset endOffset;
+  const TrackedOptimizations* optimizations;
+};
+
 class CodeGeneratorShared : public LElementVisitor {
   js::Vector<OutOfLineCode*, 0, SystemAllocPolicy> outOfLineCode_;
 
   MacroAssembler& ensureMasm(MacroAssembler* masm);
-  mozilla::Maybe<IonHeapMacroAssembler> maybeMasm_;
+  mozilla::Maybe<MacroAssembler> maybeMasm_;
 
  public:
   MacroAssembler& masm;
@@ -64,6 +88,8 @@ class CodeGeneratorShared : public LElementVisitor {
   // Label for the common return path.
   NonAssertingLabel returnLabel_;
 
+  FallbackICStubSpace stubSpace_;
+
   js::Vector<SafepointIndex, 0, SystemAllocPolicy> safepointIndices_;
   js::Vector<OsiIndex, 0, SystemAllocPolicy> osiIndices_;
 
@@ -83,6 +109,9 @@ class CodeGeneratorShared : public LElementVisitor {
   };
   js::Vector<CompileTimeICInfo, 0, SystemAllocPolicy> icInfo_;
 
+  // Patchable backedges generated for loops.
+  Vector<PatchableBackedgeInfo, 0, SystemAllocPolicy> patchableBackedges_;
+
 #ifdef JS_TRACE_LOGGING
   struct PatchableTLEvent {
     CodeOffset offset;
@@ -93,6 +122,13 @@ class CodeGeneratorShared : public LElementVisitor {
   js::Vector<PatchableTLEvent, 0, SystemAllocPolicy> patchableTLEvents_;
   js::Vector<CodeOffset, 0, SystemAllocPolicy> patchableTLScripts_;
 #endif
+
+ public:
+  struct NativeToBytecode {
+    CodeOffset nativeOffset;
+    InlineScriptTree* tree;
+    jsbytecode* pc;
+  };
 
  protected:
   js::Vector<NativeToBytecode, 0, SystemAllocPolicy> nativeToBytecodeList_;
@@ -162,6 +198,11 @@ class CodeGeneratorShared : public LElementVisitor {
   // spills.
   int32_t frameDepth_;
 
+  // In some cases, we force stack alignment to platform boundaries, see
+  // also CodeGeneratorShared constructor. This value records the adjustment
+  // we've done.
+  int32_t frameInitialAdjustment_;
+
   // Frame class this frame's size falls into (see IonFrame.h).
   FrameSizeClass frameClass_;
 
@@ -186,6 +227,12 @@ class CodeGeneratorShared : public LElementVisitor {
   }
 
  protected:
+#ifdef CHECK_OSIPOINT_REGISTERS
+  void resetOsiPointRegs(LSafepoint* safepoint);
+  bool shouldVerifyOsiPointRegs(LSafepoint* safepoint);
+  void verifyOsiPointRegs(LSafepoint* safepoint);
+#endif
+
   bool addNativeToBytecodeEntry(const BytecodeSite* site);
   void dumpNativeToBytecodeEntries();
   void dumpNativeToBytecodeEntry(uint32_t idx);
@@ -233,9 +280,7 @@ class CodeGeneratorShared : public LElementVisitor {
         allocateData(sizeof(mozilla::AlignedStorage2<T>), &index));
     masm.propagateOOM(icList_.append(index));
     masm.propagateOOM(icInfo_.append(CompileTimeICInfo()));
-    if (masm.oom()) {
-      return SIZE_MAX;
-    }
+    if (masm.oom()) return SIZE_MAX;
     // Use the copy constructor on the allocated space.
     MOZ_ASSERT(index == icList_.back());
     new (&runtimeData_[index]) T(cache);
@@ -295,7 +340,23 @@ class CodeGeneratorShared : public LElementVisitor {
   void emitTruncateFloat32(FloatRegister src, Register dest,
                            MTruncateToInt32* mir);
 
-  void emitPreBarrier(Register elements, const LAllocation* index,
+  void emitWasmCallBase(MWasmCall* mir, bool needsBoundsCheck);
+  void visitWasmCall(LWasmCall* ins) {
+    emitWasmCallBase(ins->mir(), ins->needsBoundsCheck());
+  }
+  void visitWasmCallVoid(LWasmCallVoid* ins) {
+    emitWasmCallBase(ins->mir(), ins->needsBoundsCheck());
+  }
+  void visitWasmCallI64(LWasmCallI64* ins) {
+    emitWasmCallBase(ins->mir(), ins->needsBoundsCheck());
+  }
+
+  void visitWasmLoadGlobalVar(LWasmLoadGlobalVar* ins);
+  void visitWasmStoreGlobalVar(LWasmStoreGlobalVar* ins);
+  void visitWasmLoadGlobalVarI64(LWasmLoadGlobalVarI64* ins);
+  void visitWasmStoreGlobalVarI64(LWasmStoreGlobalVarI64* ins);
+
+  void emitPreBarrier(Register base, const LAllocation* index,
                       int32_t offsetAdjustment);
   void emitPreBarrier(Address address);
 
@@ -316,19 +377,15 @@ class CodeGeneratorShared : public LElementVisitor {
   inline bool isNextBlock(LBlock* block) {
     uint32_t target = skipTrivialBlocks(block->mir())->id();
     uint32_t i = current->mir()->id() + 1;
-    if (target < i) {
-      return false;
-    }
+    if (target < i) return false;
     // Trivial blocks can be crossed via fallthrough.
     for (; i != target; ++i) {
-      if (!graph.getBlock(i)->isTrivial()) {
-        return false;
-      }
+      if (!graph.getBlock(i)->isTrivial()) return false;
     }
     return true;
   }
 
- protected:
+ public:
   // Save and restore all volatile registers to/from the stack, excluding the
   // specified register(s), before a function call made using callWithABI and
   // after storing the function call's return value to an output register.
@@ -383,7 +440,6 @@ class CodeGeneratorShared : public LElementVisitor {
   inline void saveLiveVolatile(LInstruction* ins);
   inline void restoreLiveVolatile(LInstruction* ins);
 
- public:
   template <typename T>
   void pushArg(const T& t) {
     masm.Push(t);
@@ -409,7 +465,13 @@ class CodeGeneratorShared : public LElementVisitor {
     masm.storeCallResultValue(t);
   }
 
- protected:
+  void callVM(const VMFunction& f, LInstruction* ins,
+              const Register* dynStack = nullptr);
+
+  template <class ArgSeq, class StoreOutputTo>
+  inline OutOfLineCode* oolCallVM(const VMFunction& fun, LInstruction* ins,
+                                  const ArgSeq& args, const StoreOutputTo& out);
+
   void addIC(LInstruction* lir, size_t cacheIndex);
 
   ReciprocalMulConstants computeDivisionConstants(uint32_t d, int maxLog);
@@ -424,15 +486,25 @@ class CodeGeneratorShared : public LElementVisitor {
 
   Label* getJumpLabelForBranch(MBasicBlock* block);
 
-  // Generate a jump to the start of the specified block. Use this in place of
-  // jumping directly to mir->lir()->label(), or use getJumpLabelForBranch()
-  // if a label to use directly is needed.
+  // Generate a jump to the start of the specified block, adding information
+  // if this is a loop backedge. Use this in place of jumping directly to
+  // mir->lir()->label(), or use getJumpLabelForBranch() if a label to use
+  // directly is needed.
   void jumpToBlock(MBasicBlock* mir);
+
+  // Get a label for the start of block which can be used for jumping, in
+  // place of jumpToBlock.
+  Label* labelForBackedgeWithImplicitCheck(MBasicBlock* mir);
 
 // This function is not used for MIPS. MIPS has branchToBlock.
 #if !defined(JS_CODEGEN_MIPS32) && !defined(JS_CODEGEN_MIPS64)
   void jumpToBlock(MBasicBlock* mir, Assembler::Condition cond);
 #endif
+
+  template <class T>
+  wasm::OldTrapDesc oldTrap(T* mir, wasm::Trap trap) {
+    return wasm::OldTrapDesc(mir->bytecodeOffset(), trap, masm.framePushed());
+  }
 
  private:
   void generateInvalidateEpilogue();
@@ -441,6 +513,9 @@ class CodeGeneratorShared : public LElementVisitor {
   CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph, MacroAssembler* masm);
 
  public:
+  template <class ArgSeq, class StoreOutputTo>
+  void visitOutOfLineCallVM(OutOfLineCallVM<ArgSeq, StoreOutputTo>* ool);
+
   void visitOutOfLineTruncateSlow(OutOfLineTruncateSlow* ool);
 
   bool omitOverRecursedCheck() const;
@@ -495,6 +570,19 @@ class CodeGeneratorShared : public LElementVisitor {
   void emitTracelogIonStop() {}
 #endif
 
+ protected:
+  inline void verifyHeapAccessDisassembly(uint32_t begin, uint32_t end,
+                                          bool isLoad, Scalar::Type type,
+                                          Operand mem, LAllocation alloc);
+
+ public:
+  inline void verifyLoadDisassembly(uint32_t begin, uint32_t end,
+                                    Scalar::Type type, Operand mem,
+                                    LAllocation alloc);
+  inline void verifyStoreDisassembly(uint32_t begin, uint32_t end,
+                                     Scalar::Type type, Operand mem,
+                                     LAllocation alloc);
+
   bool isGlobalObject(JSObject* object);
 };
 
@@ -532,6 +620,176 @@ class OutOfLineCodeBase : public OutOfLineCode {
  public:
   virtual void accept(T* codegen) = 0;
 };
+
+// ArgSeq store arguments for OutOfLineCallVM.
+//
+// OutOfLineCallVM are created with "oolCallVM" function. The third argument of
+// this function is an instance of a class which provides a "generate" in charge
+// of pushing the argument, with "pushArg", for a VMFunction.
+//
+// Such list of arguments can be created by using the "ArgList" function which
+// creates one instance of "ArgSeq", where the type of the arguments are
+// inferred from the type of the arguments.
+//
+// The list of arguments must be written in the same order as if you were
+// calling the function in C++.
+//
+// Example:
+//   ArgList(ToRegister(lir->lhs()), ToRegister(lir->rhs()))
+
+template <typename... ArgTypes>
+class ArgSeq;
+
+template <>
+class ArgSeq<> {
+ public:
+  ArgSeq() {}
+
+  inline void generate(CodeGeneratorShared* codegen) const {}
+};
+
+template <typename HeadType, typename... TailTypes>
+class ArgSeq<HeadType, TailTypes...> : public ArgSeq<TailTypes...> {
+ private:
+  using RawHeadType = typename mozilla::RemoveReference<HeadType>::Type;
+  RawHeadType head_;
+
+ public:
+  template <typename ProvidedHead, typename... ProvidedTail>
+  explicit ArgSeq(ProvidedHead&& head, ProvidedTail&&... tail)
+      : ArgSeq<TailTypes...>(mozilla::Forward<ProvidedTail>(tail)...),
+        head_(mozilla::Forward<ProvidedHead>(head)) {}
+
+  // Arguments are pushed in reverse order, from last argument to first
+  // argument.
+  inline void generate(CodeGeneratorShared* codegen) const {
+    this->ArgSeq<TailTypes...>::generate(codegen);
+    codegen->pushArg(head_);
+  }
+};
+
+template <typename... ArgTypes>
+inline ArgSeq<ArgTypes...> ArgList(ArgTypes&&... args) {
+  return ArgSeq<ArgTypes...>(mozilla::Forward<ArgTypes>(args)...);
+}
+
+// Store wrappers, to generate the right move of data after the VM call.
+
+struct StoreNothing {
+  inline void generate(CodeGeneratorShared* codegen) const {}
+  inline LiveRegisterSet clobbered() const {
+    return LiveRegisterSet();  // No register gets clobbered
+  }
+};
+
+class StoreRegisterTo {
+ private:
+  Register out_;
+
+ public:
+  explicit StoreRegisterTo(Register out) : out_(out) {}
+
+  inline void generate(CodeGeneratorShared* codegen) const {
+    // It's okay to use storePointerResultTo here - the VMFunction wrapper
+    // ensures the upper bytes are zero for bool/int32 return values.
+    codegen->storePointerResultTo(out_);
+  }
+  inline LiveRegisterSet clobbered() const {
+    LiveRegisterSet set;
+    set.add(out_);
+    return set;
+  }
+};
+
+class StoreFloatRegisterTo {
+ private:
+  FloatRegister out_;
+
+ public:
+  explicit StoreFloatRegisterTo(FloatRegister out) : out_(out) {}
+
+  inline void generate(CodeGeneratorShared* codegen) const {
+    codegen->storeFloatResultTo(out_);
+  }
+  inline LiveRegisterSet clobbered() const {
+    LiveRegisterSet set;
+    set.add(out_);
+    return set;
+  }
+};
+
+template <typename Output>
+class StoreValueTo_ {
+ private:
+  Output out_;
+
+ public:
+  explicit StoreValueTo_(const Output& out) : out_(out) {}
+
+  inline void generate(CodeGeneratorShared* codegen) const {
+    codegen->storeResultValueTo(out_);
+  }
+  inline LiveRegisterSet clobbered() const {
+    LiveRegisterSet set;
+    set.add(out_);
+    return set;
+  }
+};
+
+template <typename Output>
+StoreValueTo_<Output> StoreValueTo(const Output& out) {
+  return StoreValueTo_<Output>(out);
+}
+
+template <class ArgSeq, class StoreOutputTo>
+class OutOfLineCallVM : public OutOfLineCodeBase<CodeGeneratorShared> {
+ private:
+  LInstruction* lir_;
+  const VMFunction& fun_;
+  ArgSeq args_;
+  StoreOutputTo out_;
+
+ public:
+  OutOfLineCallVM(LInstruction* lir, const VMFunction& fun, const ArgSeq& args,
+                  const StoreOutputTo& out)
+      : lir_(lir), fun_(fun), args_(args), out_(out) {}
+
+  void accept(CodeGeneratorShared* codegen) override {
+    codegen->visitOutOfLineCallVM(this);
+  }
+
+  LInstruction* lir() const { return lir_; }
+  const VMFunction& function() const { return fun_; }
+  const ArgSeq& args() const { return args_; }
+  const StoreOutputTo& out() const { return out_; }
+};
+
+template <class ArgSeq, class StoreOutputTo>
+inline OutOfLineCode* CodeGeneratorShared::oolCallVM(const VMFunction& fun,
+                                                     LInstruction* lir,
+                                                     const ArgSeq& args,
+                                                     const StoreOutputTo& out) {
+  MOZ_ASSERT(lir->mirRaw());
+  MOZ_ASSERT(lir->mirRaw()->isInstruction());
+
+  OutOfLineCode* ool =
+      new (alloc()) OutOfLineCallVM<ArgSeq, StoreOutputTo>(lir, fun, args, out);
+  addOutOfLineCode(ool, lir->mirRaw()->toInstruction());
+  return ool;
+}
+
+template <class ArgSeq, class StoreOutputTo>
+void CodeGeneratorShared::visitOutOfLineCallVM(
+    OutOfLineCallVM<ArgSeq, StoreOutputTo>* ool) {
+  LInstruction* lir = ool->lir();
+
+  saveLive(lir);
+  ool->args().generate(this);
+  callVM(ool->function(), lir);
+  ool->out().generate(this);
+  restoreLiveIgnore(lir, ool->out().clobbered());
+  masm.jump(ool->rejoin());
+}
 
 template <class CodeGen>
 class OutOfLineWasmTruncateCheckBase : public OutOfLineCodeBase<CodeGen> {

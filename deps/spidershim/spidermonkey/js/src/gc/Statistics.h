@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +11,8 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/IntegerRange.h"
-#include "mozilla/TimeStamp.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/PodOperations.h"
 
 #include "jspubtd.h"
 #include "NamespaceImports.h"
@@ -23,6 +24,8 @@
 #include "js/Vector.h"
 #include "vm/JSONPrinter.h"
 
+using mozilla::Maybe;
+
 namespace js {
 namespace gcstats {
 
@@ -31,65 +34,48 @@ namespace gcstats {
 
 #include "gc/StatsPhasesGenerated.h"
 
-// Counts can be incremented with Statistics::count(). They're reset at the end
-// of a Major GC.
-enum Count {
-  COUNT_NEW_CHUNK,
-  COUNT_DESTROY_CHUNK,
-  COUNT_MINOR_GC,
+enum Stat {
+  STAT_NEW_CHUNK,
+  STAT_DESTROY_CHUNK,
+  STAT_MINOR_GC,
 
   // Number of times a 'put' into a storebuffer overflowed, triggering a
   // compaction
-  COUNT_STOREBUFFER_OVERFLOW,
+  STAT_STOREBUFFER_OVERFLOW,
 
   // Number of arenas relocated by compacting GC.
-  COUNT_ARENA_RELOCATED,
-
-  COUNT_LIMIT
-};
-
-// Stats can be set with Statistics::setStat(). They're not reset automatically.
-enum Stat {
-  // Number of strings tenured.
-  STAT_STRINGS_TENURED,
-
-  // Number of object types pretenured this minor GC.
-  STAT_OBJECT_GROUPS_PRETENURED,
-
-  // Number of realms that had nursery strings disabled due to large numbers
-  // being tenured.
-  STAT_NURSERY_STRING_REALMS_DISABLED,
+  STAT_ARENA_RELOCATED,
 
   STAT_LIMIT
 };
 
 struct ZoneGCStats {
   /* Number of zones collected in this GC. */
-  int collectedZoneCount = 0;
+  int collectedZoneCount;
 
   /* Number of zones that could have been collected in this GC. */
-  int collectableZoneCount = 0;
+  int collectableZoneCount;
 
   /* Total number of zones in the Runtime at the start of this GC. */
-  int zoneCount = 0;
+  int zoneCount;
 
   /* Number of zones swept in this GC. */
-  int sweptZoneCount = 0;
+  int sweptZoneCount;
 
   /* Total number of compartments in all zones collected. */
-  int collectedCompartmentCount = 0;
+  int collectedCompartmentCount;
 
   /* Total number of compartments in the Runtime at the start of this GC. */
-  int compartmentCount = 0;
+  int compartmentCount;
 
   /* Total number of compartments swept by this GC. */
-  int sweptCompartmentCount = 0;
+  int sweptCompartmentCount;
 
   bool isFullCollection() const {
     return collectedZoneCount == collectableZoneCount;
   }
 
-  ZoneGCStats() = default;
+  ZoneGCStats() { mozilla::PodZero(this); }
 };
 
 #define FOR_EACH_GC_PROFILE_TIME(_)                                 \
@@ -163,7 +149,7 @@ struct Statistics {
   void resumePhases();
 
   void beginSlice(const ZoneGCStats& zoneStats, JSGCInvocationKind gckind,
-                  SliceBudget budget, JS::GCReason reason);
+                  SliceBudget budget, JS::gcreason::Reason reason);
   void endSlice();
 
   MOZ_MUST_USE bool startTimingMutator();
@@ -175,15 +161,12 @@ struct Statistics {
 
   void reset(gc::AbortReason reason) {
     MOZ_ASSERT(reason != gc::AbortReason::None);
-    if (!aborted) {
-      slices_.back().resetReason = reason;
-    }
+    if (!aborted) slices_.back().resetReason = reason;
   }
 
   void nonincremental(gc::AbortReason reason) {
     MOZ_ASSERT(reason != gc::AbortReason::None);
     nonincrementalReason_ = reason;
-    writeLogMessage("Non-incremental reason: %s", nonincrementalReason());
   }
 
   bool nonincremental() const {
@@ -194,13 +177,9 @@ struct Statistics {
     return ExplainAbortReason(nonincrementalReason_);
   }
 
-  void count(Count s) { counts[s]++; }
+  void count(Stat s) { counts[s]++; }
 
-  uint32_t getCount(Count s) const { return uint32_t(counts[s]); }
-
-  void setStat(Stat s, uint32_t value) { stats[s] = value; }
-
-  uint32_t getStat(Stat s) const { return stats[s]; }
+  uint32_t getCount(Stat s) const { return uint32_t(counts[s]); }
 
   void recordTrigger(double amount, double threshold) {
     triggerAmount = amount;
@@ -208,23 +187,8 @@ struct Statistics {
     thresholdTriggered = true;
   }
 
-  void noteNurseryAlloc() { allocsSinceMinorGC.nursery++; }
-
-  // tenured allocs don't include nursery evictions.
-  void setAllocsSinceMinorGCTenured(uint32_t allocs) {
-    allocsSinceMinorGC.tenured = allocs;
-  }
-
-  uint32_t allocsSinceMinorGCNursery() { return allocsSinceMinorGC.nursery; }
-
-  uint32_t allocsSinceMinorGCTenured() { return allocsSinceMinorGC.tenured; }
-
-  uint32_t* addressOfAllocsSinceMinorGCNursery() {
-    return &allocsSinceMinorGC.nursery;
-  }
-
-  void beginNurseryCollection(JS::GCReason reason);
-  void endNurseryCollection(JS::GCReason reason);
+  void beginNurseryCollection(JS::gcreason::Reason reason);
+  void endNurseryCollection(JS::gcreason::Reason reason);
 
   TimeStamp beginSCC();
   void endSCC(unsigned scc, TimeStamp start);
@@ -245,7 +209,7 @@ struct Statistics {
   static const size_t MAX_SUSPENDED_PHASES = MAX_PHASE_NESTING * 3;
 
   struct SliceData {
-    SliceData(SliceBudget budget, JS::GCReason reason, TimeStamp start,
+    SliceData(SliceBudget budget, JS::gcreason::Reason reason, TimeStamp start,
               size_t startFaults, gc::State initialState)
         : budget(budget),
           reason(reason),
@@ -253,11 +217,10 @@ struct Statistics {
           finalState(gc::State::NotActive),
           resetReason(gc::AbortReason::None),
           start(start),
-          startFaults(startFaults),
-          endFaults(0) {}
+          startFaults(startFaults) {}
 
     SliceBudget budget;
-    JS::GCReason reason;
+    JS::gcreason::Reason reason;
     gc::State initialState, finalState;
     gc::AbortReason resetReason;
     TimeStamp start, end;
@@ -286,11 +249,10 @@ struct Statistics {
   // Print total profile times on shutdown.
   void printTotalProfileTimes();
 
-  enum JSONUse { TELEMETRY, PROFILER };
-
-  // Return JSON for a whole major GC.  If use == PROFILER then
-  // detailed per-slice data and some other fields will be included.
-  UniqueChars renderJsonMessage(uint64_t timestamp, JSONUse use) const;
+  // Return JSON for a whole major GC, optionally including detailed
+  // per-slice data.
+  UniqueChars renderJsonMessage(uint64_t timestamp,
+                                bool includeSlices = true) const;
 
   // Return JSON for the timings of just the given slice.
   UniqueChars renderJsonSlice(size_t sliceNum) const;
@@ -298,21 +260,11 @@ struct Statistics {
   // Return JSON for the previous nursery collection.
   UniqueChars renderNurseryJson(JSRuntime* rt) const;
 
-#ifdef DEBUG
-  // Print a logging message.
-  void writeLogMessage(const char* fmt, ...);
-#else
-  void writeLogMessage(const char* fmt, ...){};
-#endif
-
  private:
   JSRuntime* runtime;
 
-  /* File used for MOZ_GCTIMER output. */
-  FILE* gcTimerFile;
-
-  /* File used for JS_GC_DEBUG output. */
-  FILE* gcDebugFile;
+  /* File pointer used for MOZ_GCTIMER output. */
+  FILE* fp;
 
   ZoneGCStats zoneStats;
 
@@ -325,11 +277,6 @@ struct Statistics {
   /* Most recent time when the given phase started. */
   EnumeratedArray<Phase, Phase::LIMIT, TimeStamp> phaseStartTimes;
 
-#ifdef DEBUG
-  /* Most recent time when the given phase ended. */
-  EnumeratedArray<Phase, Phase::LIMIT, TimeStamp> phaseEndTimes;
-#endif
-
   /* Bookkeeping for GC timings when timingMutator is true */
   TimeStamp timedGCStart;
   TimeDuration timedGCTime;
@@ -339,27 +286,12 @@ struct Statistics {
   PhaseTimeTable parallelTimes;
 
   /* Number of events of this type for this GC. */
-  EnumeratedArray<
-      Count, COUNT_LIMIT,
-      mozilla::Atomic<uint32_t, mozilla::ReleaseAcquire,
-                      mozilla::recordreplay::Behavior::DontPreserve>>
+  EnumeratedArray<Stat, STAT_LIMIT,
+                  mozilla::Atomic<uint32_t, mozilla::ReleaseAcquire>>
       counts;
 
-  /* Other GC statistics. */
-  EnumeratedArray<Stat, STAT_LIMIT, uint32_t> stats;
-
-  /*
-   * These events cannot be kept in the above array, we need to take their
-   * address.
-   */
-  struct {
-    uint32_t nursery;
-    uint32_t tenured;
-  } allocsSinceMinorGC;
-
-  /* Heap size before and after the GC ran. */
-  size_t preHeapSize;
-  size_t postHeapSize;
+  /* Allocated space before the GC started. */
+  size_t preBytes;
 
   /* If the GC was triggered by exceeding some threshold, record the
    * threshold and the value that exceeded it. */
@@ -441,7 +373,7 @@ struct Statistics {
   UniqueChars formatDetailedPhaseTimes(const PhaseTimeTable& phaseTimes) const;
   UniqueChars formatDetailedTotals() const;
 
-  void formatJsonDescription(uint64_t timestamp, JSONPrinter&, JSONUse) const;
+  void formatJsonDescription(uint64_t timestamp, JSONPrinter&) const;
   void formatJsonSliceDescription(unsigned i, const SliceData& slice,
                                   JSONPrinter&) const;
   void formatJsonPhaseTimes(const PhaseTimeTable& phaseTimes,
@@ -457,7 +389,7 @@ struct Statistics {
 struct MOZ_RAII AutoGCSlice {
   AutoGCSlice(Statistics& stats, const ZoneGCStats& zoneStats,
               JSGCInvocationKind gckind, SliceBudget budget,
-              JS::GCReason reason)
+              JS::gcreason::Reason reason)
       : stats(stats) {
     stats.beginSlice(zoneStats, gckind, budget, reason);
   }
@@ -474,15 +406,11 @@ struct MOZ_RAII AutoPhase {
 
   AutoPhase(Statistics& stats, bool condition, PhaseKind phaseKind)
       : stats(stats), phaseKind(phaseKind), enabled(condition) {
-    if (enabled) {
-      stats.beginPhase(phaseKind);
-    }
+    if (enabled) stats.beginPhase(phaseKind);
   }
 
   ~AutoPhase() {
-    if (enabled) {
-      stats.endPhase(phaseKind);
-    }
+    if (enabled) stats.endPhase(phaseKind);
   }
 
   Statistics& stats;

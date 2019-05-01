@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,7 +20,6 @@ static const bool SupportsSimd = false;
 static const uint32_t SimdMemoryAlignment =
     4;  // Make it 4 to avoid a bunch of div-by-zero warnings
 static const uint32_t WasmStackAlignment = 8;
-static const uint32_t WasmTrapInstructionLength = 0;
 
 // Does this architecture support SIMD conversions between Uint32x4 and
 // Float32x4?
@@ -33,11 +32,7 @@ static constexpr bool SupportsUint32x4Compares = false;
 
 class Registers {
  public:
-  enum RegisterID {
-    r0 = 0,
-    invalid_reg,
-    invalid_reg2,  // To avoid silly static_assert failures.
-  };
+  enum RegisterID { r0 = 0, invalid_reg };
   typedef uint8_t Code;
   typedef RegisterID Encoding;
   union RegisterContent {
@@ -124,11 +119,11 @@ struct FloatRegister {
   bool operator==(FloatRegister) const { MOZ_CRASH(); }
   bool aliases(FloatRegister) const { MOZ_CRASH(); }
   uint32_t numAliased() const { MOZ_CRASH(); }
-  FloatRegister aliased(uint32_t) { MOZ_CRASH(); }
+  void aliased(uint32_t, FloatRegister*) { MOZ_CRASH(); }
   bool equiv(FloatRegister) const { MOZ_CRASH(); }
   uint32_t size() const { MOZ_CRASH(); }
   uint32_t numAlignedAliased() const { MOZ_CRASH(); }
-  FloatRegister alignedAliased(uint32_t) { MOZ_CRASH(); }
+  void alignedAliased(uint32_t, FloatRegister*) { MOZ_CRASH(); }
   SetType alignedOrDominatedAliasedSet() const { MOZ_CRASH(); }
 
   static constexpr RegTypeName DefaultType = RegTypeName::Float64;

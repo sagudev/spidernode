@@ -8,21 +8,16 @@
 """
 
 from __future__ import print_function
-import re
-import sys
+import re, sys
 
 sep_pat = re.compile(' +')
-
-
 def to_code_list(codes):
-    return '[' + ', '.join('0x{0}'.format(x) for x in re.split(sep_pat, codes)) + ']'
-
+    return '[' + ', '.join(map(lambda x: '0x{0}'.format(x), re.split(sep_pat, codes))) + ']'
 
 def convert(dir):
     ver_pat = re.compile('NormalizationTest-([0-9\.]+)\.txt')
     part_pat = re.compile('^@(Part([0-9]+) .+)$')
-    test_pat = re.compile(
-        '^([0-9A-Fa-f ]+);([0-9A-Fa-f ]+);([0-9A-Fa-f ]+);([0-9A-Fa-f ]+);([0-9A-Fa-f ]+);$')
+    test_pat = re.compile('^([0-9A-Fa-f ]+);([0-9A-Fa-f ]+);([0-9A-Fa-f ]+);([0-9A-Fa-f ]+);([0-9A-Fa-f ]+);$')
     ignore_pat = re.compile('^#|^$')
     js_path = 'js/src/tests/non262/String/normalize-generateddata-input.js'
     txt_path = 'intl/icu/source/data/unidata/NormalizationTest.txt'
@@ -37,7 +32,7 @@ def convert(dir):
                     if not_empty:
                         outf.write(',')
                     outf.write('\n')
-                    pat = '{{ source: {source}, NFC: {NFC}, NFD: {NFD}, NFKC: {NFKC}, NFKD: {NFKD} }}'  # NOQA: E501
+                    pat = '{{ source: {source}, NFC: {NFC}, NFD: {NFD}, NFKC: {NFKC}, NFKD: {NFKD} }}'
                     outf.write(pat.format(source=to_code_list(m.group(1)),
                                           NFC=to_code_list(m.group(2)),
                                           NFD=to_code_list(m.group(3)),
@@ -68,10 +63,8 @@ def convert(dir):
             if part_opened:
                 outf.write('\n];\n')
 
-
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Usage: make-normalize-generateddata-input.py PATH_TO_MOZILLA_CENTRAL",
-              file=sys.stderr)
+        print("Usage: make-normalize-generateddata-input.py PATH_TO_MOZILLA_CENTRAL", file=sys.stderr)
         sys.exit(1)
     convert(sys.argv[1])

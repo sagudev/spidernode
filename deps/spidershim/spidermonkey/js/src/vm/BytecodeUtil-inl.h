@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +9,6 @@
 
 #include "vm/BytecodeUtil.h"
 
-#include "frontend/SourceNotes.h"
 #include "vm/JSScript.h"
 
 namespace js {
@@ -38,9 +37,7 @@ static inline unsigned GetDefCount(jsbytecode* pc) {
 }
 
 static inline unsigned GetUseCount(jsbytecode* pc) {
-  if (JSOp(*pc) == JSOP_PICK || JSOp(*pc) == JSOP_UNPICK) {
-    return pc[1] + 1;
-  }
+  if (JSOp(*pc) == JSOP_PICK || JSOp(*pc) == JSOP_UNPICK) return pc[1] + 1;
 
   return StackUses(pc);
 }
@@ -102,132 +99,6 @@ class BytecodeRange {
   RootedScript script;
   jsbytecode* pc;
   jsbytecode* end;
-};
-
-class BytecodeRangeWithPosition : private BytecodeRange {
- public:
-  using BytecodeRange::empty;
-  using BytecodeRange::frontOffset;
-  using BytecodeRange::frontOpcode;
-  using BytecodeRange::frontPC;
-
-  BytecodeRangeWithPosition(JSContext* cx, JSScript* script)
-      : BytecodeRange(cx, script),
-        lineno(script->lineno()),
-        column(0),
-        sn(script->notes()),
-        snpc(script->code()),
-        isEntryPoint(false),
-        isBreakpoint(false),
-        seenStepSeparator(false),
-        wasArtifactEntryPoint(false) {
-    if (!SN_IS_TERMINATOR(sn)) {
-      snpc += SN_DELTA(sn);
-    }
-    updatePosition();
-    while (frontPC() != script->main()) {
-      popFront();
-    }
-
-    if (frontOpcode() != JSOP_JUMPTARGET) {
-      isEntryPoint = true;
-    } else {
-      wasArtifactEntryPoint = true;
-    }
-  }
-
-  void popFront() {
-    BytecodeRange::popFront();
-    if (empty()) {
-      isEntryPoint = false;
-    } else {
-      updatePosition();
-    }
-
-    // The following conditions are handling artifacts introduced by the
-    // bytecode emitter, such that we do not add breakpoints on empty
-    // statements of the source code of the user.
-    if (wasArtifactEntryPoint) {
-      wasArtifactEntryPoint = false;
-      isEntryPoint = true;
-    }
-
-    if (isEntryPoint && frontOpcode() == JSOP_JUMPTARGET) {
-      wasArtifactEntryPoint = isEntryPoint;
-      isEntryPoint = false;
-    }
-  }
-
-  size_t frontLineNumber() const { return lineno; }
-  size_t frontColumnNumber() const { return column; }
-
-  // Entry points are restricted to bytecode offsets that have an
-  // explicit mention in the line table.  This restriction avoids a
-  // number of failing cases caused by some instructions not having
-  // sensible (to the user) line numbers, and it is one way to
-  // implement the idea that the bytecode emitter should tell the
-  // debugger exactly which offsets represent "interesting" (to the
-  // user) places to stop.
-  bool frontIsEntryPoint() const { return isEntryPoint; }
-
-  // Breakable points are explicitly marked by the emitter as locations where
-  // the debugger may want to allow users to pause.
-  bool frontIsBreakablePoint() const { return isBreakpoint; }
-
-  // Breakable step points are the first breakable point after a SRC_STEP_SEP
-  // note has been encountered.
-  bool frontIsBreakableStepPoint() const {
-    return isBreakpoint && seenStepSeparator;
-  }
-
- private:
-  void updatePosition() {
-    if (isBreakpoint) {
-      isBreakpoint = false;
-      seenStepSeparator = false;
-    }
-
-    // Determine the current line number by reading all source notes up to
-    // and including the current offset.
-    jsbytecode* lastLinePC = nullptr;
-    while (!SN_IS_TERMINATOR(sn) && snpc <= frontPC()) {
-      SrcNoteType type = SN_TYPE(sn);
-      if (type == SRC_COLSPAN) {
-        ptrdiff_t colspan =
-            SN_OFFSET_TO_COLSPAN(GetSrcNoteOffset(sn, SrcNote::ColSpan::Span));
-        MOZ_ASSERT(ptrdiff_t(column) + colspan >= 0);
-        column += colspan;
-        lastLinePC = snpc;
-      } else if (type == SRC_SETLINE) {
-        lineno = size_t(GetSrcNoteOffset(sn, SrcNote::SetLine::Line));
-        column = 0;
-        lastLinePC = snpc;
-      } else if (type == SRC_NEWLINE) {
-        lineno++;
-        column = 0;
-        lastLinePC = snpc;
-      } else if (type == SRC_BREAKPOINT) {
-        isBreakpoint = true;
-        lastLinePC = snpc;
-      } else if (type == SRC_STEP_SEP) {
-        seenStepSeparator = true;
-        lastLinePC = snpc;
-      }
-
-      sn = SN_NEXT(sn);
-      snpc += SN_DELTA(sn);
-    }
-    isEntryPoint = lastLinePC == frontPC();
-  }
-
-  size_t lineno;
-  size_t column;
-  jssrcnote* sn;
-  jsbytecode* snpc;
-  bool isEntryPoint;
-  bool isBreakpoint;
-  bool seenStepSeparator;
-  bool wasArtifactEntryPoint;
 };
 
 }  // namespace js

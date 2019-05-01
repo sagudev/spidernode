@@ -1,15 +1,15 @@
 //===- FuzzerUtilWindows.cpp - Misc utils for Windows. --------------------===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 // Misc utils implementation for Windows.
 //===----------------------------------------------------------------------===//
 #include "FuzzerDefs.h"
 #if LIBFUZZER_WINDOWS
-#include "FuzzerCommand.h"
 #include "FuzzerIO.h"
 #include "FuzzerInternal.h"
 #include <cassert>
@@ -18,11 +18,10 @@
 #include <errno.h>
 #include <iomanip>
 #include <signal.h>
+#include <sstream>
 #include <stdio.h>
 #include <sys/types.h>
 #include <windows.h>
-
-// This must be included after windows.h.
 #include <psapi.h>
 
 namespace fuzzer {
@@ -85,11 +84,11 @@ void CALLBACK AlarmHandler(PVOID, BOOLEAN) {
 class TimerQ {
   HANDLE TimerQueue;
  public:
-  TimerQ() : TimerQueue(NULL) {}
+  TimerQ() : TimerQueue(NULL) {};
   ~TimerQ() {
     if (TimerQueue)
       DeleteTimerQueueEx(TimerQueue, NULL);
-  }
+  };
   void SetTimer(int Seconds) {
     if (!TimerQueue) {
       TimerQueue = CreateTimerQueue();
@@ -104,16 +103,12 @@ class TimerQ {
       Printf("libFuzzer: CreateTimerQueueTimer failed.\n");
       exit(1);
     }
-  }
+  };
 };
 
 static TimerQ Timer;
 
 static void CrashHandler(int) { Fuzzer::StaticCrashSignalCallback(); }
-
-bool Mprotect(void *Ptr, size_t Size, bool AllowReadWrite) {
-  return false;  // UNIMPLEMENTED
-}
 
 void SetSignalHandler(const FuzzingOptions& Options) {
   HandlerOpt = &Options;
@@ -155,9 +150,8 @@ FILE *OpenProcessPipe(const char *Command, const char *Mode) {
   return _popen(Command, Mode);
 }
 
-int ExecuteCommand(const Command &Cmd) {
-  std::string CmdLine = Cmd.toString();
-  return system(CmdLine.c_str());
+int ExecuteCommand(const std::string &Command) {
+  return system(Command.c_str());
 }
 
 const void *SearchMemory(const void *Data, size_t DataLen, const void *Patt,
@@ -182,9 +176,7 @@ const void *SearchMemory(const void *Data, size_t DataLen, const void *Patt,
 }
 
 std::string DisassembleCmd(const std::string &FileName) {
-  Vector<std::string> command_vector;
-  command_vector.push_back("dumpbin /summary > nul");
-  if (ExecuteCommand(Command(command_vector)) == 0)
+  if (ExecuteCommand("dumpbin /summary > nul") == 0)
     return "dumpbin /disasm " + FileName;
   Printf("libFuzzer: couldn't find tool to disassemble (dumpbin)\n");
   exit(1);

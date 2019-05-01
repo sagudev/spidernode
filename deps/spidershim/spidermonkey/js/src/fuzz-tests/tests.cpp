@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,57 +14,76 @@
 #include "vm/JSContext.h"
 
 #ifdef LIBFUZZER
-#  include "FuzzerDefs.h"
+#include "FuzzerDefs.h"
 #endif
 
 using namespace mozilla;
 
 JS::PersistentRootedObject gGlobal;
 JSContext* gCx = nullptr;
+JSCompartment* gOldCompartment = nullptr;
 
 static const JSClass* getGlobalClass() {
-  static const JSClass c = {"global", JSCLASS_GLOBAL_FLAGS,
-                            &JS::DefaultGlobalClassOps};
+  static const JSClassOps cOps = {nullptr,
+                                  nullptr,
+                                  nullptr,
+                                  nullptr,
+                                  nullptr,
+                                  nullptr,
+                                  nullptr,
+                                  nullptr,
+                                  nullptr,
+                                  nullptr,
+                                  JS_GlobalObjectTraceHook};
+  static const JSClass c = {"global", JSCLASS_GLOBAL_FLAGS, &cOps};
   return &c;
 }
 
 static JSObject* jsfuzz_createGlobal(JSContext* cx, JSPrincipals* principals) {
   /* Create the global object. */
-  JS::RealmOptions options;
-  options.creationOptions()
-      .setStreamsEnabled(true)
-      .setBigIntEnabled(true)
-      .setFieldsEnabled(false)
-      .setAwaitFixEnabled(true);
-  return JS_NewGlobalObject(cx, getGlobalClass(), principals,
-                            JS::FireOnNewGlobalHook, options);
+  JS::RootedObject newGlobal(cx);
+  JS::CompartmentOptions options;
+#ifdef ENABLE_STREAMS
+  options.creationOptions().setStreamsEnabled(true);
+#endif
+  newGlobal = JS_NewGlobalObject(cx, getGlobalClass(), principals,
+                                 JS::FireOnNewGlobalHook, options);
+  if (!newGlobal) return nullptr;
+
+  JSAutoCompartment ac(cx, newGlobal);
+
+  // Populate the global object with the standard globals like Object and
+  // Array.
+  if (!JS_InitStandardClasses(cx, newGlobal)) return nullptr;
+
+  return newGlobal;
 }
 
 static bool jsfuzz_init(JSContext** cx, JS::PersistentRootedObject* global) {
   *cx = JS_NewContext(8L * 1024 * 1024);
-  if (!*cx) {
-    return false;
-  }
+  if (!*cx) return false;
 
   const size_t MAX_STACK_SIZE = 500000;
 
   JS_SetNativeStackQuota(*cx, MAX_STACK_SIZE);
 
   js::UseInternalJobQueues(*cx);
-  if (!JS::InitSelfHostedCode(*cx)) {
-    return false;
-  }
+  if (!JS::InitSelfHostedCode(*cx)) return false;
+  JS_BeginRequest(*cx);
   global->init(*cx);
   *global = jsfuzz_createGlobal(*cx, nullptr);
-  if (!*global) {
-    return false;
-  }
-  JS::EnterRealm(*cx, *global);
+  if (!*global) return false;
+  JS_EnterCompartment(*cx, *global);
   return true;
 }
 
-static void jsfuzz_uninit(JSContext* cx) {
+static void jsfuzz_uninit(JSContext* cx, JSCompartment* oldCompartment) {
+  if (oldCompartment) {
+    JS_LeaveCompartment(cx, oldCompartment);
+    oldCompartment = nullptr;
+  }
   if (cx) {
+    JS_EndRequest(cx);
     JS_DestroyContext(cx);
     cx = nullptr;
   }
@@ -113,7 +132,7 @@ int main(int argc, char* argv[]) {
   testingFunc(nullptr, 0);
 #endif
 
-  jsfuzz_uninit(gCx);
+  jsfuzz_uninit(gCx, nullptr);
 
   JS_ShutDown();
 

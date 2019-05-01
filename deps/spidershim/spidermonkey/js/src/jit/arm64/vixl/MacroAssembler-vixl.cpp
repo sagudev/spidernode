@@ -208,6 +208,9 @@ void MacroAssembler::B(Label* label, Condition cond) {
     b(label);
     bind(&done);
   } else {
+    // TODO: Need to register a slot in a literal pool, so that we can
+    // write a branch instruction there and use that to branch in case
+    // the unbound label winds up being out of range.
     b(label, cond);
   }
 }
@@ -223,6 +226,9 @@ void MacroAssembler::Cbnz(const Register& rt, Label* label) {
     b(label);
     bind(&done);
   } else {
+    // TODO: Need to register a slot in a literal pool, so that we can
+    // write a branch instruction there and use that to branch in case
+    // the unbound label winds up being out of range.
     cbnz(rt, label);
   }
 }
@@ -238,6 +244,9 @@ void MacroAssembler::Cbz(const Register& rt, Label* label) {
     b(label);
     bind(&done);
   } else {
+    // TODO: Nede to register a slot in a literal pool, so that we can
+    // write a branch instruction there and use that to branch in case
+    // the unbound label winds up being out of range.
     cbz(rt, label);
   }
 }
@@ -253,6 +262,9 @@ void MacroAssembler::Tbnz(const Register& rt, unsigned bit_pos, Label* label) {
     b(label);
     bind(&done);
   } else {
+    // TODO: Nede to register a slot in a literal pool, so that we can
+    // write a branch instruction there and use that to branch in case
+    // the unbound label winds up being out of range.
     tbnz(rt, bit_pos, label);
   }
 }
@@ -268,6 +280,9 @@ void MacroAssembler::Tbz(const Register& rt, unsigned bit_pos, Label* label) {
     b(label);
     bind(&done);
   } else {
+    // TODO: Nede to register a slot in a literal pool, so that we can
+    // write a branch instruction there and use that to branch in case
+    // the unbound label winds up being out of range.
     tbz(rt, bit_pos, label);
   }
 }

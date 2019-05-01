@@ -5,7 +5,6 @@
 from __future__ import absolute_import, print_function, unicode_literals
 
 import os
-import re
 from mozbuild.configure.options import Option
 
 
@@ -27,7 +26,7 @@ class HelpFormatter(object):
         opt = option.option
         if option.choices:
             opt += '={%s}' % ','.join(option.choices)
-        help = self.format_help(option)
+        help = option.help or ''
         if len(option.default):
             if help:
                 help += ' '
@@ -39,30 +38,6 @@ class HelpFormatter(object):
                 target.append('%s%s' % (' ' * 28, help))
         else:
             target.append('  %-24s  %s' % (opt, help))
-
-    RE_FORMAT = re.compile(r'{([^|}]*)\|([^|}]*)}')
-
-    # Return formatted help text for --{enable,disable,with,without}-* options.
-    #
-    # Format is the following syntax:
-    #   {String for --enable or --with|String for --disable or --without}
-    #
-    # For example, '{Enable|Disable} optimizations' will be formatted to
-    # 'Enable optimizations' if the options's prefix is 'enable' or 'with',
-    # and formatted to 'Disable optimizations' if the options's prefix is
-    # 'disable' or 'without'.
-    def format_help(self, option):
-        if not option.help:
-            return ''
-
-        if option.prefix in ('enable', 'with'):
-            replacement = r'\1'
-        elif option.prefix in ('disable', 'without'):
-            replacement = r'\2'
-        else:
-            return option.help
-
-        return self.RE_FORMAT.sub(replacement, option.help)
 
     def usage(self, out):
         print('\n\n'.join('\n'.join(t)

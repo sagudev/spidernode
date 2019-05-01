@@ -20,39 +20,55 @@
 // https://github.com/Microsoft/GSL/blob/3819df6e378ffccf0e29465afe99c3b324c2aa70/include/gsl/gsl_util
 
 #ifndef mozilla_Span_h
-#  define mozilla_Span_h
+#define mozilla_Span_h
 
-#  include "mozilla/Array.h"
-#  include "mozilla/Assertions.h"
-#  include "mozilla/Casting.h"
-#  include "mozilla/IntegerTypeTraits.h"
-#  include "mozilla/Move.h"
-#  include "mozilla/TypeTraits.h"
-#  include "mozilla/UniquePtr.h"
+#include "mozilla/Array.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Casting.h"
+#include "mozilla/IntegerTypeTraits.h"
+#include "mozilla/Move.h"
+#include "mozilla/TypeTraits.h"
+#include "mozilla/UniquePtr.h"
 
-#  include <algorithm>
-#  include <array>
-#  include <cstring>
-#  include <iterator>
+#include <algorithm>
+#include <array>
+#include <cstring>
+#include <iterator>
 
-#  ifdef _MSC_VER
-#    pragma warning(push)
+// Classifications for reasons why constexpr was removed in C++14 to C++11
+// conversion. Once we upgrade compilers, we can try defining each of these
+// to constexpr to restore a category of constexprs at a time.
+#if !defined(__clang__) && defined(__GNUC__) && __cpp_constexpr < 201304
+#define MOZ_SPAN_ASSERTION_CONSTEXPR
+#define MOZ_SPAN_GCC_CONSTEXPR
+#define MOZ_SPAN_EXPLICITLY_DEFAULTED_CONSTEXPR
+#define MOZ_SPAN_CONSTEXPR_NOT_JUST_RETURN
+#define MOZ_SPAN_NON_CONST_CONSTEXPR
+#else
+#define MOZ_SPAN_ASSERTION_CONSTEXPR constexpr
+#define MOZ_SPAN_GCC_CONSTEXPR constexpr
+#define MOZ_SPAN_EXPLICITLY_DEFAULTED_CONSTEXPR constexpr
+#define MOZ_SPAN_CONSTEXPR_NOT_JUST_RETURN constexpr
+#define MOZ_SPAN_NON_CONST_CONSTEXPR constexpr
+#endif
+
+#ifdef _MSC_VER
+#pragma warning(push)
 
 // turn off some warnings that are noisy about our MOZ_RELEASE_ASSERT statements
-#    pragma warning(disable : 4127)  // conditional expression is constant
+#pragma warning(disable : 4127)  // conditional expression is constant
 
 // blanket turn off warnings from CppCoreCheck for now
 // so people aren't annoyed by them when running the tool.
 // more targeted suppressions will be added in a future update to the GSL
-#    pragma warning( \
-        disable : 26481 26482 26483 26485 26490 26491 26492 26493 26495)
+#pragma warning(disable : 26481 26482 26483 26485 26490 26491 26492 26493 26495)
 
-#    if _MSC_VER < 1910
-#      pragma push_macro("constexpr")
-#      define constexpr /*constexpr*/
+#if _MSC_VER < 1910
+#pragma push_macro("constexpr")
+#define constexpr /*constexpr*/
 
-#    endif  // _MSC_VER < 1910
-#  endif    // _MSC_VER
+#endif  // _MSC_VER < 1910
+#endif  // _MSC_VER
 
 namespace mozilla {
 
@@ -61,7 +77,7 @@ namespace mozilla {
 // narrow_cast(): a searchable way to do narrowing casts of values
 template <class T, class U>
 inline constexpr T narrow_cast(U&& u) {
-  return static_cast<T>(std::forward<U>(u));
+  return static_cast<T>(mozilla::Forward<U>(u));
 }
 
 // end gsl_util
@@ -144,7 +160,8 @@ class span_iterator {
 
   constexpr span_iterator() : span_iterator(nullptr, 0) {}
 
-  constexpr span_iterator(const Span* span, typename Span::index_type index)
+  MOZ_SPAN_ASSERTION_CONSTEXPR span_iterator(const Span* span,
+                                             typename Span::index_type index)
       : span_(span), index_(index) {
     MOZ_RELEASE_ASSERT(span == nullptr ||
                        (index_ >= 0 && index <= span_->Length()));
@@ -154,10 +171,10 @@ class span_iterator {
   constexpr MOZ_IMPLICIT span_iterator(const span_iterator<Span, false>& other)
       : span_iterator(other.span_, other.index_) {}
 
-  constexpr span_iterator<Span, IsConst>& operator=(
-      const span_iterator<Span, IsConst>&) = default;
+  MOZ_SPAN_EXPLICITLY_DEFAULTED_CONSTEXPR span_iterator<Span, IsConst>&
+  operator=(const span_iterator<Span, IsConst>&) = default;
 
-  constexpr reference operator*() const {
+  MOZ_SPAN_GCC_CONSTEXPR reference operator*() const {
     MOZ_RELEASE_ASSERT(span_);
     return (*span_)[index_];
   }
@@ -167,7 +184,7 @@ class span_iterator {
     return &((*span_)[index_]);
   }
 
-  constexpr span_iterator& operator++() {
+  MOZ_SPAN_NON_CONST_CONSTEXPR span_iterator& operator++() {
     MOZ_RELEASE_ASSERT(span_ && index_ >= 0 && index_ < span_->Length());
     ++index_;
     return *this;
@@ -179,7 +196,7 @@ class span_iterator {
     return ret;
   }
 
-  constexpr span_iterator& operator--() {
+  MOZ_SPAN_NON_CONST_CONSTEXPR span_iterator& operator--() {
     MOZ_RELEASE_ASSERT(span_ && index_ > 0 && index_ <= span_->Length());
     --index_;
     return *this;
@@ -191,12 +208,13 @@ class span_iterator {
     return ret;
   }
 
-  constexpr span_iterator operator+(difference_type n) const {
+  MOZ_SPAN_CONSTEXPR_NOT_JUST_RETURN span_iterator
+  operator+(difference_type n) const {
     auto ret = *this;
     return ret += n;
   }
 
-  constexpr span_iterator& operator+=(difference_type n) {
+  MOZ_SPAN_GCC_CONSTEXPR span_iterator& operator+=(difference_type n) {
     MOZ_RELEASE_ASSERT(span_ && (index_ + n) >= 0 &&
                        (index_ + n) <= span_->Length());
     index_ += n;
@@ -214,7 +232,8 @@ class span_iterator {
     return *this += -n;
   }
 
-  constexpr difference_type operator-(const span_iterator& rhs) const {
+  MOZ_SPAN_GCC_CONSTEXPR difference_type
+  operator-(const span_iterator& rhs) const {
     MOZ_RELEASE_ASSERT(span_ == rhs.span_);
     return index_ - rhs.index_;
   }
@@ -233,8 +252,8 @@ class span_iterator {
     return !(lhs == rhs);
   }
 
-  constexpr friend bool operator<(const span_iterator& lhs,
-                                  const span_iterator& rhs) {
+  MOZ_SPAN_GCC_CONSTEXPR friend bool operator<(const span_iterator& lhs,
+                                               const span_iterator& rhs) {
     MOZ_RELEASE_ASSERT(lhs.span_ == rhs.span_);
     return lhs.index_ < rhs.index_;
   }
@@ -281,14 +300,15 @@ class extent_type {
   constexpr extent_type() {}
 
   template <index_type Other>
-  constexpr MOZ_IMPLICIT extent_type(extent_type<Other> ext) {
+  MOZ_SPAN_ASSERTION_CONSTEXPR MOZ_IMPLICIT
+  extent_type(extent_type<Other> ext) {
     static_assert(
         Other == Ext || Other == dynamic_extent,
         "Mismatch between fixed-size extent and size of initializing data.");
     MOZ_RELEASE_ASSERT(ext.size() == Ext);
   }
 
-  constexpr MOZ_IMPLICIT extent_type(index_type length) {
+  MOZ_SPAN_ASSERTION_CONSTEXPR MOZ_IMPLICIT extent_type(index_type length) {
     MOZ_RELEASE_ASSERT(length == Ext);
   }
 
@@ -344,8 +364,7 @@ class extent_type<dynamic_extent> {
  *
  * A Span<const char> or Span<const char16_t> can be obtained for const char*
  * or const char16_t pointing to a zero-terminated string using the
- * MakeStringSpan() function (which treats a nullptr argument equivalently
- * to the empty string). Corresponding implicit constructor does not exist
+ * MakeStringSpan() function. Corresponding implicit constructor does not exist
  * in order to avoid accidental construction in cases where const char* or
  * const char16_t* do not point to a zero-terminated string.
  *
@@ -552,9 +571,11 @@ class Span {
                  span_details::extent_type<OtherExtent>(other.size())) {}
 
   ~Span() = default;
-  constexpr Span& operator=(const Span& other) = default;
+  MOZ_SPAN_EXPLICITLY_DEFAULTED_CONSTEXPR Span& operator=(const Span& other) =
+      default;
 
-  constexpr Span& operator=(Span&& other) = default;
+  MOZ_SPAN_EXPLICITLY_DEFAULTED_CONSTEXPR Span& operator=(Span&& other) =
+      default;
 
   // [Span.sub], Span subviews
   /**
@@ -728,14 +749,13 @@ class Span {
   class storage_type : public ExtentType {
    public:
     template <class OtherExtentType>
-    constexpr storage_type(pointer elements, OtherExtentType ext)
+    MOZ_SPAN_ASSERTION_CONSTEXPR storage_type(pointer elements,
+                                              OtherExtentType ext)
         : ExtentType(ext)
-          // Replace nullptr with aligned bogus pointer for Rust slice
-          // compatibility. See
+          // Replace nullptr with 0x1 for Rust slice compatibility. See
           // https://doc.rust-lang.org/std/slice/fn.from_raw_parts.html
           ,
-          data_(elements ? elements
-                         : reinterpret_cast<pointer>(alignof(element_type))) {
+          data_(elements ? elements : reinterpret_cast<pointer>(0x1)) {
       const size_t extentSize = ExtentType::size();
       MOZ_RELEASE_ASSERT(
           (!elements && extentSize == 0) ||
@@ -905,38 +925,36 @@ Span<typename Ptr::element_type> MakeSpan(Ptr& aPtr, size_t aLength) {
 }
 
 /**
- * Create span from a zero-terminated C string. nullptr is
- * treated as the empty string.
+ * Create span from C string.
  */
 inline Span<const char> MakeStringSpan(const char* aZeroTerminated) {
-  if (!aZeroTerminated) {
-    return Span<const char>();
-  }
   return Span<const char>(aZeroTerminated, std::strlen(aZeroTerminated));
 }
 
 /**
- * Create span from a zero-terminated UTF-16 C string. nullptr is
- * treated as the empty string.
+ * Create span from UTF-16 C string.
  */
 inline Span<const char16_t> MakeStringSpan(const char16_t* aZeroTerminated) {
-  if (!aZeroTerminated) {
-    return Span<const char16_t>();
-  }
   return Span<const char16_t>(aZeroTerminated,
                               span_details::strlen16(aZeroTerminated));
 }
 
 }  // namespace mozilla
 
-#  ifdef _MSC_VER
-#    if _MSC_VER < 1910
-#      undef constexpr
-#      pragma pop_macro("constexpr")
+#ifdef _MSC_VER
+#if _MSC_VER < 1910
+#undef constexpr
+#pragma pop_macro("constexpr")
 
-#    endif  // _MSC_VER < 1910
+#endif  // _MSC_VER < 1910
 
-#    pragma warning(pop)
-#  endif  // _MSC_VER
+#pragma warning(pop)
+#endif  // _MSC_VER
+
+#undef MOZ_SPAN_ASSERTION_CONSTEXPR
+#undef MOZ_SPAN_GCC_CONSTEXPR
+#undef MOZ_SPAN_EXPLICITLY_DEFAULTED_CONSTEXPR
+#undef MOZ_SPAN_CONSTEXPR_NOT_JUST_RETURN
+#undef MOZ_SPAN_NON_CONST_CONSTEXPR
 
 #endif  // mozilla_Span_h

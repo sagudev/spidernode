@@ -1,6 +1,6 @@
 // dbg.getNewestFrame().environment works.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger;
 var gw = dbg.addDebuggee(g);
 g.h = function () {

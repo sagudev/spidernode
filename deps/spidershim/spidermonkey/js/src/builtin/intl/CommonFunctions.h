@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -62,14 +62,10 @@ static inline bool StringsAreEqual(const char* s1, const char* s2) {
 }
 
 static inline const char* IcuLocale(const char* locale) {
-  if (StringsAreEqual(locale, "und")) {
-    return "";  // ICU root locale
-  }
+  if (StringsAreEqual(locale, "und")) return "";  // ICU root locale
 
   return locale;
 }
-
-extern UniqueChars EncodeLocale(JSContext* cx, JSString* locale);
 
 // Starting with ICU 59, UChar defaults to char16_t.
 static_assert(
@@ -84,15 +80,14 @@ constexpr size_t INITIAL_CHAR_BUFFER_SIZE = 32;
 template <typename ICUStringFunction, size_t InlineCapacity>
 static int32_t CallICU(JSContext* cx, const ICUStringFunction& strFn,
                        Vector<char16_t, InlineCapacity>& chars) {
-  MOZ_ASSERT(chars.length() >= InlineCapacity);
+  MOZ_ASSERT(chars.length() == 0);
+  MOZ_ALWAYS_TRUE(chars.resize(InlineCapacity));
 
   UErrorCode status = U_ZERO_ERROR;
-  int32_t size = strFn(chars.begin(), chars.length(), &status);
+  int32_t size = strFn(chars.begin(), InlineCapacity, &status);
   if (status == U_BUFFER_OVERFLOW_ERROR) {
     MOZ_ASSERT(size >= 0);
-    if (!chars.resize(size_t(size))) {
-      return -1;
-    }
+    if (!chars.resize(size_t(size))) return -1;
     status = U_ZERO_ERROR;
     strFn(chars.begin(), size, &status);
   }
@@ -108,12 +103,9 @@ static int32_t CallICU(JSContext* cx, const ICUStringFunction& strFn,
 template <typename ICUStringFunction>
 static JSString* CallICU(JSContext* cx, const ICUStringFunction& strFn) {
   Vector<char16_t, INITIAL_CHAR_BUFFER_SIZE> chars(cx);
-  MOZ_ALWAYS_TRUE(chars.resize(INITIAL_CHAR_BUFFER_SIZE));
 
   int32_t size = CallICU(cx, strFn, chars);
-  if (size < 0) {
-    return nullptr;
-  }
+  if (size < 0) return nullptr;
 
   return NewStringCopyN<CanGC>(cx, chars.begin(), size_t(size));
 }
@@ -130,9 +122,8 @@ using GetAvailable = const char* (*)(int32_t localeIndex);
  * returns the corresponding locale as a borrowed string.  For example:
  *
  *   RootedValue v(cx);
- *   if (!GetAvailableLocales(cx, unum_countAvailable, unum_getAvailable, &v)) {
+ *   if (!GetAvailableLocales(cx, unum_countAvailable, unum_getAvailable, &v))
  *       return false;
- *   }
  */
 extern bool GetAvailableLocales(JSContext* cx, CountAvailable countAvailable,
                                 GetAvailable getAvailable,

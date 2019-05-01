@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,9 +12,7 @@ using namespace js::jit;
 
 static void MoveBefore(MBasicBlock* block, MInstruction* at,
                        MInstruction* ins) {
-  if (at == ins) {
-    return;
-  }
+  if (at == ins) return;
 
   // Update instruction numbers.
   for (MInstructionIterator iter(block->begin(at)); *iter != ins; iter++) {
@@ -29,18 +27,12 @@ static bool IsLastUse(MDefinition* ins, MDefinition* input,
                       MBasicBlock* loopHeader) {
   // If we are in a loop, this cannot be the last use of any definitions from
   // outside the loop, as those definitions can be used in future iterations.
-  if (loopHeader && input->block()->id() < loopHeader->id()) {
-    return false;
-  }
+  if (loopHeader && input->block()->id() < loopHeader->id()) return false;
   for (MUseDefIterator iter(input); iter; iter++) {
     // Watch for uses defined in blocks which ReorderInstructions hasn't
     // processed yet. These nodes have not had their ids set yet.
-    if (iter.def()->block()->id() > ins->block()->id()) {
-      return false;
-    }
-    if (iter.def()->id() > ins->id()) {
-      return false;
-    }
+    if (iter.def()->block()->id() > ins->block()->id()) return false;
+    if (iter.def()->id() > ins->id()) return false;
   }
   return true;
 }
@@ -56,25 +48,19 @@ bool jit::ReorderInstructions(MIRGraph& graph) {
        block != graph.rpoEnd(); block++) {
     // Renumber all definitions inside the basic blocks.
     for (MPhiIterator iter(block->phisBegin()); iter != block->phisEnd();
-         iter++) {
+         iter++)
       iter->setId(nextId++);
-    }
 
     for (MInstructionIterator iter(block->begin()); iter != block->end();
-         iter++) {
+         iter++)
       iter->setId(nextId++);
-    }
 
     // Don't reorder instructions within entry blocks, which have special
     // requirements.
-    if (*block == graph.entryBlock() || *block == graph.osrBlock()) {
-      continue;
-    }
+    if (*block == graph.entryBlock() || *block == graph.osrBlock()) continue;
 
     if (block->isLoopHeader()) {
-      if (!loopHeaders.append(*block)) {
-        return false;
-      }
+      if (!loopHeaders.append(*block)) return false;
     }
 
     MBasicBlock* innerLoop = loopHeaders.empty() ? nullptr : loopHeaders.back();
@@ -102,9 +88,7 @@ bool jit::ReorderInstructions(MIRGraph& graph) {
         iter++;
         MInstructionIterator targetIter = block->begin();
         while (targetIter->isConstant() || targetIter->isInterruptCheck()) {
-          if (*targetIter == ins) {
-            break;
-          }
+          if (*targetIter == ins) break;
           targetIter++;
         }
         MoveBefore(*block, *targetIter, ins);
@@ -120,9 +104,7 @@ bool jit::ReorderInstructions(MIRGraph& graph) {
       for (size_t i = 0; i < ins->numOperands(); i++) {
         MDefinition* input = ins->getOperand(i);
         if (!input->isConstant() && IsLastUse(ins, input, innerLoop)) {
-          if (!lastUsedInputs.append(input)) {
-            return false;
-          }
+          if (!lastUsedInputs.append(input)) return false;
         }
       }
 
@@ -137,9 +119,7 @@ bool jit::ReorderInstructions(MIRGraph& graph) {
       for (MInstructionReverseIterator riter = ++block->rbegin(ins);
            riter != rtop; riter++) {
         MInstruction* prev = *riter;
-        if (prev->isInterruptCheck()) {
-          break;
-        }
+        if (prev->isInterruptCheck()) break;
 
         // The instruction can't be moved before any of its uses.
         bool isUse = false;
@@ -149,9 +129,7 @@ bool jit::ReorderInstructions(MIRGraph& graph) {
             break;
           }
         }
-        if (isUse) {
-          break;
-        }
+        if (isUse) break;
 
         // The instruction can't be moved before an instruction that
         // stores to a location read by the instruction.
@@ -178,9 +156,7 @@ bool jit::ReorderInstructions(MIRGraph& graph) {
             i++;
           }
         }
-        if (lastUsedInputs.length() < 2) {
-          break;
-        }
+        if (lastUsedInputs.length() < 2) break;
 
         // We can move the instruction before this one.
         target = prev;
@@ -190,9 +166,7 @@ bool jit::ReorderInstructions(MIRGraph& graph) {
       MoveBefore(*block, target, ins);
     }
 
-    if (block->isLoopBackedge()) {
-      loopHeaders.popBack();
-    }
+    if (block->isLoopBackedge()) loopHeaders.popBack();
   }
 
   return true;

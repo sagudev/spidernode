@@ -1,6 +1,6 @@
 // Nested compilation units (say, an eval with in an eval) should have the
 // correct sources attributed to them.
-let g = newGlobal({newCompartment: true});
+let g = newGlobal();
 let dbg = new Debugger(g);
 
 var text;

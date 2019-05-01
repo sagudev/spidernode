@@ -1,4 +1,4 @@
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.log = '';
 
 var dbg = Debugger(g);

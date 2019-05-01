@@ -48,7 +48,7 @@ void MustReturnFromCallerChecker::check(
   assert(Block && "This statement should be within the CFG!");
 
   if (!immediatelyReturns(Block, Result.Context, CallIndex + 1)) {
-    diag(Call->getBeginLoc(),
+    diag(Call->getLocStart(),
          "You must immediately return after calling this function",
          DiagnosticIDs::Error);
   }
@@ -84,7 +84,7 @@ bool MustReturnFromCallerChecker::immediatelyReturns(
     if (auto CE = dyn_cast<CallExpr>(AfterTrivials)) {
       auto Callee = CE->getDirectCallee();
       if (Callee &&
-          hasCustomAttribute<moz_may_call_after_must_return>(Callee)) {
+          hasCustomAnnotation(Callee, "moz_may_call_after_must_return")) {
         continue;
       }
 

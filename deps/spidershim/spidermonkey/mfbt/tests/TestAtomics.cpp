@@ -14,13 +14,14 @@ using mozilla::MemoryOrdering;
 using mozilla::Relaxed;
 using mozilla::ReleaseAcquire;
 using mozilla::SequentiallyConsistent;
-using mozilla::recordreplay::Behavior;
 
-#define A(a, b) MOZ_RELEASE_ASSERT(a, b)
+#define A(a,b)  MOZ_RELEASE_ASSERT(a,b)
 
 template <typename T, MemoryOrdering Order>
-static void TestTypeWithOrdering() {
-  Atomic<T, Order, Behavior::DontPreserve> atomic(5);
+static void
+TestTypeWithOrdering()
+{
+  Atomic<T, Order> atomic(5);
   A(atomic == 5, "Atomic variable did not initialize");
 
   // Test atomic increment
@@ -81,10 +82,12 @@ static void TestTypeWithOrdering() {
   A(atomic == T(42), "CAS should have changed atomic's value.");
 }
 
-template <typename T, MemoryOrdering Order>
-static void TestPointerWithOrdering() {
+template<typename T, MemoryOrdering Order>
+static void
+TestPointerWithOrdering()
+{
   T array1[10];
-  Atomic<T*, Order, Behavior::DontPreserve> atomic(array1);
+  Atomic<T*, Order> atomic(array1);
   A(atomic == array1, "Atomic variable did not initialize");
 
   // Test atomic increment
@@ -127,16 +130,19 @@ static void TestPointerWithOrdering() {
   A(atomic == array1 + 3, "CAS should have changed atomic's value.");
 }
 
-enum EnumType {
+enum EnumType
+{
   EnumType_0 = 0,
   EnumType_1 = 1,
   EnumType_2 = 2,
   EnumType_3 = 3
 };
 
-template <MemoryOrdering Order>
-static void TestEnumWithOrdering() {
-  Atomic<EnumType, Order, Behavior::DontPreserve> atomic(EnumType_2);
+template<MemoryOrdering Order>
+static void
+TestEnumWithOrdering()
+{
+  Atomic<EnumType, Order> atomic(EnumType_2);
   A(atomic == EnumType_2, "Atomic variable did not initialize");
 
   // Test assignment
@@ -162,16 +168,19 @@ static void TestEnumWithOrdering() {
   A(atomic == EnumType_3, "CAS should have changed atomic's value.");
 }
 
-enum class EnumClass : uint32_t {
+enum class EnumClass : uint32_t
+{
   Value0 = 0,
   Value1 = 1,
   Value2 = 2,
   Value3 = 3
 };
 
-template <MemoryOrdering Order>
-static void TestEnumClassWithOrdering() {
-  Atomic<EnumClass, Order, Behavior::DontPreserve> atomic(EnumClass::Value2);
+template<MemoryOrdering Order>
+static void
+TestEnumClassWithOrdering()
+{
+  Atomic<EnumClass, Order> atomic(EnumClass::Value2);
   A(atomic == EnumClass::Value2, "Atomic variable did not initialize");
 
   // Test assignment
@@ -188,8 +197,7 @@ static void TestEnumClassWithOrdering() {
 
   // Test CAS.
   atomic = EnumClass::Value1;
-  bool boolResult =
-      atomic.compareExchange(EnumClass::Value0, EnumClass::Value2);
+  bool boolResult = atomic.compareExchange(EnumClass::Value0, EnumClass::Value2);
   A(!boolResult, "CAS should have returned false.");
   A(atomic == EnumClass::Value1, "CAS shouldn't have done anything.");
 
@@ -199,8 +207,10 @@ static void TestEnumClassWithOrdering() {
 }
 
 template <MemoryOrdering Order>
-static void TestBoolWithOrdering() {
-  Atomic<bool, Order, Behavior::DontPreserve> atomic(false);
+static void
+TestBoolWithOrdering()
+{
+  Atomic<bool, Order> atomic(false);
   A(atomic == false, "Atomic variable did not initialize");
 
   // Test assignment
@@ -227,20 +237,26 @@ static void TestBoolWithOrdering() {
 }
 
 template <typename T>
-static void TestType() {
+static void
+TestType()
+{
   TestTypeWithOrdering<T, SequentiallyConsistent>();
   TestTypeWithOrdering<T, ReleaseAcquire>();
   TestTypeWithOrdering<T, Relaxed>();
 }
 
-template <typename T>
-static void TestPointer() {
+template<typename T>
+static void
+TestPointer()
+{
   TestPointerWithOrdering<T, SequentiallyConsistent>();
   TestPointerWithOrdering<T, ReleaseAcquire>();
   TestPointerWithOrdering<T, Relaxed>();
 }
 
-static void TestEnum() {
+static void
+TestEnum()
+{
   TestEnumWithOrdering<SequentiallyConsistent>();
   TestEnumWithOrdering<ReleaseAcquire>();
   TestEnumWithOrdering<Relaxed>();
@@ -250,7 +266,9 @@ static void TestEnum() {
   TestEnumClassWithOrdering<Relaxed>();
 }
 
-static void TestBool() {
+static void
+TestBool()
+{
   TestBoolWithOrdering<SequentiallyConsistent>();
   TestBoolWithOrdering<ReleaseAcquire>();
   TestBoolWithOrdering<Relaxed>();
@@ -258,7 +276,9 @@ static void TestBool() {
 
 #undef A
 
-int main() {
+int
+main()
+{
   TestType<uint32_t>();
   TestType<int32_t>();
   TestType<uint64_t>();

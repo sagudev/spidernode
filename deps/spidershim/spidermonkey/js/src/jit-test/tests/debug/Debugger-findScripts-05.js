@@ -1,5 +1,5 @@
 // findScripts' result includes scripts for nested functions.
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger();
 var gw = dbg.addDebuggee(g);
 var log;

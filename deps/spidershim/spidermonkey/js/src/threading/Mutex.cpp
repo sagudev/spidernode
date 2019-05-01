@@ -14,11 +14,9 @@ using namespace js;
 
 MOZ_THREAD_LOCAL(js::Mutex::MutexVector*) js::Mutex::HeldMutexStack;
 
-/* static */
-bool js::Mutex::Init() { return HeldMutexStack.init(); }
+/* static */ bool js::Mutex::Init() { return HeldMutexStack.init(); }
 
-/* static */
-void js::Mutex::ShutDown() {
+/* static */ void js::Mutex::ShutDown() {
   js_delete(HeldMutexStack.get());
   HeldMutexStack.set(nullptr);
 }
@@ -29,9 +27,7 @@ void js::Mutex::ShutDown() {
   if (!stack) {
     AutoEnterOOMUnsafeRegion oomUnsafe;
     stack = js_new<MutexVector>();
-    if (!stack) {
-      oomUnsafe.crash("js::Mutex::heldMutexStack");
-    }
+    if (!stack) oomUnsafe.crash("js::Mutex::heldMutexStack");
     HeldMutexStack.set(stack);
   }
   return *stack;
@@ -53,9 +49,7 @@ void js::Mutex::lock() {
   MutexImpl::lock();
 
   AutoEnterOOMUnsafeRegion oomUnsafe;
-  if (!stack.append(this)) {
-    oomUnsafe.crash("js::Mutex::lock");
-  }
+  if (!stack.append(this)) oomUnsafe.crash("js::Mutex::lock");
 }
 
 void js::Mutex::unlock() {
@@ -68,9 +62,7 @@ void js::Mutex::unlock() {
 bool js::Mutex::ownedByCurrentThread() const {
   auto& stack = heldMutexStack();
   for (size_t i = 0; i < stack.length(); i++) {
-    if (stack[i] == this) {
-      return true;
-    }
+    if (stack[i] == this) return true;
   }
   return false;
 }

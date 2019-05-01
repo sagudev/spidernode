@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,9 +34,7 @@ bool AssemblerBuffer::swap(Vector<uint8_t, 0, SystemAllocPolicy>& bytes) {
   // NB: extractRawBuffer() only returns null if the Vector is using
   // inline storage and thus a malloc would be needed. In this case,
   // just make a simple copy.
-  if (!newBuffer) {
-    return bytes.append(m_buffer.begin(), m_buffer.end());
-  }
+  if (!newBuffer) return bytes.append(m_buffer.begin(), m_buffer.end());
 
   bytes.replaceRawBuffer((uint8_t*)newBuffer, newLength, newCapacity);
   return true;
@@ -50,9 +48,7 @@ void js::jit::GenericAssembler::spew(const char* fmt, va_list va) {
 
   int i = VsprintfLiteral(buf, fmt, va);
   if (i > -1) {
-    if (printer) {
-      printer->printf("%s\n", buf);
-    }
+    if (printer) printer->printf("%s\n", buf);
     js::jit::JitSpew(js::jit::JitSpew_Codegen, "%s", buf);
   }
 }

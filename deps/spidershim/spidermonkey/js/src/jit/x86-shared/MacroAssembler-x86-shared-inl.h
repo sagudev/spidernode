@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -97,9 +97,7 @@ void MacroAssembler::popcnt32(Register input, Register output, Register tmp) {
   // Equivalent to mozilla::CountPopulation32()
 
   movl(input, tmp);
-  if (input != output) {
-    movl(input, output);
-  }
+  if (input != output) movl(input, output);
   shrl(Imm32(1), output);
   andl(Imm32(0x55555555), output);
   subl(output, tmp);
@@ -156,7 +154,8 @@ void MacroAssembler::subFloat32(FloatRegister src, FloatRegister dest) {
 }
 
 void MacroAssembler::mul32(Register rhs, Register srcDest) {
-  imull(rhs, srcDest);
+  MOZ_ASSERT(srcDest == eax);
+  imull(rhs, srcDest);  // Clobbers edx
 }
 
 void MacroAssembler::mulFloat32(FloatRegister src, FloatRegister dest) {
@@ -274,9 +273,7 @@ void MacroAssembler::maxDouble(FloatRegister other, FloatRegister srcDest,
 void MacroAssembler::rotateLeft(Imm32 count, Register input, Register dest) {
   MOZ_ASSERT(input == dest, "defineReuseInput");
   count.value &= 0x1f;
-  if (count.value) {
-    roll(count, input);
-  }
+  if (count.value) roll(count, input);
 }
 
 void MacroAssembler::rotateLeft(Register count, Register input, Register dest) {
@@ -288,9 +285,7 @@ void MacroAssembler::rotateLeft(Register count, Register input, Register dest) {
 void MacroAssembler::rotateRight(Imm32 count, Register input, Register dest) {
   MOZ_ASSERT(input == dest, "defineReuseInput");
   count.value &= 0x1f;
-  if (count.value) {
-    rorl(count, input);
-  }
+  if (count.value) rorl(count, input);
 }
 
 void MacroAssembler::rotateRight(Register count, Register input,
@@ -308,84 +303,14 @@ void MacroAssembler::lshift32(Register shift, Register srcDest) {
   shll_cl(srcDest);
 }
 
-// All the shift instructions have the same requirement; the shift amount
-// must be in ecx. In order to handle arbitrary input registers, we divide this
-// operation into phases:
-//
-// [PUSH]     Preserve any registers which may be clobbered
-// [MOVE]     Move the shift to ecx and the amount to be shifted to an
-//            arbitrarily chosen preserved register that is not ecx.
-// [SHIFT]    Do the shift operation
-// [MOVE]     Move the result back to the destination
-// [POP]      Restore the registers which were preserved.
-inline void FlexibleShift32(MacroAssembler& masm, Register shift,
-                            Register srcDest, bool left,
-                            bool arithmetic = false) {
-  // Choose an arbitrary register that's not ecx
-  Register internalSrcDest = (srcDest != ecx) ? srcDest : ebx;
-  MOZ_ASSERT(internalSrcDest != ecx);
-
-  // Add registers we may clobber and want to ensure are restored as live, and
-  // remove what we definitely clobber (the destination)
-  LiveRegisterSet preserve;
-
-  if (shift != ecx) {
-    preserve.add(ecx);
-  }
-  preserve.add(internalSrcDest);
-
-  preserve.takeUnchecked(srcDest);
-
-  // [PUSH]
-  masm.PushRegsInMask(preserve);
-
-  // [MOVE]
-  masm.moveRegPair(shift, srcDest, ecx, internalSrcDest);
-  if (masm.oom()) {
-    return;
-  }
-
-  // [SHIFT]
-  if (left) {
-    masm.lshift32(ecx, internalSrcDest);
-  } else {
-    if (arithmetic) {
-      masm.rshift32Arithmetic(ecx, internalSrcDest);
-    } else {
-      masm.rshift32(ecx, internalSrcDest);
-    }
-  }
-
-  // [MOVE]
-  if (internalSrcDest != srcDest) {
-    masm.mov(internalSrcDest, srcDest);
-  }
-
-  // [POP]
-  masm.PopRegsInMask(preserve);
-}
-
-void MacroAssembler::flexibleLshift32(Register shift, Register srcDest) {
-  FlexibleShift32(*this, shift, srcDest, true);
-}
-
 void MacroAssembler::rshift32(Register shift, Register srcDest) {
   MOZ_ASSERT(shift == ecx);
   shrl_cl(srcDest);
 }
 
-void MacroAssembler::flexibleRshift32(Register shift, Register srcDest) {
-  FlexibleShift32(*this, shift, srcDest, false, false);
-}
-
 void MacroAssembler::rshift32Arithmetic(Register shift, Register srcDest) {
   MOZ_ASSERT(shift == ecx);
   sarl_cl(srcDest);
-}
-
-void MacroAssembler::flexibleRshift32Arithmetic(Register shift,
-                                                Register srcDest) {
-  FlexibleShift32(*this, shift, srcDest, false, true);
 }
 
 void MacroAssembler::lshift32(Imm32 shift, Register srcDest) {
@@ -522,6 +447,20 @@ void MacroAssembler::branchPtrImpl(Condition cond, const T& lhs, const S& rhs,
   j(cond, label);
 }
 
+template <typename T>
+CodeOffsetJump MacroAssembler::branchPtrWithPatch(Condition cond, Register lhs,
+                                                  T rhs, RepatchLabel* label) {
+  cmpPtr(lhs, rhs);
+  return jumpWithPatch(label, cond);
+}
+
+template <typename T>
+CodeOffsetJump MacroAssembler::branchPtrWithPatch(Condition cond, Address lhs,
+                                                  T rhs, RepatchLabel* label) {
+  cmpPtr(lhs, rhs);
+  return jumpWithPatch(label, cond);
+}
+
 void MacroAssembler::branchFloat(DoubleCondition cond, FloatRegister lhs,
                                  FloatRegister rhs, Label* label) {
   compareFloat(cond, lhs, rhs);
@@ -565,9 +504,9 @@ void MacroAssembler::branchDouble(DoubleCondition cond, FloatRegister lhs,
   j(ConditionFromDoubleCondition(cond), label);
 }
 
-template <typename T>
+template <typename T, typename L>
 void MacroAssembler::branchAdd32(Condition cond, T src, Register dest,
-                                 Label* label) {
+                                 L label) {
   addl(src, dest);
   j(cond, label);
 }
@@ -576,13 +515,6 @@ template <typename T>
 void MacroAssembler::branchSub32(Condition cond, T src, Register dest,
                                  Label* label) {
   subl(src, dest);
-  j(cond, label);
-}
-
-template <typename T>
-void MacroAssembler::branchMul32(Condition cond, T src, Register dest,
-                                 Label* label) {
-  mul32(src, dest);
   j(cond, label);
 }
 
@@ -834,35 +766,6 @@ void MacroAssembler::branchTestSymbolImpl(Condition cond, const T& t,
   j(cond, label);
 }
 
-void MacroAssembler::branchTestBigInt(Condition cond, Register tag,
-                                      Label* label) {
-  branchTestBigIntImpl(cond, tag, label);
-}
-
-void MacroAssembler::branchTestBigInt(Condition cond, const BaseIndex& address,
-                                      Label* label) {
-  branchTestBigIntImpl(cond, address, label);
-}
-
-void MacroAssembler::branchTestBigInt(Condition cond, const ValueOperand& value,
-                                      Label* label) {
-  branchTestBigIntImpl(cond, value, label);
-}
-
-template <typename T>
-void MacroAssembler::branchTestBigIntImpl(Condition cond, const T& t,
-                                          Label* label) {
-  cond = testBigInt(cond, t);
-  j(cond, label);
-}
-
-void MacroAssembler::branchTestBigIntTruthy(bool truthy,
-                                            const ValueOperand& value,
-                                            Label* label) {
-  Condition cond = testBigIntTruthy(truthy, value);
-  j(cond, label);
-}
-
 void MacroAssembler::branchTestNull(Condition cond, Register tag,
                                     Label* label) {
   branchTestNullImpl(cond, tag, label);
@@ -992,25 +895,33 @@ void MacroAssembler::cmp32Move32(Condition cond, Register lhs,
   cmovCCl(cond, src, dest);
 }
 
-void MacroAssembler::cmp32Load32(Condition cond, Register lhs,
-                                 const Address& rhs, const Address& src,
-                                 Register dest) {
-  cmp32(lhs, Operand(rhs));
-  cmovCCl(cond, Operand(src), dest);
-}
-
-void MacroAssembler::cmp32Load32(Condition cond, Register lhs,
-                                 Register rhs, const Address& src,
-                                 Register dest) {
-  cmp32(lhs, rhs);
-  cmovCCl(cond, Operand(src), dest);
-}
-
 void MacroAssembler::spectreZeroRegister(Condition cond, Register scratch,
                                          Register dest) {
   // Note: use movl instead of move32/xorl to ensure flags are not clobbered.
   movl(Imm32(0), scratch);
   spectreMovePtr(cond, scratch, dest);
+}
+
+// ========================================================================
+// Canonicalization primitives.
+void MacroAssembler::canonicalizeFloat32x4(FloatRegister reg,
+                                           FloatRegister scratch) {
+  ScratchSimd128Scope scratch2(*this);
+
+  MOZ_ASSERT(scratch.asSimd128() != scratch2.asSimd128());
+  MOZ_ASSERT(reg.asSimd128() != scratch2.asSimd128());
+  MOZ_ASSERT(reg.asSimd128() != scratch.asSimd128());
+
+  FloatRegister mask = scratch;
+  vcmpordps(Operand(reg), reg, mask);
+
+  FloatRegister ifFalse = scratch2;
+  float nanf = float(JS::GenericNaN());
+  loadConstantSimd128Float(SimdConstant::SplatX4(nanf), ifFalse);
+
+  bitwiseAndSimd128(Operand(mask), reg);
+  bitwiseAndNotSimd128(Operand(ifFalse), mask);
+  bitwiseOrSimd128(Operand(mask), reg);
 }
 
 // ========================================================================
@@ -1083,9 +994,7 @@ void MacroAssembler::storeFloat32x3(FloatRegister src, const BaseIndex& dest) {
 }
 
 void MacroAssembler::memoryBarrier(MemoryBarrierBits barrier) {
-  if (barrier & MembarStoreLoad) {
-    storeLoadFence();
-  }
+  if (barrier & MembarStoreLoad) storeLoadFence();
 }
 
 // ========================================================================
@@ -1099,12 +1008,8 @@ void MacroAssembler::truncateFloat32ToInt64(Address src, Address dest,
     return;
   }
 
-  if (src.base == esp) {
-    src.offset += 2 * sizeof(int32_t);
-  }
-  if (dest.base == esp) {
-    dest.offset += 2 * sizeof(int32_t);
-  }
+  if (src.base == esp) src.offset += 2 * sizeof(int32_t);
+  if (dest.base == esp) dest.offset += 2 * sizeof(int32_t);
 
   reserveStack(2 * sizeof(int32_t));
 
@@ -1133,12 +1038,8 @@ void MacroAssembler::truncateDoubleToInt64(Address src, Address dest,
     return;
   }
 
-  if (src.base == esp) {
-    src.offset += 2 * sizeof(int32_t);
-  }
-  if (dest.base == esp) {
-    dest.offset += 2 * sizeof(int32_t);
-  }
+  if (src.base == esp) src.offset += 2 * sizeof(int32_t);
+  if (dest.base == esp) dest.offset += 2 * sizeof(int32_t);
 
   reserveStack(2 * sizeof(int32_t));
 

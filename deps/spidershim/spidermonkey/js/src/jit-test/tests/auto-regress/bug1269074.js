@@ -1,3 +1,6 @@
-// |jit-test| allow-oom; skip-if: !('oomTest' in this)
+// |jit-test| allow-oom
+
+if (!('oomTest' in this))
+    quit();
 
 evalcx('oomTest(function() { Array(...""); })', newGlobal());

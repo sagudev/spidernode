@@ -5,7 +5,7 @@
 
 /*---
 author: Caitlin Potter <caitp@igalia.com>
-esid: sec-async-generator-function-definitions-static-semantics-early-errors
+esid: pending
 description: >
   It is a SyntaxError if FormalParameters contains arguments in strict mode.
 negative:
@@ -15,6 +15,6 @@ flags: [onlyStrict]
 features: [async-iteration]
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 (async function*(arguments) { });

@@ -13,6 +13,6 @@ es6id: 13.7.5
 flags: [noStrict]
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 for (const let of []) {}

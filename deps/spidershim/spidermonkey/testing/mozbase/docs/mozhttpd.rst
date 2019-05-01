@@ -1,6 +1,6 @@
 
-:mod:`mozhttpd` --- Serving up content to be consumed by the browser
-====================================================================
+Serving up content to be consumed by the browser
+================================================
 
 
 .. warning:: The mozhttpd module is considered obsolete. For new code,

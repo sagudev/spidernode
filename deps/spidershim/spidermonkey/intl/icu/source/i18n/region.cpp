@@ -168,18 +168,10 @@ void U_CALLCONV Region::loadRegionData(UErrorCode &status) {
         continents->addElement(continentName,status);
     }
 
-    UResourceBundle *groupingBundle = nullptr;
     while ( ures_hasNext(groupingContainment.getAlias()) ) {
-        groupingBundle = ures_getNextResource(groupingContainment.getAlias(), groupingBundle, &status);
-        if (U_FAILURE(status)) {
-            break;
-        }
-        UnicodeString *groupingName = new UnicodeString(ures_getKey(groupingBundle), -1, US_INV);
-        if (groupingName) {
-            groupings->addElement(groupingName,status);
-        }
+        UnicodeString *groupingName = new UnicodeString(ures_getNextUnicodeString(groupingContainment.getAlias(),NULL,&status));
+        groupings->addElement(groupingName,status);
     }
-    ures_close(groupingBundle);
 
     for ( int32_t i = 0 ; i < allRegions->size() ; i++ ) {
         LocalPointer<Region> r(new Region(), status);
@@ -190,7 +182,7 @@ void U_CALLCONV Region::loadRegionData(UErrorCode &status) {
         r->idStr = *regionName;
 
         r->idStr.extract(0,r->idStr.length(),r->id,sizeof(r->id),US_INV);
-        r->fType = URGN_TERRITORY; // Only temporary - figure out the real type later once the aliases are known.
+        r->type = URGN_TERRITORY; // Only temporary - figure out the real type later once the aliases are known.
 
         Formattable result;
         UErrorCode ps = U_ZERO_ERROR;
@@ -198,7 +190,7 @@ void U_CALLCONV Region::loadRegionData(UErrorCode &status) {
         if ( U_SUCCESS(ps) ) {
             r->code = result.getLong(); // Convert string to number
             uhash_iput(newNumericCodeMap.getAlias(),r->code,(void *)(r.getAlias()),&status);
-            r->fType = URGN_SUBCONTINENT;
+            r->type = URGN_SUBCONTINENT;
         } else {
             r->code = -1;
         }
@@ -239,9 +231,9 @@ void U_CALLCONV Region::loadRegionData(UErrorCode &status) {
                 } else {
                     aliasFromRegion->code = -1;
                 }
-                aliasFromRegion->fType = URGN_DEPRECATED;
+                aliasFromRegion->type = URGN_DEPRECATED;
             } else {
-                aliasFromRegion->fType = URGN_DEPRECATED;
+                aliasFromRegion->type = URGN_DEPRECATED;
             }
 
             {
@@ -298,26 +290,26 @@ void U_CALLCONV Region::loadRegionData(UErrorCode &status) {
     UnicodeString WORLD_ID_STRING(WORLD_ID);
     r = (Region *) uhash_get(newRegionIDMap.getAlias(),(void *)&WORLD_ID_STRING);
     if ( r ) {
-        r->fType = URGN_WORLD;
+        r->type = URGN_WORLD;
     }
 
     UnicodeString UNKNOWN_REGION_ID_STRING(UNKNOWN_REGION_ID);
     r = (Region *) uhash_get(newRegionIDMap.getAlias(),(void *)&UNKNOWN_REGION_ID_STRING);
     if ( r ) {
-        r->fType = URGN_UNKNOWN;
+        r->type = URGN_UNKNOWN;
     }
 
     for ( int32_t i = 0 ; i < continents->size() ; i++ ) {
         r = (Region *) uhash_get(newRegionIDMap.getAlias(),(void *)continents->elementAt(i));
         if ( r ) {
-            r->fType = URGN_CONTINENT;
+            r->type = URGN_CONTINENT;
         }
     }
 
     for ( int32_t i = 0 ; i < groupings->size() ; i++ ) {
         r = (Region *) uhash_get(newRegionIDMap.getAlias(),(void *)groupings->elementAt(i));
         if ( r ) {
-            r->fType = URGN_GROUPING;
+            r->type = URGN_GROUPING;
         }
     }
 
@@ -327,7 +319,7 @@ void U_CALLCONV Region::loadRegionData(UErrorCode &status) {
     UnicodeString OUTLYING_OCEANIA_REGION_ID_STRING(OUTLYING_OCEANIA_REGION_ID);
     r = (Region *) uhash_get(newRegionIDMap.getAlias(),(void *)&OUTLYING_OCEANIA_REGION_ID_STRING);
     if ( r ) {
-        r->fType = URGN_SUBCONTINENT;
+        r->type = URGN_SUBCONTINENT;
     }
 
     // Load territory containment info from the supplemental data.
@@ -364,7 +356,7 @@ void U_CALLCONV Region::loadRegionData(UErrorCode &status) {
                 // Set the parent region to be the containing region of the child.
                 // Regions of type GROUPING can't be set as the parent, since another region
                 // such as a SUBCONTINENT, CONTINENT, or WORLD must always be the parent.
-                if ( parentRegion->fType != URGN_GROUPING) {
+                if ( parentRegion->type != URGN_GROUPING) {
                     childRegion->containingRegion = parentRegion;
                 }
             }
@@ -375,15 +367,15 @@ void U_CALLCONV Region::loadRegionData(UErrorCode &status) {
     int32_t pos = UHASH_FIRST;
     while ( const UHashElement* element = uhash_nextElement(newRegionIDMap.getAlias(),&pos)) {
         Region *ar = (Region *)element->value.pointer;
-        if ( availableRegions[ar->fType] == NULL ) {
+        if ( availableRegions[ar->type] == NULL ) {
             LocalPointer<UVector> newAr(new UVector(uprv_deleteUObject, uhash_compareUnicodeString, status), status);
-            availableRegions[ar->fType] = newAr.orphan();
+            availableRegions[ar->type] = newAr.orphan();
         }
         LocalPointer<UnicodeString> arString(new UnicodeString(ar->idStr), status);
         if( U_FAILURE(status) ) {
             return;  // error out
         }
-        availableRegions[ar->fType]->addElement((void *)arString.orphan(),status);
+        availableRegions[ar->type]->addElement((void *)arString.orphan(),status);
     }
     
     ucln_i18n_registerCleanup(UCLN_I18N_REGION, region_cleanup);
@@ -424,7 +416,7 @@ void Region::cleanupRegionData() {
 
 Region::Region ()
         : code(-1),
-          fType(URGN_UNKNOWN),
+          type(URGN_UNKNOWN),
           containingRegion(NULL),
           containedRegions(NULL),
           preferredValues(NULL) {
@@ -489,7 +481,7 @@ Region::getInstance(const char *region_code, UErrorCode &status) {
         return NULL;
     }
 
-    if ( r->fType == URGN_DEPRECATED && r->preferredValues->size() == 1) {
+    if ( r->type == URGN_DEPRECATED && r->preferredValues->size() == 1) {
         StringEnumeration *pv = r->getPreferredValues(status);
         pv->reset(status);
         const UnicodeString *ustr = pv->snext(status);
@@ -537,7 +529,7 @@ Region::getInstance (int32_t code, UErrorCode &status) {
         return NULL;
     }
 
-    if ( r->fType == URGN_DEPRECATED && r->preferredValues->size() == 1) {
+    if ( r->type == URGN_DEPRECATED && r->preferredValues->size() == 1) {
         StringEnumeration *pv = r->getPreferredValues(status);
         pv->reset(status);
         const UnicodeString *ustr = pv->snext(status);
@@ -588,7 +580,7 @@ Region::getContainingRegion(URegionType type) const {
         return NULL;
     }
 
-    return ( containingRegion->fType == type)? containingRegion: containingRegion->getContainingRegion(type);
+    return ( containingRegion->type == type )? containingRegion: containingRegion->getContainingRegion(type);
 }
 
 /**
@@ -626,9 +618,9 @@ Region::getContainedRegions( URegionType type, UErrorCode &status ) const {
     StringEnumeration *cr = getContainedRegions(status);
 
     for ( int32_t i = 0 ; i < cr->count(status) ; i++ ) {
-        const char *regionId = cr->next(NULL,status);
-        const Region *r = Region::getInstance(regionId,status);
-        if ( r->getType() == type) {
+        const char *id = cr->next(NULL,status);
+        const Region *r = Region::getInstance(id,status);
+        if ( r->getType() == type ) {
             result->addElement((void *)&r->idStr,status);
         } else {
             StringEnumeration *children = r->getContainedRegions(type, status);
@@ -680,7 +672,7 @@ Region::contains(const Region &other) const {
 StringEnumeration*
 Region::getPreferredValues(UErrorCode &status) const {
     umtx_initOnce(gRegionDataInitOnce, &loadRegionData, status); // returns immediately if U_FAILURE(status)
-    if (U_FAILURE(status) || fType != URGN_DEPRECATED) {
+    if (U_FAILURE(status) ||  type != URGN_DEPRECATED) {
         return NULL;
     }
     return new RegionNameEnumeration(preferredValues,status);
@@ -705,7 +697,7 @@ Region::getNumericCode() const {
  */
 URegionType
 Region::getType() const {
-    return fType;
+    return type;
 }
 
 RegionNameEnumeration::RegionNameEnumeration(UVector *fNameList, UErrorCode& status) {

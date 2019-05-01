@@ -45,7 +45,7 @@ info: |
         [ BindingElementList[?Yield] ]
         [ BindingElementList[?Yield] , Elisionopt BindingRestElement[?Yield]opt ]
 ---*/
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 var iterCount = 0;
 var asyncIter = (async function*() {

@@ -1,6 +1,6 @@
 // The script and environment of a non-debuggee function are null.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.eval('function f() { return "from f"; }');
 
 var dbg = new Debugger;

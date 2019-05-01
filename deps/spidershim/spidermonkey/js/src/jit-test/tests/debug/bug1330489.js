@@ -1,11 +1,11 @@
-// |jit-test| test-also=--wasm-compiler=ion; error: TestComplete
+// |jit-test| test-also-no-wasm-baseline; error: TestComplete
 
 load(libdir + "asserts.js");
 
 if (!wasmDebuggingIsSupported())
     throw "TestComplete";
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.parent = this;
 g.eval("Debugger(parent).onExceptionUnwind = function () {};");
 

@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !('stackTest' in this)
+if (!('stackTest' in this))
+   quit();
 
 let a = parseModule(`throw new Error`);
 a.declarationInstantiation();

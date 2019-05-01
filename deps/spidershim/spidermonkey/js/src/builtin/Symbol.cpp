@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "builtin/Symbol.h"
 
-#include "js/Symbol.h"
-#include "js/PropertySpec.h"
 #include "util/StringBuffer.h"
 #include "vm/SymbolType.h"
 
@@ -22,16 +20,14 @@ const Class SymbolObject::class_ = {
                   JSCLASS_HAS_CACHED_PROTO(JSProto_Symbol)};
 
 SymbolObject* SymbolObject::create(JSContext* cx, JS::HandleSymbol symbol) {
-  SymbolObject* obj = NewBuiltinClassInstance<SymbolObject>(cx);
-  if (!obj) {
-    return nullptr;
-  }
-  obj->setPrimitiveValue(symbol);
-  return obj;
+  JSObject* obj = NewBuiltinClassInstance(cx, &class_);
+  if (!obj) return nullptr;
+  SymbolObject& symobj = obj->as<SymbolObject>();
+  symobj.setPrimitiveValue(symbol);
+  return &symobj;
 }
 
-const JSPropertySpec SymbolObject::properties[] = {
-    JS_PSG("description", descriptionGetter, 0), JS_PS_END};
+const JSPropertySpec SymbolObject::properties[] = {JS_PS_END};
 
 const JSFunctionSpec SymbolObject::methods[] = {
     JS_FN(js_toString_str, toString, 0, 0),
@@ -41,22 +37,20 @@ const JSFunctionSpec SymbolObject::methods[] = {
 const JSFunctionSpec SymbolObject::staticMethods[] = {
     JS_FN("for", for_, 1, 0), JS_FN("keyFor", keyFor, 1, 0), JS_FS_END};
 
-JSObject* SymbolObject::initClass(JSContext* cx, Handle<GlobalObject*> global,
+JSObject* SymbolObject::initClass(JSContext* cx, HandleObject obj,
                                   bool defineMembers) {
+  Handle<GlobalObject*> global = obj.as<GlobalObject>();
+
   // This uses &JSObject::class_ because: "The Symbol prototype object is an
   // ordinary object. It is not a Symbol instance and does not have a
   // [[SymbolData]] internal slot." (ES6 rev 24, 19.4.3)
   RootedObject proto(
       cx, GlobalObject::createBlankPrototype<PlainObject>(cx, global));
-  if (!proto) {
-    return nullptr;
-  }
+  if (!proto) return nullptr;
 
   RootedFunction ctor(cx, GlobalObject::createConstructor(
                               cx, construct, ClassName(JSProto_Symbol, cx), 0));
-  if (!ctor) {
-    return nullptr;
-  }
+  if (!ctor) return nullptr;
 
   if (defineMembers) {
     // Define the well-known symbol properties, such as Symbol.iterator.
@@ -66,15 +60,12 @@ JSObject* SymbolObject::initClass(JSContext* cx, Handle<GlobalObject*> global,
     WellKnownSymbols* wks = cx->runtime()->wellKnownSymbols;
     for (size_t i = 0; i < JS::WellKnownSymbolLimit; i++) {
       value.setSymbol(wks->get(i));
-      if (!NativeDefineDataProperty(cx, ctor, names[i], value, attrs)) {
+      if (!NativeDefineDataProperty(cx, ctor, names[i], value, attrs))
         return nullptr;
-      }
     }
   }
 
-  if (!LinkConstructorAndPrototype(cx, ctor, proto)) {
-    return nullptr;
-  }
+  if (!LinkConstructorAndPrototype(cx, ctor, proto)) return nullptr;
 
   if (defineMembers) {
     if (!DefinePropertiesAndFunctions(cx, proto, properties, methods) ||
@@ -85,9 +76,8 @@ JSObject* SymbolObject::initClass(JSContext* cx, Handle<GlobalObject*> global,
   }
 
   if (!GlobalObject::initBuiltinConstructor(cx, global, JSProto_Symbol, ctor,
-                                            proto)) {
+                                            proto))
     return nullptr;
-  }
   return proto;
 }
 
@@ -108,17 +98,13 @@ bool SymbolObject::construct(JSContext* cx, unsigned argc, Value* vp) {
   RootedString desc(cx);
   if (!args.get(0).isUndefined()) {
     desc = ToString(cx, args.get(0));
-    if (!desc) {
-      return false;
-    }
+    if (!desc) return false;
   }
 
   // step 4
   RootedSymbol symbol(cx,
                       JS::Symbol::new_(cx, JS::SymbolCode::UniqueSymbol, desc));
-  if (!symbol) {
-    return false;
-  }
+  if (!symbol) return false;
   args.rval().setSymbol(symbol);
   return true;
 }
@@ -129,15 +115,11 @@ bool SymbolObject::for_(JSContext* cx, unsigned argc, Value* vp) {
 
   // steps 1-2
   RootedString stringKey(cx, ToString(cx, args.get(0)));
-  if (!stringKey) {
-    return false;
-  }
+  if (!stringKey) return false;
 
   // steps 3-7
   JS::Symbol* symbol = JS::Symbol::for_(cx, stringKey);
-  if (!symbol) {
-    return false;
-  }
+  if (!symbol) return false;
   args.rval().setSymbol(symbol);
   return true;
 }
@@ -149,8 +131,9 @@ bool SymbolObject::keyFor(JSContext* cx, unsigned argc, Value* vp) {
   // step 1
   HandleValue arg = args.get(0);
   if (!arg.isSymbol()) {
-    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_SEARCH_STACK, arg,
-                     nullptr, "not a symbol");
+    ReportValueErrorFlags(cx, JSREPORT_ERROR, JSMSG_UNEXPECTED_TYPE,
+                          JSDVG_SEARCH_STACK, arg, nullptr, "not a symbol",
+                          nullptr);
     return false;
   }
 
@@ -197,11 +180,10 @@ bool SymbolObject::valueOf_impl(JSContext* cx, const CallArgs& args) {
   // Step 3, the error case, is handled by CallNonGenericMethod.
   HandleValue thisv = args.thisv();
   MOZ_ASSERT(IsSymbol(thisv));
-  if (thisv.isSymbol()) {
+  if (thisv.isSymbol())
     args.rval().set(thisv);
-  } else {
+  else
     args.rval().setSymbol(thisv.toObject().as<SymbolObject>().unbox());
-  }
   return true;
 }
 
@@ -219,32 +201,10 @@ bool SymbolObject::toPrimitive(JSContext* cx, unsigned argc, Value* vp) {
   return CallNonGenericMethod<IsSymbol, valueOf_impl>(cx, args);
 }
 
-bool SymbolObject::descriptionGetter_impl(JSContext* cx, const CallArgs& args) {
-  // Get symbol object pointer.
-  HandleValue thisv = args.thisv();
-  MOZ_ASSERT(IsSymbol(thisv));
-  Rooted<Symbol*> sym(cx, thisv.isSymbol()
-                              ? thisv.toSymbol()
-                              : thisv.toObject().as<SymbolObject>().unbox());
-
-  // Return the symbol's description if present, otherwise return undefined.
-  if (JSString* str = sym->description()) {
-    args.rval().setString(str);
-  } else {
-    args.rval().setUndefined();
-  }
-  return true;
+JSObject* js::InitSymbolClass(JSContext* cx, HandleObject obj) {
+  return SymbolObject::initClass(cx, obj, true);
 }
 
-bool SymbolObject::descriptionGetter(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsSymbol, descriptionGetter_impl>(cx, args);
-}
-
-JSObject* js::InitSymbolClass(JSContext* cx, Handle<GlobalObject*> global) {
-  return SymbolObject::initClass(cx, global, true);
-}
-
-JSObject* js::InitBareSymbolCtor(JSContext* cx, Handle<GlobalObject*> global) {
-  return SymbolObject::initClass(cx, global, false);
+JSObject* js::InitBareSymbolCtor(JSContext* cx, HandleObject obj) {
+  return SymbolObject::initClass(cx, obj, false);
 }

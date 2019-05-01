@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,14 +16,14 @@
 
 #include "jit/CompileInfo.h"
 #include "jit/JitAllocPolicy.h"
-#include "jit/JitRealm.h"
+#include "jit/JitCompartment.h"
 #include "jit/MIR.h"
 #ifdef JS_ION_PERF
-#  include "jit/PerfSpewer.h"
+#include "jit/PerfSpewer.h"
 #endif
 #include "jit/RegisterSets.h"
+#include "vm/JSCompartment.h"
 #include "vm/JSContext.h"
-#include "vm/Realm.h"
 
 namespace js {
 namespace jit {
@@ -33,8 +33,9 @@ class OptimizationInfo;
 
 class MIRGenerator {
  public:
-  MIRGenerator(CompileRealm* realm, const JitCompileOptions& options,
-               TempAllocator* alloc, MIRGraph* graph, const CompileInfo* info,
+  MIRGenerator(CompileCompartment* compartment,
+               const JitCompileOptions& options, TempAllocator* alloc,
+               MIRGraph* graph, const CompileInfo* info,
                const OptimizationInfo* optimizationInfo);
 
   void initMinWasmHeapLength(uint32_t init) { minWasmHeapLength_ = init; }
@@ -54,9 +55,7 @@ class MIRGenerator {
   template <typename T>
   T* allocate(size_t count = 1) {
     size_t bytes;
-    if (MOZ_UNLIKELY(!CalculateAllocSize<T>(count, &bytes))) {
-      return nullptr;
-    }
+    if (MOZ_UNLIKELY(!CalculateAllocSize<T>(count, &bytes))) return nullptr;
     return static_cast<T*>(alloc().allocate(bytes));
   }
 
@@ -102,7 +101,7 @@ class MIRGenerator {
   bool safeForMinorGC() const { return safeForMinorGC_; }
   void setNotSafeForMinorGC() { safeForMinorGC_ = false; }
 
-  // Whether the main thread is trying to cancel this build.
+  // Whether the active thread is trying to cancel this build.
   bool shouldCancel(const char* why) { return cancelBuild_; }
   void cancel() { cancelBuild_ = true; }
 
@@ -125,6 +124,10 @@ class MIRGenerator {
   void setNeedsStaticStackAlignment() { needsStaticStackAlignment_ = true; }
   bool needsStaticStackAlignment() const { return needsOverrecursedCheck_; }
 
+  // Traverses the graph to find if there's any SIMD instruction. Costful but
+  // the value is cached, so don't worry about calling it several times.
+  bool usesSimd();
+
   bool modifiesFrameArguments() const { return modifiesFrameArguments_; }
 
   typedef Vector<ObjectGroup*, 0, JitAllocPolicy> ObjectGroupVector;
@@ -136,7 +139,7 @@ class MIRGenerator {
   }
 
  public:
-  CompileRealm* realm;
+  CompileCompartment* compartment;
   CompileRuntime* runtime;
 
  protected:
@@ -146,13 +149,13 @@ class MIRGenerator {
   MIRGraph* graph_;
   AbortReasonOr<Ok> offThreadStatus_;
   ObjectGroupVector abortedPreliminaryGroups_;
-  mozilla::Atomic<bool, mozilla::Relaxed,
-                  mozilla::recordreplay::Behavior::DontPreserve>
-      cancelBuild_;
+  mozilla::Atomic<bool, mozilla::Relaxed> cancelBuild_;
 
   uint32_t wasmMaxStackArgBytes_;
   bool needsOverrecursedCheck_;
   bool needsStaticStackAlignment_;
+  bool usesSimd_;
+  bool cachedUsesSimd_;
 
   // Keep track of whether frame arguments are modified during execution.
   // RegAlloc needs to know this as spilling values back to their register

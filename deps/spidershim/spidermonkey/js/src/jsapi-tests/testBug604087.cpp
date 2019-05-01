@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * Tests JS_TransplantObject
  */
@@ -17,11 +17,9 @@ const js::Class OuterWrapperClass = PROXY_CLASS_DEF(
 
 static JSObject* wrap(JSContext* cx, JS::HandleObject toWrap,
                       JS::HandleObject target) {
-  JSAutoRealm ar(cx, target);
+  JSAutoCompartment ac(cx, target);
   JS::RootedObject wrapper(cx, toWrap);
-  if (!JS_WrapObject(cx, &wrapper)) {
-    return nullptr;
-  }
+  if (!JS_WrapObject(cx, &wrapper)) return nullptr;
   return wrapper;
 }
 
@@ -47,7 +45,7 @@ BEGIN_TEST(testBug604087) {
   options.setSingleton(true);
   JS::RootedObject outerObj(
       cx, js::Wrapper::New(cx, global, &js::Wrapper::singleton, options));
-  JS::RealmOptions globalOptions;
+  JS::CompartmentOptions globalOptions;
   JS::RootedObject compartment2(
       cx, JS_NewGlobalObject(cx, getGlobalClass(), nullptr,
                              JS::FireOnNewGlobalHook, globalOptions));
@@ -76,7 +74,7 @@ BEGIN_TEST(testBug604087) {
 
   JS::RootedObject next(cx);
   {
-    JSAutoRealm ar(cx, compartment2);
+    JSAutoCompartment ac(cx, compartment2);
     next = js::Wrapper::New(cx, compartment2, &js::Wrapper::singleton, options);
     CHECK(next);
   }

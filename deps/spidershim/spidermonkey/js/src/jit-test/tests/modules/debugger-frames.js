@@ -20,7 +20,7 @@ function assertArrayEq(actual, expected)
     }
 }
 
-var g2 = newGlobal({newCompartment: true});
+var g2 = newGlobal();
 
 var dbg = Debugger(g2);
 dbg.onDebuggerStatement = function (frame) {

@@ -30,11 +30,15 @@
     <ProjectGuid>{B1D53358-37BD-48BC-B27C-68BAF1E78508}</ProjectGuid>
     <Keyword>MakeFileProj</Keyword>
     <DefaultLanguage>en-US</DefaultLanguage>
+    <MinimumVisualStudioVersion>14.0</MinimumVisualStudioVersion>
+    <AppContainerApplication>true</AppContainerApplication>
+    <ApplicationType>Windows Store</ApplicationType>
+    <WindowsTargetPlatformVersion>10.0.10586.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformMinVersion>10.0.10240.0</WindowsTargetPlatformMinVersion>
+    <ApplicationTypeRevision>10.0</ApplicationTypeRevision>
     <ConfigurationType>Makefile</ConfigurationType>
     <UseOfMfc>false</UseOfMfc>
   </PropertyGroup>
-  <!-- The following import will include the 'default' configuration options for VS UWP projects. -->
-  <Import Project="..\allinone\Build.Windows.UWP.ProjectConfiguration.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -127,10 +131,7 @@
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>
-  <Target Name="Build" Condition="'$(SkipUWP)'=='true'">
-    <Message Text="Skipping building the UWP project: $(MSBuildThisFile)" Importance="high" />
-  </Target>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" Condition="'$(SkipUWP)'!='true'" />
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>

@@ -1,10 +1,10 @@
 gczeal(0);
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = Debugger(g);
 dbg.onEnterFrame = function(frame) {};
 
-var g2 = newGlobal({newCompartment: true});
+var g2 = newGlobal();
 g2[g] = g;
 g2.evaluate("grayRoot()")
 g2 = undefined;

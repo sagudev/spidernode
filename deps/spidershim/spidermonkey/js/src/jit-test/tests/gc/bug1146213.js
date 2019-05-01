@@ -1,4 +1,15 @@
-// |jit-test| skip-if: !(getBuildConfiguration()['has-gczeal']) || helperThreadCount() === 0
+if (!("setGCCallback" in this &&
+      "schedulegc" in this &&
+      "gcslice" in this &&
+      "newGlobal" in this &&
+      "helperThreadCount" in this))
+{
+    quit();
+}
+
+if (helperThreadCount() == 0)
+    quit();
+
 setGCCallback({
   action: "majorGC",
 });

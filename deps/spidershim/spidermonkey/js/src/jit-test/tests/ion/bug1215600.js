@@ -1,5 +1,3 @@
-// |jit-test| slow
-
 lfcode = Array()
 lfcode.push("5")
 lfcode.push("")

@@ -1,6 +1,6 @@
 // In a debuggee with live objects, findObjects finds those objects.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 
 let defObject = v => g.eval(`this.${v} = { toString: () => "[object ${v}]" }`);
 defObject("a");

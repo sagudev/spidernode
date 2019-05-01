@@ -1,6 +1,6 @@
 // Test how stepping interacts with switch statements.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 
 g.eval('function bob() { return "bob"; }');
 

@@ -1,4 +1,4 @@
-// |jit-test| --no-threads; --ion-eager;
+// |jit-test| --no-threads; --ion-eager; --ion-shared-stubs=off
 setJitCompilerOption('ion.forceinlineCaches', 1);
 function foo(t) {
     "use strict";

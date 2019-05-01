@@ -5,32 +5,13 @@
 
 from __future__ import absolute_import
 
-from mozterm import Terminal
 import time
+
+from mozterm import Terminal
+
 from . import base
 from .process import strstatus
-from .tbplformatter import TbplFormatter
 from ..handlers import SummaryHandler
-import six
-from functools import reduce
-
-color_dict = {
-    'log_test_status_fail': 'red',
-    'log_process_output': 'blue',
-    'log_test_status_pass': 'green',
-    'log_test_status_unexpected_fail': 'red',
-    'time': 'cyan',
-    'action': 'yellow',
-    'pid': 'cyan',
-    'heading': 'bold_yellow',
-    'sub_heading': 'yellow',
-    'error': 'red',
-    'warning': 'yellow',
-    'bold': 'bold',
-    'grey': 'grey',
-    'normal': 'normal',
-    'dim': 'dim'
-}
 
 
 def format_seconds(total):
@@ -39,17 +20,10 @@ def format_seconds(total):
     return '%2d:%05.2f' % (minutes, seconds)
 
 
-class TerminalColors(object):
-    def __init__(self, term, color_dict):
-        for key, value in color_dict.items():
-            setattr(self, key, getattr(term, value))
-
-
 class MachFormatter(base.BaseFormatter):
 
     def __init__(self, start_time=None, write_interval=False, write_times=True,
-                 terminal=None, disable_colors=False, summary_on_shutdown=False,
-                 verbose=False, enable_screenshot=False, **kwargs):
+                 terminal=None, disable_colors=False, summary_on_shutdown=False, **kwargs):
         super(MachFormatter, self).__init__(**kwargs)
 
         if start_time is None:
@@ -61,25 +35,12 @@ class MachFormatter(base.BaseFormatter):
         self.status_buffer = {}
         self.has_unexpected = {}
         self.last_time = None
-        self.color_formatter = TerminalColors(
-            Terminal(disable_styling=disable_colors), color_dict)
-        self.verbose = verbose
+        self.term = Terminal(disable_styling=disable_colors)
+        self.verbose = False
         self._known_pids = set()
-        self.tbpl_formatter = None
-        self.enable_screenshot = enable_screenshot
+
         self.summary = SummaryHandler()
         self.summary_on_shutdown = summary_on_shutdown
-
-        message_handlers = {"colors": {
-            "on": self._enable_colors,
-            "off": self._disable_colors,
-        }, "summary_on_shutdown": {
-            "on": self._enable_summary_on_shutdown,
-            "off": self._disable_summary_on_shutdown
-        }}
-
-        for topic, handlers in message_handlers.items():
-            self.message_handler.register_message_handlers(topic, handlers)
 
     def __call__(self, data):
         self.summary(data)
@@ -88,20 +49,8 @@ class MachFormatter(base.BaseFormatter):
         if s is None:
             return
 
-        time = self.color_formatter.time(format_seconds(self._time(data)))
+        time = self.term.dim_blue(format_seconds(self._time(data)))
         return "%s %s\n" % (time, s)
-
-    def _enable_colors(self):
-        self.disable_colors = False
-
-    def _disable_colors(self):
-        self.disable_colors = True
-
-    def _enable_summary_on_shutdown(self):
-        self.summary_on_shutdown = True
-
-    def _disable_summary_on_shutdown(self):
-        self.summary_on_shutdown = False
 
     def _get_test_id(self, data):
         test_id = data.get("test")
@@ -110,7 +59,7 @@ class MachFormatter(base.BaseFormatter):
         return test_id
 
     def _get_file_name(self, test_id):
-        if isinstance(test_id, (str, six.text_type)):
+        if isinstance(test_id, (str, unicode)):
             return test_id
 
         if isinstance(test_id, tuple):
@@ -119,62 +68,37 @@ class MachFormatter(base.BaseFormatter):
         assert False, "unexpected test_id"
 
     def suite_start(self, data):
-        num_tests = reduce(lambda x, y: x + len(y), six.itervalues(data['tests']), 0)
-        action = self.color_formatter.action(data['action'].upper())
+        num_tests = reduce(lambda x, y: x + len(y), data['tests'].itervalues(), 0)
+        action = self.term.yellow(data['action'].upper())
         name = ""
         if 'name' in data:
             name = " %s -" % (data['name'],)
         return "%s:%s running %i tests" % (action, name, num_tests)
 
     def suite_end(self, data):
-        action = self.color_formatter.action(data['action'].upper())
+        action = self.term.yellow(data['action'].upper())
         rv = [action]
         if not self.summary_on_shutdown:
-            rv.append(
-                self._format_suite_summary(
-                    self.summary.current_suite,
-                    self.summary.current))
+            rv.append(self._format_suite_summary(self.summary.current_suite, self.summary.current))
         return "\n".join(rv)
 
     def _format_expected(self, status, expected):
-        if status == expected:
-            color = self.color_formatter.log_test_status_pass
-            if expected not in ("PASS", "OK"):
-                color = self.color_formatter.log_test_status_fail
-                status = "EXPECTED-%s" % status
-        else:
-            color = self.color_formatter.log_test_status_fail
-            if status in ("PASS", "OK"):
-                status = "UNEXPECTED-%s" % status
-        return color(status)
+        color = self.term.red
+        if expected in ("PASS", "OK"):
+            return color(status)
 
-    def _format_status(self, test, data):
-        name = data.get("subtest", test)
-        rv = "%s %s" % (self._format_expected(
-            data["status"], data.get("expected", data["status"])), name)
-        if "message" in data:
-            rv += " - %s" % data["message"]
-        if "stack" in data:
-            rv += self._format_stack(data["stack"])
-        return rv
-
-    def _format_stack(self, stack):
-        return "\n%s\n" % self.color_formatter.dim(stack.strip("\n"))
+        return color("%s expected %s" % (status, expected))
 
     def _format_suite_summary(self, suite, summary):
         count = summary['counts']
         logs = summary['unexpected_logs']
 
-        rv = [
-            "",
-            self.color_formatter.sub_heading(suite),
-            self.color_formatter.sub_heading(
-                "~" * len(suite))]
+        rv = ["", self.term.yellow(suite), self.term.yellow("~" * len(suite))]
 
         # Format check counts
         checks = self.summary.aggregate('count', count)
-        rv.append("Ran {} checks ({})".format(sum(checks.values()), ', '.join(
-            ['{} {}s'.format(v, k) for k, v in sorted(checks.items()) if v])))
+        rv.append("Ran {} checks ({})".format(sum(checks.values()),
+                  ', '.join(['{} {}s'.format(v, k) for k, v in checks.items() if v])))
 
         # Format expected counts
         checks = self.summary.aggregate('expected', count, include_skip=False)
@@ -198,39 +122,49 @@ class MachFormatter(base.BaseFormatter):
                 if not count[key]['unexpected']:
                     continue
                 status_str = ", ".join(["{} {}".format(n, s)
-                                        for s, n in sorted(count[key]['unexpected'].items())])
+                                        for s, n in count[key]['unexpected'].items()])
                 rv.append("  {}: {} ({})".format(
                           key, sum(count[key]['unexpected'].values()), status_str))
 
         # Format status
         if not any(count[key]["unexpected"] for key in ('test', 'subtest', 'assert')):
-            rv.append(self.color_formatter.log_test_status_pass("OK"))
+            rv.append(self.term.green("OK"))
         else:
-            heading = "Unexpected Results"
-            rv.extend(["", self.color_formatter.heading(heading),
-                       self.color_formatter.heading("-" * len(heading))])
+            heading = "Unexpected Logs"
+            rv.extend(["", heading, "-" * len(heading)])
             if count['subtest']['count']:
                 for test_id, results in logs.items():
                     test = self._get_file_name(test_id)
-                    rv.append(self.color_formatter.bold(test))
+                    rv.append(test)
                     for data in results:
-                        rv.append("  %s" % self._format_status(test, data).rstrip())
+                        name = data.get("subtest", "[Parent]")
+                        rv.append("  %s %s" % (self._format_expected(
+                                             data["status"], data["expected"]), name))
             else:
                 for test_id, results in logs.items():
                     test = self._get_file_name(test_id)
+                    rv.append(test)
                     assert len(results) == 1
                     data = results[0]
                     assert "subtest" not in data
-                    rv.append(self._format_status(test, data).rstrip())
+                    rv.append("  %s %s" % (self._format_expected(
+                                           data["status"], data["expected"]), test))
 
         return "\n".join(rv)
 
     def test_start(self, data):
-        action = self.color_formatter.action(data['action'].upper())
+        action = self.term.yellow(data['action'].upper())
         return "%s: %s" % (action, self._get_test_id(data))
 
     def test_end(self, data):
         subtests = self._get_subtest_data(data)
+
+        message = data.get("message", "")
+        if "stack" in data:
+            stack = data["stack"]
+            if stack and stack[-1] != "\n":
+                stack += "\n"
+            message = stack + message
 
         if "expected" in data:
             parent_unexpected = True
@@ -238,8 +172,6 @@ class MachFormatter(base.BaseFormatter):
         else:
             parent_unexpected = False
             expected_str = ""
-
-        has_screenshots = "reftest_screenshots" in data.get("extra", {})
 
         test = self._get_test_id(data)
 
@@ -256,30 +188,23 @@ class MachFormatter(base.BaseFormatter):
 
         unexpected = self.summary.current["unexpected_logs"].get(data["test"])
         if unexpected:
+            rv += "\n"
             if len(unexpected) == 1 and parent_unexpected:
-                message = unexpected[0].get("message", "")
-                if message:
-                    rv += " - %s" % message
-                if "stack" in data:
-                    rv += self._format_stack(data["stack"])
-            elif not self.verbose:
-                rv += "\n"
-                for d in unexpected:
-                    rv += self._format_status(data['test'], d)
+                rv += "%s" % unexpected[0].get("message", "")
+            else:
+                for data in unexpected:
+                    name = data.get("subtest", "[Parent]")
+                    expected_str = "Expected %s, got %s" % (data["expected"], data["status"])
+                    rv += "%s\n" % (
+                        "\n".join([name, "-" * len(name), expected_str, data.get("message", "")]))
+                rv = rv[:-1]
 
         if "expected" not in data and not bool(subtests['unexpected']):
-            color = self.color_formatter.log_test_status_pass
+            color = self.term.green
         else:
-            color = self.color_formatter.log_test_status_unexpected_fail
-
+            color = self.term.red
         action = color(data['action'].upper())
-        rv = "%s: %s" % (action, rv)
-        if has_screenshots and self.enable_screenshot:
-            if self.tbpl_formatter is None:
-                self.tbpl_formatter = TbplFormatter()
-            # Create TBPL-like output that can be pasted into the reftest analyser
-            rv = "\n".join((rv, self.tbpl_formatter.test_end(data)))
-        return rv
+        return "%s: %s" % (action, rv)
 
     def valgrind_error(self, data):
         rv = " " + data['primary'] + "\n"
@@ -288,79 +213,33 @@ class MachFormatter(base.BaseFormatter):
 
         return rv
 
-    def lsan_leak(self, data):
-        allowed = data.get("allowed_match")
-        if allowed:
-            prefix = self.color_formatter.log_test_status_fail("FAIL")
-        else:
-            prefix = self.color_formatter.log_test_status_unexpected_fail("UNEXPECTED-FAIL")
-
-        return "%s LeakSanitizer: leak at %s" % (prefix, ", ".join(data["frames"]))
-
-    def lsan_summary(self, data):
-        allowed = data.get("allowed", False)
-        if allowed:
-            prefix = self.color_formatter.warning("WARNING")
-        else:
-            prefix = self.color_formatter.error("ERROR")
-
-        return ("%s | LeakSanitizer | "
-                "SUMMARY: AddressSanitizer: %d byte(s) leaked in %d allocation(s)." %
-                (prefix, data["bytes"], data["allocations"]))
-
-    def mozleak_object(self, data):
-        data_log = data.copy()
-        data_log["level"] = "INFO"
-        data_log["message"] = ("leakcheck: %s leaked %d %s" %
-                               (data["process"], data["bytes"], data["name"]))
-        return self.log(data_log)
-
-    def mozleak_total(self, data):
-        if data["bytes"] is None:
-            # We didn't see a line with name 'TOTAL'
-            if data.get("induced_crash", False):
-                data_log = data.copy()
-                data_log["level"] = "INFO"
-                data_log["message"] = ("leakcheck: %s deliberate crash and thus no leak log\n"
-                                       % data["process"])
-                return self.log(data_log)
-            if data.get("ignore_missing", False):
-                return ("%s ignoring missing output line for total leaks\n" %
-                        data["process"])
-
-            status = self.color_formatter.log_test_status_pass("FAIL")
-            return ("%s leakcheck: "
-                    "%s missing output line for total leaks!\n" %
-                    (status, data["process"]))
-
-        if data["bytes"] == 0:
-            return (
-                "%s leakcheck: %s no leaks detected!\n" %
-                (self.color_formatter.log_test_status_pass("PASS"),
-                    data["process"]))
-
-        message = "leakcheck: %s %d bytes leaked\n" % (data["process"], data["bytes"])
-
-        # data["bytes"] will include any expected leaks, so it can be off
-        # by a few thousand bytes.
-        failure = data["bytes"] > data["threshold"]
-        status = self.color_formatter.log_test_status_unexpected_fail(
-            "UNEXPECTED-FAIL") if failure else self.color_formatter.log_test_status_fail("FAIL")
-        return "%s %s\n" % (status, message)
-
     def test_status(self, data):
         test = self._get_test_id(data)
         if test not in self.status_buffer:
             self.status_buffer[test] = {"count": 0, "unexpected": 0, "pass": 0}
         self.status_buffer[test]["count"] += 1
 
+        message = data.get("message", "")
+        if "stack" in data:
+            if message:
+                message += "\n"
+            message += data["stack"]
+
         if data["status"] == "PASS":
             self.status_buffer[test]["pass"] += 1
 
-        if 'expected' in data:
-            self.status_buffer[test]["unexpected"] += 1
+        rv = None
+        status, subtest = data["status"], data["subtest"]
+        unexpected = "expected" in data
         if self.verbose:
-            return self._format_status(test, data).rstrip('\n')
+            status = (self.term.red if unexpected else self.term.green)(status)
+            rv = " ".join([subtest, status, message])
+
+        if unexpected:
+            self.status_buffer[test]["unexpected"] += 1
+        if rv:
+            action = self.term.yellow(data['action'].upper())
+            return "%s: %s" % (action, rv)
 
     def assertion_count(self, data):
         if data["min_expected"] <= data["count"] <= data["max_expected"]:
@@ -372,9 +251,9 @@ class MachFormatter(base.BaseFormatter):
         else:
             expected = "%i" % data["min_expected"]
 
-        action = self.color_formatter.log_test_status_fail("ASSERT")
-        return "%s: Assertion count %i, expected %s assertions\n" % (
-            action, data["count"], expected)
+        action = self.term.red("ASSERT")
+        return "%s: Assertion count %i, expected %i assertions\n" % (
+                action, data["count"], expected)
 
     def process_output(self, data):
         rv = []
@@ -382,7 +261,7 @@ class MachFormatter(base.BaseFormatter):
         pid = data['process']
         if pid.isdigit():
             pid = 'pid:%s' % pid
-        pid = self.color_formatter.pid(pid)
+        pid = self.term.dim_cyan(pid)
 
         if "command" in data and data["process"] not in self._known_pids:
             self._known_pids.add(data["process"])
@@ -422,7 +301,7 @@ class MachFormatter(base.BaseFormatter):
         if not rv[-1] == "\n":
             rv += "\n"
 
-        action = self.color_formatter.action(data['action'].upper())
+        action = self.term.red(data['action'].upper())
         return "%s: %s" % (action, rv)
 
     def process_start(self, data):
@@ -439,11 +318,11 @@ class MachFormatter(base.BaseFormatter):
         level = data.get("level").upper()
 
         if level in ("CRITICAL", "ERROR"):
-            level = self.color_formatter.error(level)
+            level = self.term.red(level)
         elif level == "WARNING":
-            level = self.color_formatter.warning(level)
+            level = self.term.yellow(level)
         elif level == "INFO":
-            level = self.color_formatter.log_process_output(level)
+            level = self.term.blue(level)
 
         if data.get('component'):
             rv = " ".join([data["component"], level, data["message"]])
@@ -460,10 +339,9 @@ class MachFormatter(base.BaseFormatter):
               "  {c1}{rule}({linter}){normal}"
         message = fmt.format(
             path=data["path"],
-            normal=self.color_formatter.normal,
-            c1=self.color_formatter.grey,
-            c2=self.color_formatter.error if data["level"] == 'error' else (
-                self.color_formatter.log_test_status_fail),
+            normal=self.term.normal,
+            c1=self.term.grey,
+            c2=self.term.red if data["level"] == 'error' else self.term.yellow,
             lineno=str(data["lineno"]),
             column=(":" + str(data["column"])) if data.get("column") else "",
             level=data["level"],
@@ -479,9 +357,7 @@ class MachFormatter(base.BaseFormatter):
             return
 
         heading = "Overall Summary"
-        rv = [
-            "", self.color_formatter.heading(heading), self.color_formatter.heading(
-                "=" * len(heading))]
+        rv = ["", self.term.bold_yellow(heading), self.term.bold_yellow("=" * len(heading))]
         for suite, summary in self.summary:
             rv.append(self._format_suite_summary(suite, summary))
         return "\n".join(rv)

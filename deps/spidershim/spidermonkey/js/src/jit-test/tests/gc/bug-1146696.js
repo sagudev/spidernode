@@ -1,7 +1,7 @@
 // |jit-test| --no-ggc; allow-oom; allow-unhandlable-oom
 gc();
 dbg1 = new Debugger();
-root2 = newGlobal({newCompartment: true});
+root2 = newGlobal();
 dbg1.memory.onGarbageCollection = function(){}
 dbg1.addDebuggee(root2);
 for (var j = 0; j < 9999; ++j) {

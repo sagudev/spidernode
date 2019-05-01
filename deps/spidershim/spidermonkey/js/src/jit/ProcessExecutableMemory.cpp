@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,62 +20,54 @@
 #include "jsutil.h"
 
 #include "gc/Memory.h"
-#ifdef JS_CODEGEN_ARM64
-#  include "jit/arm64/vixl/Cpu-vixl.h"
-#endif
-#include "jit/AtomicOperations.h"
 #include "threading/LockGuard.h"
 #include "threading/Mutex.h"
 #include "util/Windows.h"
 #include "vm/MutexIDs.h"
 
 #ifdef XP_WIN
-#  include "mozilla/StackWalk_windows.h"
-#  include "mozilla/WindowsVersion.h"
+#include "mozilla/StackWalk_windows.h"
+#include "mozilla/WindowsVersion.h"
 #else
-#  include <sys/mman.h>
-#  include <unistd.h>
+#include <sys/mman.h>
+#include <unistd.h>
 #endif
 
 #ifdef MOZ_VALGRIND
-#  include <valgrind/valgrind.h>
+#include <valgrind/valgrind.h>
 #endif
 
 using namespace js;
 using namespace js::jit;
 
 #ifdef XP_WIN
-#  if defined(HAVE_64BIT_BUILD)
-#    define NEED_JIT_UNWIND_HANDLING
-#  endif
-
 static void* ComputeRandomAllocationAddress() {
-  /*
-   * Inspiration is V8's OS::Allocate in platform-win32.cc.
-   *
-   * VirtualAlloc takes 64K chunks out of the virtual address space, so we
-   * keep 16b alignment.
-   *
-   * x86: V8 comments say that keeping addresses in the [64MiB, 1GiB) range
-   * tries to avoid system default DLL mapping space. In the end, we get 13
-   * bits of randomness in our selection.
-   * x64: [2GiB, 4TiB), with 25 bits of randomness.
-   */
-#  ifdef HAVE_64BIT_BUILD
+/*
+ * Inspiration is V8's OS::Allocate in platform-win32.cc.
+ *
+ * VirtualAlloc takes 64K chunks out of the virtual address space, so we
+ * keep 16b alignment.
+ *
+ * x86: V8 comments say that keeping addresses in the [64MiB, 1GiB) range
+ * tries to avoid system default DLL mapping space. In the end, we get 13
+ * bits of randomness in our selection.
+ * x64: [2GiB, 4TiB), with 25 bits of randomness.
+ */
+#ifdef HAVE_64BIT_BUILD
   static const uintptr_t base = 0x0000000080000000;
   static const uintptr_t mask = 0x000003ffffff0000;
-#  elif defined(_M_IX86) || defined(__i386__)
+#elif defined(_M_IX86) || defined(__i386__)
   static const uintptr_t base = 0x04000000;
   static const uintptr_t mask = 0x3fff0000;
-#  else
-#    error "Unsupported architecture"
-#  endif
+#else
+#error "Unsupported architecture"
+#endif
 
   uint64_t rand = js::GenerateRandomSeed();
   return (void*)(base | (rand & mask));
 }
 
-#  ifdef NEED_JIT_UNWIND_HANDLING
+#ifdef HAVE_64BIT_BUILD
 static js::JitExceptionHandler sJitExceptionHandler;
 
 JS_FRIEND_API void js::SetJitExceptionHandler(JitExceptionHandler handler) {
@@ -83,24 +75,6 @@ JS_FRIEND_API void js::SetJitExceptionHandler(JitExceptionHandler handler) {
   sJitExceptionHandler = handler;
 }
 
-#    if defined(_M_ARM64)
-// See the ".xdata records" section of
-// https://docs.microsoft.com/en-us/cpp/build/arm64-exception-handling
-// These records can have various fields present or absent depending on the
-// bits set in the header. Our struct will use one 32-bit slot for unwind codes,
-// and no slots for epilog scopes.
-struct UnwindInfo {
-  uint32_t functionLength : 18;
-  uint32_t version : 2;
-  uint32_t hasExceptionHandler : 1;
-  uint32_t packedEpilog : 1;
-  uint32_t epilogCount : 5;
-  uint32_t codeWords : 5;
-  uint8_t unwindCodes[4];
-  uint32_t exceptionHandler;
-};
-static const unsigned ThunkLength = 20;
-#    else
 // From documentation for UNWIND_INFO on
 // http://msdn.microsoft.com/en-us/library/ddssxxy8.aspx
 struct UnwindInfo {
@@ -112,8 +86,8 @@ struct UnwindInfo {
   uint8_t frameOffset : 4;
   ULONG exceptionHandler;
 };
+
 static const unsigned ThunkLength = 12;
-#    endif
 
 struct ExceptionHandlerRecord {
   RUNTIME_FUNCTION runtimeFunction;
@@ -132,24 +106,12 @@ static DWORD ExceptionHandler(PEXCEPTION_RECORD exceptionRecord,
   return sJitExceptionHandler(exceptionRecord, context);
 }
 
-PRUNTIME_FUNCTION RuntimeFunctionCallback(DWORD64 ControlPc, PVOID Context);
-
 // For an explanation of the problem being solved here, see
 // SetJitExceptionFilter in jsfriendapi.h.
 static bool RegisterExecutableMemory(void* p, size_t bytes, size_t pageSize) {
-  if (!VirtualAlloc(p, pageSize, MEM_COMMIT, PAGE_READWRITE)) {
-    MOZ_CRASH();
-  }
+  if (!VirtualAlloc(p, pageSize, MEM_COMMIT, PAGE_READWRITE)) MOZ_CRASH();
 
   ExceptionHandlerRecord* r = reinterpret_cast<ExceptionHandlerRecord*>(p);
-  void* handler = JS_FUNC_TO_DATA_PTR(void*, ExceptionHandler);
-
-  // Because the .xdata format on ARM64 can only encode sizes up to 1M (much
-  // too small for our JIT code regions), we register a function table callback
-  // to provide RUNTIME_FUNCTIONs at runtime. Windows doesn't seem to care about
-  // the size fields on RUNTIME_FUNCTIONs that are created in this way, so the
-  // same RUNTIME_FUNCTION can work for any address in the region. We'll set up
-  // a generic one now and the callback can just return a pointer to it.
 
   // All these fields are specified to be offsets from the base of the
   // executable code (which is 'p'), even if they have 'Address' in their
@@ -159,38 +121,6 @@ static bool RegisterExecutableMemory(void* p, size_t bytes, size_t pageSize) {
   // record. The record is put on its own page so that we can take away write
   // access to protect against accidental clobbering.
 
-#    if defined(_M_ARM64)
-  r->runtimeFunction.BeginAddress = pageSize;
-  r->runtimeFunction.UnwindData = offsetof(ExceptionHandlerRecord, unwindInfo);
-  static_assert(offsetof(ExceptionHandlerRecord, unwindInfo) % 4 == 0,
-                "The ARM64 .pdata format requires that exception information "
-                "RVAs be 4-byte aligned.");
-
-  memset(&r->unwindInfo, 0, sizeof(r->unwindInfo));
-  r->unwindInfo.hasExceptionHandler = true;
-  r->unwindInfo.exceptionHandler = offsetof(ExceptionHandlerRecord, thunk);
-
-  // Use a fake unwind code to make the Windows unwinder do _something_. If the
-  // PC and SP both stay unchanged, we'll fail the unwinder's sanity checks and
-  // it won't call our exception handler.
-  r->unwindInfo.codeWords = 1;  // one 32-bit word gives us up to 4 codes
-  r->unwindInfo.unwindCodes[0] =
-      0b00000001;  // alloc_s small stack of size 1*16
-  r->unwindInfo.unwindCodes[1] = 0b11100100;  // end
-
-  uint32_t* thunk = (uint32_t*)r->thunk;
-  uint16_t* addr = (uint16_t*)&handler;
-
-  // xip0/r16 should be safe to clobber: Windows just used it to call our thunk.
-  const uint8_t reg = 16;
-
-  // Say `handler` is 0x4444333322221111, then:
-  thunk[0] = 0xd2800000 | addr[0] << 5 | reg;  // mov  xip0, 1111
-  thunk[1] = 0xf2a00000 | addr[1] << 5 | reg;  // movk xip0, 2222 lsl #0x10
-  thunk[2] = 0xf2c00000 | addr[2] << 5 | reg;  // movk xip0, 3333 lsl #0x20
-  thunk[3] = 0xf2e00000 | addr[3] << 5 | reg;  // movk xip0, 4444 lsl #0x30
-  thunk[4] = 0xd61f0000 | reg << 5;            // br xip0
-#    else
   r->runtimeFunction.BeginAddress = pageSize;
   r->runtimeFunction.EndAddress = (DWORD)bytes;
   r->runtimeFunction.UnwindData = offsetof(ExceptionHandlerRecord, unwindInfo);
@@ -206,58 +136,55 @@ static bool RegisterExecutableMemory(void* p, size_t bytes, size_t pageSize) {
   // mov imm64, rax
   r->thunk[0] = 0x48;
   r->thunk[1] = 0xb8;
+  void* handler = JS_FUNC_TO_DATA_PTR(void*, ExceptionHandler);
   memcpy(&r->thunk[2], &handler, 8);
 
   // jmp rax
   r->thunk[10] = 0xff;
   r->thunk[11] = 0xe0;
-#    endif
 
   DWORD oldProtect;
-  if (!VirtualProtect(p, pageSize, PAGE_EXECUTE_READ, &oldProtect)) {
-    MOZ_CRASH();
-  }
+  if (!VirtualProtect(p, pageSize, PAGE_EXECUTE_READ, &oldProtect)) MOZ_CRASH();
 
   // XXX NB: The profiler believes this function is only called from the main
   // thread. If that ever becomes untrue, the profiler must be updated
   // immediately.
   AutoSuppressStackWalking suppress;
-  return RtlInstallFunctionTableCallback((DWORD64)p | 0x3, (DWORD64)p, bytes,
-                                         RuntimeFunctionCallback, NULL, NULL);
+  return RtlAddFunctionTable(&r->runtimeFunction, 1,
+                             reinterpret_cast<DWORD64>(p));
 }
 
 static void UnregisterExecutableMemory(void* p, size_t bytes, size_t pageSize) {
-  // There's no such thing as RtlUninstallFunctionTableCallback, so there's
-  // nothing to do here.
+  ExceptionHandlerRecord* r = reinterpret_cast<ExceptionHandlerRecord*>(p);
+
+  // XXX NB: The profiler believes this function is only called from the main
+  // thread. If that ever becomes untrue, the profiler must be updated
+  // immediately.
+  AutoSuppressStackWalking suppress;
+  RtlDeleteFunctionTable(&r->runtimeFunction);
 }
-#  endif
+#endif
 
 static void* ReserveProcessExecutableMemory(size_t bytes) {
-#  ifdef NEED_JIT_UNWIND_HANDLING
+#ifdef HAVE_64BIT_BUILD
   size_t pageSize = gc::SystemPageSize();
-  if (sJitExceptionHandler) {
-    bytes += pageSize;
-  }
-#  endif
+  if (sJitExceptionHandler) bytes += pageSize;
+#endif
 
   void* p = nullptr;
   for (size_t i = 0; i < 10; i++) {
     void* randomAddr = ComputeRandomAllocationAddress();
     p = VirtualAlloc(randomAddr, bytes, MEM_RESERVE, PAGE_NOACCESS);
-    if (p) {
-      break;
-    }
+    if (p) break;
   }
 
   if (!p) {
     // Try again without randomization.
     p = VirtualAlloc(nullptr, bytes, MEM_RESERVE, PAGE_NOACCESS);
-    if (!p) {
-      return nullptr;
-    }
+    if (!p) return nullptr;
   }
 
-#  ifdef NEED_JIT_UNWIND_HANDLING
+#ifdef HAVE_64BIT_BUILD
   if (sJitExceptionHandler) {
     if (!RegisterExecutableMemory(p, bytes, pageSize)) {
       VirtualFree(p, 0, MEM_RELEASE);
@@ -269,13 +196,13 @@ static void* ReserveProcessExecutableMemory(size_t bytes) {
   }
 
   RegisterJitCodeRegion((uint8_t*)p, bytes);
-#  endif
+#endif
 
   return p;
 }
 
 static void DeallocateProcessExecutableMemory(void* addr, size_t bytes) {
-#  ifdef NEED_JIT_UNWIND_HANDLING
+#ifdef HAVE_64BIT_BUILD
   UnregisterJitCodeRegion((uint8_t*)addr, bytes);
 
   if (sJitExceptionHandler) {
@@ -283,7 +210,7 @@ static void DeallocateProcessExecutableMemory(void* addr, size_t bytes) {
     addr = (uint8_t*)addr - pageSize;
     UnregisterExecutableMemory(addr, bytes, pageSize);
   }
-#  endif
+#endif
 
   VirtualFree(addr, 0, MEM_RELEASE);
 }
@@ -304,35 +231,32 @@ static MOZ_MUST_USE bool CommitPages(void* addr, size_t bytes,
                                      ProtectionSetting protection) {
   void* p = VirtualAlloc(addr, bytes, MEM_COMMIT,
                          ProtectionSettingToFlags(protection));
-  if (!p) {
-    return false;
-  }
+  if (!p) return false;
   MOZ_RELEASE_ASSERT(p == addr);
   return true;
 }
 
 static void DecommitPages(void* addr, size_t bytes) {
-  if (!VirtualFree(addr, bytes, MEM_DECOMMIT)) {
+  if (!VirtualFree(addr, bytes, MEM_DECOMMIT))
     MOZ_CRASH("DecommitPages failed");
-  }
 }
 #else  // !XP_WIN
 static void* ComputeRandomAllocationAddress() {
   uint64_t rand = js::GenerateRandomSeed();
 
-#  ifdef HAVE_64BIT_BUILD
+#ifdef HAVE_64BIT_BUILD
   // x64 CPUs have a 48-bit address space and on some platforms the OS will
   // give us access to 47 bits, so to be safe we right shift by 18 to leave
   // 46 bits.
   rand >>= 18;
-#  else
+#else
   // On 32-bit, right shift by 34 to leave 30 bits, range [0, 1GiB). Then add
   // 512MiB to get range [512MiB, 1.5GiB), or [0x20000000, 0x60000000). This
   // is based on V8 comments in platform-posix.cc saying this range is
   // relatively unpopulated across a variety of kernels.
   rand >>= 34;
   rand += 512 * 1024 * 1024;
-#  endif
+#endif
 
   // Ensure page alignment.
   uintptr_t mask = ~uintptr_t(gc::SystemPageSize() - 1);
@@ -346,9 +270,7 @@ static void* ReserveProcessExecutableMemory(size_t bytes) {
   void* p = MozTaggedAnonymousMmap(randomAddr, bytes, PROT_NONE,
                                    MAP_PRIVATE | MAP_ANON, -1, 0,
                                    "js-executable-memory");
-  if (p == MAP_FAILED) {
-    return nullptr;
-  }
+  if (p == MAP_FAILED) return nullptr;
   return p;
 }
 
@@ -358,7 +280,7 @@ static void DeallocateProcessExecutableMemory(void* addr, size_t bytes) {
 }
 
 static unsigned ProtectionSettingToFlags(ProtectionSetting protection) {
-#  ifdef MOZ_VALGRIND
+#ifdef MOZ_VALGRIND
   // If we're configured for Valgrind and running on it, use a slacker
   // scheme that doesn't change execute permissions, since doing so causes
   // Valgrind a lot of extra overhead re-JITting code that loses and later
@@ -374,9 +296,9 @@ static unsigned ProtectionSettingToFlags(ProtectionSetting protection) {
     }
     MOZ_CRASH();
   }
-  // If we get here, we're configured for Valgrind but not running on
-  // it, so use the standard scheme.
-#  endif
+    // If we get here, we're configured for Valgrind but not running on
+    // it, so use the standard scheme.
+#endif
   switch (protection) {
     case ProtectionSetting::Protected:
       return PROT_NONE;
@@ -393,9 +315,7 @@ static MOZ_MUST_USE bool CommitPages(void* addr, size_t bytes,
   void* p = MozTaggedAnonymousMmap(
       addr, bytes, ProtectionSettingToFlags(protection),
       MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0, "js-executable-memory");
-  if (p == MAP_FAILED) {
-    return false;
-  }
+  if (p == MAP_FAILED) return false;
   MOZ_RELEASE_ASSERT(p == addr);
   return true;
 }
@@ -450,9 +370,7 @@ class PageBitSet {
 #ifdef DEBUG
   bool empty() const {
     for (size_t i = 0; i < NumWords; i++) {
-      if (words_[i] != 0) {
-        return false;
-      }
+      if (words_[i] != 0) return false;
     }
     return true;
   }
@@ -491,9 +409,7 @@ class ProcessExecutableMemory {
 
   // pagesAllocated_ is an Atomic so that bytesAllocated does not have to
   // take the lock.
-  mozilla::Atomic<size_t, mozilla::ReleaseAcquire,
-                  mozilla::recordreplay::Behavior::DontPreserve>
-      pagesAllocated_;
+  mozilla::Atomic<size_t, mozilla::ReleaseAcquire> pagesAllocated_;
 
   // Page where we should try to allocate next.
   size_t cursor_;
@@ -517,9 +433,7 @@ class ProcessExecutableMemory {
     MOZ_RELEASE_ASSERT(gc::SystemPageSize() <= ExecutableCodePageSize);
 
     void* p = ReserveProcessExecutableMemory(MaxCodeBytesPerProcess);
-    if (!p) {
-      return false;
-    }
+    if (!p) return false;
 
     base_ = static_cast<uint8_t*>(p);
 
@@ -528,8 +442,6 @@ class ProcessExecutableMemory {
     rng_.emplace(seed[0], seed[1]);
     return true;
   }
-
-  uint8_t* base() const { return base_; }
 
   bool initialized() const { return base_ != nullptr; }
 
@@ -554,14 +466,12 @@ class ProcessExecutableMemory {
                            uintptr_t(base_) + MaxCodeBytesPerProcess);
   }
 
-  void* allocate(size_t bytes, ProtectionSetting protection,
-                 MemCheckKind checkKind);
+  void* allocate(size_t bytes, ProtectionSetting protection);
   void deallocate(void* addr, size_t bytes, bool decommit);
 };
 
 void* ProcessExecutableMemory::allocate(size_t bytes,
-                                        ProtectionSetting protection,
-                                        MemCheckKind checkKind) {
+                                        ProtectionSetting protection) {
   MOZ_ASSERT(initialized());
   MOZ_ASSERT(bytes > 0);
   MOZ_ASSERT((bytes % ExecutableCodePageSize) == 0);
@@ -575,9 +485,7 @@ void* ProcessExecutableMemory::allocate(size_t bytes,
     MOZ_ASSERT(pagesAllocated_ <= MaxCodePages);
 
     // Check if we have enough pages available.
-    if (pagesAllocated_ + numPages >= MaxCodePages) {
-      return nullptr;
-    }
+    if (pagesAllocated_ + numPages >= MaxCodePages) return nullptr;
 
     MOZ_ASSERT(bytes <= MaxCodeBytesPerProcess);
 
@@ -586,9 +494,7 @@ void* ProcessExecutableMemory::allocate(size_t bytes,
 
     for (size_t i = 0; i < MaxCodePages; i++) {
       // Make sure page + numPages - 1 is a valid index.
-      if (page + numPages > MaxCodePages) {
-        page = 0;
-      }
+      if (page + numPages > MaxCodePages) page = 0;
 
       bool available = true;
       for (size_t j = 0; j < numPages; j++) {
@@ -603,9 +509,7 @@ void* ProcessExecutableMemory::allocate(size_t bytes,
       }
 
       // Mark the pages as unavailable.
-      for (size_t j = 0; j < numPages; j++) {
-        pages_.insert(page + j);
-      }
+      for (size_t j = 0; j < numPages; j++) pages_.insert(page + j);
 
       pagesAllocated_ += numPages;
       MOZ_ASSERT(pagesAllocated_ <= MaxCodePages);
@@ -613,16 +517,12 @@ void* ProcessExecutableMemory::allocate(size_t bytes,
       // If we allocated a small number of pages, move cursor_ to the
       // next page. We don't do this for larger allocations to avoid
       // skipping a large number of small holes.
-      if (numPages <= 2) {
-        cursor_ = page + numPages;
-      }
+      if (numPages <= 2) cursor_ = page + numPages;
 
       p = base_ + page * ExecutableCodePageSize;
       break;
     }
-    if (!p) {
-      return nullptr;
-    }
+    if (!p) return nullptr;
   }
 
   // Commit the pages after releasing the lock.
@@ -630,8 +530,6 @@ void* ProcessExecutableMemory::allocate(size_t bytes,
     deallocate(p, bytes, /* decommit = */ false);
     return nullptr;
   }
-
-  SetMemCheckKind(p, bytes, checkKind);
 
   return p;
 }
@@ -651,45 +549,31 @@ void ProcessExecutableMemory::deallocate(void* addr, size_t bytes,
   size_t numPages = bytes / ExecutableCodePageSize;
 
   // Decommit before taking the lock.
-  MOZ_MAKE_MEM_NOACCESS(addr, bytes);
-  if (decommit) {
-    DecommitPages(addr, bytes);
-  }
+  if (decommit) DecommitPages(addr, bytes);
 
   LockGuard<Mutex> guard(lock_);
   MOZ_ASSERT(numPages <= pagesAllocated_);
   pagesAllocated_ -= numPages;
 
-  for (size_t i = 0; i < numPages; i++) {
-    pages_.remove(firstPage + i);
-  }
+  for (size_t i = 0; i < numPages; i++) pages_.remove(firstPage + i);
 
   // Move the cursor back so we can reuse pages instead of fragmenting the
   // whole region.
-  if (firstPage < cursor_) {
-    cursor_ = firstPage;
-  }
+  if (firstPage < cursor_) cursor_ = firstPage;
 }
 
 static ProcessExecutableMemory execMemory;
 
 void* js::jit::AllocateExecutableMemory(size_t bytes,
-                                        ProtectionSetting protection,
-                                        MemCheckKind checkKind) {
-  return execMemory.allocate(bytes, protection, checkKind);
+                                        ProtectionSetting protection) {
+  return execMemory.allocate(bytes, protection);
 }
 
 void js::jit::DeallocateExecutableMemory(void* addr, size_t bytes) {
   execMemory.deallocate(addr, bytes, /* decommit = */ true);
 }
 
-bool js::jit::InitProcessExecutableMemory() {
-#ifdef JS_CODEGEN_ARM64
-  // Initialize instruction cache flushing.
-  vixl::CPU::SetUp();
-#endif
-  return execMemory.init();
-}
+bool js::jit::InitProcessExecutableMemory() { return execMemory.init(); }
 
 void js::jit::ReleaseProcessExecutableMemory() { execMemory.release(); }
 
@@ -726,47 +610,15 @@ bool js::jit::ReprotectRegion(void* start, size_t size,
 
   execMemory.assertValidAddress(pageStart, size);
 
-  // On weak memory systems, make sure new code is visible on all cores before
-  // addresses of the code are made public.  Now is the latest moment in time
-  // when we can do that, and we're assuming that every other thread that has
-  // written into the memory that is being reprotected here has synchronized
-  // with this thread in such a way that the memory writes have become visible
-  // and we therefore only need to execute the fence once here.  See bug 1529933
-  // for a longer discussion of why this is both necessary and sufficient.
-  //
-  // We use the C++ fence here -- and not AtomicOperations::fenceSeqCst() --
-  // primarily because ReprotectRegion will be called while we construct our own
-  // jitted atomics.  But the C++ fence is sufficient and correct, too.
-  std::atomic_thread_fence(std::memory_order_seq_cst);
-
 #ifdef XP_WIN
   DWORD oldProtect;
   DWORD flags = ProtectionSettingToFlags(protection);
-  if (!VirtualProtect(pageStart, size, flags, &oldProtect)) {
-    return false;
-  }
+  if (!VirtualProtect(pageStart, size, flags, &oldProtect)) return false;
 #else
   unsigned flags = ProtectionSettingToFlags(protection);
-  if (mprotect(pageStart, size, flags)) {
-    return false;
-  }
+  if (mprotect(pageStart, size, flags)) return false;
 #endif
 
   execMemory.assertValidAddress(pageStart, size);
   return true;
 }
-
-#if defined(XP_WIN) && defined(NEED_JIT_UNWIND_HANDLING)
-static PRUNTIME_FUNCTION RuntimeFunctionCallback(DWORD64 ControlPc,
-                                                 PVOID Context) {
-  MOZ_ASSERT(sJitExceptionHandler);
-
-  // RegisterExecutableMemory already set up the runtime function in the
-  // exception-data page preceding the allocation.
-  uint8_t* p = execMemory.base();
-  if (!p) {
-    return nullptr;
-  }
-  return (PRUNTIME_FUNCTION)(p - gc::SystemPageSize());
-}
-#endif

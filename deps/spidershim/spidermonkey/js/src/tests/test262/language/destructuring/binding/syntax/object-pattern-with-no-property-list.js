@@ -13,7 +13,6 @@ info: |
     { BindingPropertyList[?Yield] }
     { BindingPropertyList[?Yield] , }
 
-features: [destructuring-binding]
 ---*/
 
 function fn({}) {}

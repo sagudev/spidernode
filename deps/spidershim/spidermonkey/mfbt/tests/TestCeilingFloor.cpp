@@ -10,7 +10,9 @@ using mozilla::CeilingLog2;
 using mozilla::FloorLog2;
 using mozilla::RoundUpPow2;
 
-static void TestCeiling() {
+static void
+TestCeiling()
+{
   for (uint32_t i = 0; i <= 1; i++) {
     MOZ_RELEASE_ASSERT(CeilingLog2(i) == 0);
   }
@@ -28,7 +30,9 @@ static void TestCeiling() {
   }
 }
 
-static void TestFloor() {
+static void
+TestFloor()
+{
   for (uint32_t i = 0; i <= 1; i++) {
     MOZ_RELEASE_ASSERT(FloorLog2(i) == 0);
   }
@@ -46,7 +50,9 @@ static void TestFloor() {
   }
 }
 
-static void TestRoundUpPow2() {
+static void
+TestRoundUpPow2()
+{
   MOZ_RELEASE_ASSERT(RoundUpPow2(0) == 1);
   MOZ_RELEASE_ASSERT(RoundUpPow2(1) == 1);
   MOZ_RELEASE_ASSERT(RoundUpPow2(2) == 2);
@@ -72,7 +78,9 @@ static void TestRoundUpPow2() {
   // not valid to round up when past the max power of two
 }
 
-int main() {
+int
+main()
+{
   TestCeiling();
   TestFloor();
 

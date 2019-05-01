@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -67,9 +67,9 @@ class ScopedXPCOM : public nsIDirectoryServiceProvider2 {
     mTestName = testName;
     printf("Running %s tests...\n", mTestName);
 
-    nsresult rv = NS_InitXPCOM(&mServMgr, nullptr, this);
+    nsresult rv = NS_InitXPCOM2(&mServMgr, nullptr, this);
     if (NS_FAILED(rv)) {
-      fail("NS_InitXPCOM returned failure code 0x%" PRIx32,
+      fail("NS_InitXPCOM2 returned failure code 0x%" PRIx32,
            static_cast<uint32_t>(rv));
       mServMgr = nullptr;
       return;

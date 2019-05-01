@@ -21,24 +21,19 @@ info: |
     ...
     3. If func is either undefined or null, return undefined.
     ...
-features: [new.target, Proxy, Reflect, Reflect.construct]
+features: [Reflect.construct]
 ---*/
 
 var calls = 0;
 
 function NewTarget() {}
-
 function Target(a, b) {
-  assert.sameValue(new.target, NewTarget);
-  calls += 1;
-  return {
-    sum: a + b
-  };
+    assert.sameValue(new.target, NewTarget);
+    calls += 1;
+    return {sum: a + b};
 }
 
-var P = new Proxy(Target, {
-  construct: null
-});
+var P = new Proxy(Target, {construct: null});
 var obj = Reflect.construct(P, [3, 4], NewTarget);
 assert.sameValue(obj.sum, 7, "`construct` trap is `null`");
 assert.sameValue(calls, 1, "target is called once");

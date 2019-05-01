@@ -1,19 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"  // mozilla::ArrayLength
-#include "mozilla/Utf8.h"        // mozilla::Utf8Unit
-
 #include "jsfriendapi.h"
-
 #include "builtin/String.h"
-#include "js/BuildId.h"  // JS::BuildIdCharVector, JS::SetProcessBuildIdOp
-#include "js/CompilationAndEvaluation.h"  // JS::CompileDontInflate
-#include "js/SourceText.h"                // JS::Source{Ownership,Text}
-#include "js/Transcoding.h"
+
 #include "jsapi-tests/tests.h"
 #include "vm/JSScript.h"
 
@@ -25,21 +18,17 @@ static bool GetBuildId(JS::BuildIdCharVector* buildId) {
 }
 
 static JSScript* FreezeThaw(JSContext* cx, JS::HandleScript script) {
-  JS::SetProcessBuildIdOp(::GetBuildId);
+  JS::SetBuildIdOp(cx, GetBuildId);
 
   // freeze
   JS::TranscodeBuffer buffer;
   JS::TranscodeResult rs = JS::EncodeScript(cx, buffer, script);
-  if (rs != JS::TranscodeResult_Ok) {
-    return nullptr;
-  }
+  if (rs != JS::TranscodeResult_Ok) return nullptr;
 
   // thaw
   JS::RootedScript script2(cx);
   rs = JS::DecodeScript(cx, buffer, &script2);
-  if (rs != JS::TranscodeResult_Ok) {
-    return nullptr;
-  }
+  if (rs != JS::TranscodeResult_Ok) return nullptr;
   return script2;
 }
 
@@ -52,7 +41,7 @@ enum TestCase {
 };
 
 BEGIN_TEST(testXDR_bug506491) {
-  static const char s[] =
+  const char* s =
       "function makeClosure(s, name, value) {\n"
       "    eval(s);\n"
       "    Math.sin(value);\n"
@@ -64,12 +53,8 @@ BEGIN_TEST(testXDR_bug506491) {
   // compile
   JS::CompileOptions options(cx);
   options.setFileAndLine(__FILE__, __LINE__);
-
-  JS::SourceText<mozilla::Utf8Unit> srcBuf;
-  CHECK(srcBuf.init(cx, s, mozilla::ArrayLength(s) - 1,
-                    JS::SourceOwnership::Borrowed));
-
-  JS::RootedScript script(cx, JS::CompileDontInflate(cx, options, srcBuf));
+  JS::RootedScript script(cx);
+  CHECK(JS_CompileScript(cx, s, strlen(s), options, &script));
   CHECK(script);
 
   script = FreezeThaw(cx, script);
@@ -94,11 +79,8 @@ BEGIN_TEST(testXDR_bug516827) {
   // compile an empty script
   JS::CompileOptions options(cx);
   options.setFileAndLine(__FILE__, __LINE__);
-
-  JS::SourceText<mozilla::Utf8Unit> srcBuf;
-  CHECK(srcBuf.init(cx, "", 0, JS::SourceOwnership::Borrowed));
-
-  JS::RootedScript script(cx, JS::CompileDontInflate(cx, options, srcBuf));
+  JS::RootedScript script(cx);
+  CHECK(JS_CompileScript(cx, "", 0, options, &script));
   CHECK(script);
 
   script = FreezeThaw(cx, script);
@@ -126,19 +108,13 @@ BEGIN_TEST(testXDR_source) {
   for (const char** s = samples; *s; s++) {
     JS::CompileOptions options(cx);
     options.setFileAndLine(__FILE__, __LINE__);
-
-    JS::SourceText<mozilla::Utf8Unit> srcBuf;
-    CHECK(srcBuf.init(cx, *s, strlen(*s), JS::SourceOwnership::Borrowed));
-
-    JS::RootedScript script(cx, JS::CompileDontInflate(cx, options, srcBuf));
+    JS::RootedScript script(cx);
+    CHECK(JS_CompileScript(cx, *s, strlen(*s), options, &script));
     CHECK(script);
-
     script = FreezeThaw(cx, script);
     CHECK(script);
-
     JSString* out = JS_DecompileScript(cx, script);
     CHECK(out);
-
     bool equal;
     CHECK(JS_StringEqualsAscii(cx, out, *s, &equal));
     CHECK(equal);
@@ -154,11 +130,7 @@ BEGIN_TEST(testXDR_sourceMap) {
   for (const char** sm = sourceMaps; *sm; sm++) {
     JS::CompileOptions options(cx);
     options.setFileAndLine(__FILE__, __LINE__);
-
-    JS::SourceText<mozilla::Utf8Unit> srcBuf;
-    CHECK(srcBuf.init(cx, "", 0, JS::SourceOwnership::Borrowed));
-
-    script = JS::CompileDontInflate(cx, options, srcBuf);
+    CHECK(JS_CompileScript(cx, "", 0, options, &script));
     CHECK(script);
 
     size_t len = strlen(*sm);

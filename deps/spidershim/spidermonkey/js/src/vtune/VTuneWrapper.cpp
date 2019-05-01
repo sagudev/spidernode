@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,9 +10,9 @@
 
 #include "threading/LockGuard.h"
 #include "threading/Mutex.h"
+#include "vm/JSCompartment.h"
 #include "vm/JSContext.h"
 #include "vm/MutexIDs.h"
-#include "vm/Realm.h"
 #include "vm/Shape.h"
 
 #ifdef MOZ_VTUNE
@@ -101,7 +101,7 @@ void MarkRegExp(const js::jit::JitCode* code, bool match_only) {
   if (ok != 1) printf("[!] VTune Integration: Failed to load method.\n");
 }
 
-void MarkScript(const js::jit::JitCode* code, JSScript* script,
+void MarkScript(const js::jit::JitCode* code, const JSScript* script,
                 const char* module) {
   if (!IsProfilingActive()) return;
 
@@ -114,7 +114,7 @@ void MarkScript(const js::jit::JitCode* code, JSScript* script,
   // Line numbers begin at 1, but columns begin at 0.
   // Text editors start at 1,1 so fixup is performed to match.
   char namebuf[512];
-  SprintfLiteral(namebuf, "%s:%u:%u", script->filename(), script->lineno(),
+  SprintfLiteral(namebuf, "%s:%zu:%zu", script->filename(), script->lineno(),
                  script->column() + 1);
 
   method.method_name = &namebuf[0];

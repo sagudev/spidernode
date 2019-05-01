@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
                       PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION,
                   FALSE, pid);
   if (targetProc == nullptr) {
-    fprintf(stderr, "Error %lu opening target process\n", GetLastError());
+    fprintf(stderr, "Error %d opening target process\n", GetLastError());
     return 1;
   }
 
@@ -61,14 +61,14 @@ int main(int argc, char** argv) {
   void* pLibRemote = VirtualAllocEx(targetProc, nullptr, sizeof(filename),
                                     MEM_COMMIT, PAGE_READWRITE);
   if (pLibRemote == nullptr) {
-    fprintf(stderr, "Error %lu in VirtualAllocEx\n", GetLastError());
+    fprintf(stderr, "Error %d in VirtualAllocEx\n", GetLastError());
     CloseHandle(targetProc);
     return 1;
   }
 
   if (!WriteProcessMemory(targetProc, pLibRemote, (void*)filename,
                           sizeof(filename), nullptr)) {
-    fprintf(stderr, "Error %lu in WriteProcessMemory\n", GetLastError());
+    fprintf(stderr, "Error %d in WriteProcessMemory\n", GetLastError());
     VirtualFreeEx(targetProc, pLibRemote, sizeof(filename), MEM_RELEASE);
     CloseHandle(targetProc);
     return 1;
@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
       (LPTHREAD_START_ROUTINE)GetProcAddress(hKernel32, "LoadLibraryW"),
       pLibRemote, 0, nullptr);
   if (hThread == nullptr) {
-    fprintf(stderr, "Error %lu in CreateRemoteThread\n", GetLastError());
+    fprintf(stderr, "Error %d in CreateRemoteThread\n", GetLastError());
     VirtualFreeEx(targetProc, pLibRemote, sizeof(filename), MEM_RELEASE);
     CloseHandle(targetProc);
     return 1;

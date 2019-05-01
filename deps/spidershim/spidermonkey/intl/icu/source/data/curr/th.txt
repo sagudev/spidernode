@@ -668,10 +668,6 @@ th{
         }
         MRO{
             "MRO",
-            "อูกียามอริเตเนีย (1973–2017)",
-        }
-        MRU{
-            "MRU",
             "อูกียามอริเตเนีย",
         }
         MTL{
@@ -900,10 +896,6 @@ th{
         }
         STD{
             "STD",
-            "ดอบราเซาตูเมและปรินซิปี (1977–2017)",
-        }
-        STN{
-            "STN",
             "ดอบราเซาตูเมและปรินซิปี",
         }
         SUR{
@@ -923,7 +915,7 @@ th{
             "ลิลันเจนีสวาซิ",
         }
         THB{
-            "฿",
+            "THB",
             "บาท",
         }
         TJR{
@@ -1026,10 +1018,6 @@ th{
             "VEF",
             "โบลิวาร์เวเนซุเอลา",
         }
-        VES{
-            "VES",
-            "โบลีวาร์เวเนซุเอลา",
-        }
         VND{
             "₫",
             "ดองเวียดนาม",
@@ -1128,7 +1116,7 @@ th{
         }
         XXX{
             "XXX",
-            "ไม่ทราบชื่อสกุลเงิน",
+            "สกุลเงินที่ไม่รู้จัก",
         }
         YDD{
             "YDD",
@@ -1193,22 +1181,40 @@ th{
     }
     Currencies%narrow{
         AOA{"Kz"}
+        ARS{"$"}
+        AUD{"$"}
         BAM{"KM"}
+        BBD{"$"}
         BDT{"৳"}
+        BMD{"$"}
+        BND{"$"}
         BOB{"Bs"}
         BRL{"R$"}
+        BSD{"$"}
         BWP{"P"}
         BYN{"р."}
+        BZD{"$"}
+        CAD{"$"}
+        CLP{"$"}
+        CNY{"¥"}
+        COP{"$"}
         CRC{"₡"}
+        CUC{"$"}
+        CUP{"$"}
         CZK{"Kč"}
         DKK{"kr"}
+        DOP{"$"}
         EGP{"E£"}
         EUR{"€"}
+        FJD{"$"}
+        FKP{"£"}
         GBP{"£"}
         GEL{"₾"}
         GIP{"£"}
         GNF{"FG"}
         GTQ{"Q"}
+        GYD{"$"}
+        HKD{"$"}
         HNL{"L"}
         HRK{"kn"}
         HUF{"Ft"}
@@ -1216,11 +1222,13 @@ th{
         ILS{"₪"}
         INR{"₹"}
         ISK{"kr"}
+        JMD{"$"}
         JPY{"¥"}
         KHR{"៛"}
         KMF{"CF"}
         KPW{"₩"}
         KRW{"₩"}
+        KYD{"$"}
         KZT{"₸"}
         LAK{"₭"}
         LBP{"L£"}
@@ -1230,12 +1238,14 @@ th{
         MMK{"K"}
         MNT{"₮"}
         MUR{"Rs"}
+        MXN{"$"}
         MYR{"RM"}
         NAD{"$"}
         NGN{"₦"}
         NIO{"C$"}
         NOK{"kr"}
         NPR{"Rs"}
+        NZD{"$"}
         PHP{"₱"}
         PKR{"Rs"}
         PLN{"zł"}
@@ -1243,24 +1253,32 @@ th{
         RON{"lei"}
         RUB{"₽"}
         RWF{"RF"}
+        SBD{"$"}
         SEK{"kr"}
         SGD{"$"}
         SHP{"£"}
+        SRD{"$"}
         SSP{"£"}
+        STD{"Db"}
         SYP{"£"}
         THB{"฿"}
         TOP{"T$"}
+        TRY{"₺"}
+        TTD{"$"}
         TWD{"NT$"}
         UAH{"₴"}
         USD{"$"}
+        UYU{"$"}
         VEF{"Bs"}
         VND{"₫"}
+        XCD{"$"}
         ZAR{"R"}
         ZMW{"ZK"}
     }
     Currencies%variant{
         GEL{"₾"}
         RUB{"₽"}
+        TRY{"TL"}
     }
     CurrencyPlurals{
         AED{
@@ -1543,9 +1561,6 @@ th{
             other{"ปาตากามาเก๊า"}
         }
         MRO{
-            other{"อูกียามอริเตเนีย (1973–2017)"}
-        }
-        MRU{
             other{"อูกียามอริเตเนีย"}
         }
         MUR{
@@ -1660,9 +1675,6 @@ th{
             other{"ปอนด์ซูดานใต้"}
         }
         STD{
-            other{"ดอบราเซาตูเมและปรินซิปี (1977–2017)"}
-        }
-        STN{
             other{"ดอบราเซาตูเมและปรินซิปี"}
         }
         SYP{
@@ -1722,9 +1734,6 @@ th{
         VEF{
             other{"โบลิวาร์เวเนซุเอลา"}
         }
-        VES{
-            other{"โบลีวาร์แห่งเวเนซุเอลา"}
-        }
         VND{
             other{"ดองเวียดนาม"}
         }
@@ -1747,7 +1756,7 @@ th{
             other{"ฟรังก์ซีเอฟพี"}
         }
         XXX{
-            other{"(ไม่ทราบชื่อสกุลเงิน)"}
+            other{"(สกุลเงินที่ไม่รู้จัก)"}
         }
         YER{
             other{"เรียลเยเมน"}
@@ -1762,5 +1771,5 @@ th{
     CurrencyUnitPatterns{
         other{"{0} {1}"}
     }
-    Version{"2.1.48.86"}
+    Version{"2.1.37.56"}
 }

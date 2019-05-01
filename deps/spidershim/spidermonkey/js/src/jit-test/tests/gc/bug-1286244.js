@@ -1,8 +1,16 @@
-// |jit-test| skip-if: !getBuildConfiguration()['has-gczeal'] || helperThreadCount() === 0
+if (typeof verifyprebarriers != 'function' ||
+    typeof offThreadCompileScript != 'function')
+    quit();
 
-// This will fail with --no-threads.
-verifyprebarriers();
-var lfGlobal = newGlobal();
-lfGlobal.offThreadCompileScript(`
-  version(185);
-`);
+try {
+    // This will fail with --no-threads.
+    verifyprebarriers();
+    var lfGlobal = newGlobal();
+    lfGlobal.offThreadCompileScript(`
+      version(185);
+    `);
+}
+catch (e) {
+    quit(0);
+}
+

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,23 +10,18 @@
 #include <stdint.h>
 
 #include "jit/JSJitFrameIter.h"
+#include "jit/Safepoints.h"
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
 
 namespace js {
 namespace jit {
 
-struct SafepointSlotEntry;
-struct VMFunctionData;
-
 enum CalleeTokenTag {
   CalleeToken_Function = 0x0,  // untagged
   CalleeToken_FunctionConstructing = 0x1,
   CalleeToken_Script = 0x2
 };
-
-// Any CalleeToken with this bit set must be CalleeToken_Script.
-static const uintptr_t CalleeTokenScriptBit = CalleeToken_Script;
 
 static const uintptr_t CalleeTokenMask = ~uintptr_t(0x3);
 
@@ -167,7 +162,6 @@ class OsiIndex {
 // [ frame size | has cached saved frame bit | frame header size | frame type ]
 // < highest - - - - - - - - - - - - - - lowest >
 static const uintptr_t FRAMETYPE_BITS = 4;
-static const uintptr_t FRAMETYPE_MASK = (1 << FRAMETYPE_BITS) - 1;
 static const uintptr_t FRAME_HEADER_SIZE_SHIFT = FRAMETYPE_BITS;
 static const uintptr_t FRAME_HEADER_SIZE_BITS = 3;
 static const uintptr_t FRAME_HEADER_SIZE_MASK =
@@ -209,7 +203,7 @@ class FrameSizeClass {
   explicit FrameSizeClass(uint32_t class_) : class_(class_) {}
 
  public:
-  FrameSizeClass() = delete;
+  FrameSizeClass() {}
 
   static FrameSizeClass None() {
     return FrameSizeClass(NO_FRAME_SIZE_CLASS_ID);
@@ -262,7 +256,8 @@ void HandleException(ResumeFromException* rfe);
 
 void EnsureBareExitFrame(JitActivation* act, JitFrameLayout* frame);
 
-void TraceJitActivations(JSContext* cx, JSTracer* trc);
+void TraceJitActivations(JSContext* cx, const CooperatingContext& target,
+                         JSTracer* trc);
 
 void UpdateJitActivationsForMinorGC(JSRuntime* rt);
 
@@ -276,16 +271,16 @@ static inline uint32_t EncodeFrameHeaderSize(size_t headerSize) {
 
 static inline uint32_t MakeFrameDescriptor(uint32_t frameSize, FrameType type,
                                            uint32_t headerSize) {
-  MOZ_ASSERT(frameSize < FRAMESIZE_MASK);
+  MOZ_ASSERT(headerSize < FRAMESIZE_MASK);
   headerSize = EncodeFrameHeaderSize(headerSize);
   return 0 | (frameSize << FRAMESIZE_SHIFT) |
-         (headerSize << FRAME_HEADER_SIZE_SHIFT) | uint32_t(type);
+         (headerSize << FRAME_HEADER_SIZE_SHIFT) | type;
 }
 
 // Returns the JSScript associated with the topmost JIT frame.
 inline JSScript* GetTopJitJSScript(JSContext* cx) {
   JSJitFrameIter frame(cx->activation()->asJit());
-  MOZ_ASSERT(frame.type() == FrameType::Exit);
+  MOZ_ASSERT(frame.type() == JitFrame_Exit);
   ++frame;
 
   if (frame.isBaselineStub()) {
@@ -312,6 +307,8 @@ class CommonFrameLayout {
   uint8_t* returnAddress_;
   uintptr_t descriptor_;
 
+  static const uintptr_t FrameTypeMask = (1 << FRAMETYPE_BITS) - 1;
+
  public:
   static size_t offsetOfDescriptor() {
     return offsetof(CommonFrameLayout, descriptor_);
@@ -320,10 +317,10 @@ class CommonFrameLayout {
   static size_t offsetOfReturnAddress() {
     return offsetof(CommonFrameLayout, returnAddress_);
   }
-  FrameType prevType() const { return FrameType(descriptor_ & FRAMETYPE_MASK); }
+  FrameType prevType() const { return FrameType(descriptor_ & FrameTypeMask); }
   void changePrevType(FrameType type) {
-    descriptor_ &= ~FRAMETYPE_MASK;
-    descriptor_ |= uintptr_t(type);
+    descriptor_ &= ~FrameTypeMask;
+    descriptor_ |= type;
   }
   size_t prevFrameLocalSize() const { return descriptor_ >> FRAMESIZE_SHIFT; }
   size_t headerSize() const {
@@ -334,7 +331,6 @@ class CommonFrameLayout {
     return descriptor_ & HASCACHEDSAVEDFRAME_BIT;
   }
   void setHasCachedSavedFrame() { descriptor_ |= HASCACHEDSAVEDFRAME_BIT; }
-  void clearHasCachedSavedFrame() { descriptor_ &= ~HASCACHEDSAVEDFRAME_BIT; }
   uint8_t* returnAddress() const { return returnAddress_; }
   void setReturnAddress(uint8_t* addr) { returnAddress_ = addr; }
 };
@@ -408,8 +404,7 @@ enum class ExitFrameType : uint8_t {
   IonDOMMethod = 0x4,
   IonOOLNative = 0x5,
   IonOOLProxy = 0x6,
-  WasmGenericJitEntry = 0x7,
-  DirectWasmJitCall = 0x8,
+  WasmJitEntry = 0x7,
   InterpreterStub = 0xFC,
   VMFunction = 0xFD,
   LazyLink = 0xFE,
@@ -419,7 +414,7 @@ enum class ExitFrameType : uint8_t {
 // GC related data used to keep alive data surrounding the Exit frame.
 class ExitFooterFrame {
   // Stores the ExitFrameType or, for ExitFrameType::VMFunction, the
-  // VMFunctionData*.
+  // VMFunction*.
   uintptr_t data_;
 
  public:
@@ -428,15 +423,13 @@ class ExitFooterFrame {
   ExitFrameType type() const {
     static_assert(sizeof(ExitFrameType) == sizeof(uint8_t),
                   "Code assumes ExitFrameType fits in a byte");
-    if (data_ > UINT8_MAX) {
-      return ExitFrameType::VMFunction;
-    }
+    if (data_ > UINT8_MAX) return ExitFrameType::VMFunction;
     MOZ_ASSERT(ExitFrameType(data_) != ExitFrameType::VMFunction);
     return ExitFrameType(data_);
   }
-  inline const VMFunctionData* function() const {
+  inline const VMFunction* function() const {
     MOZ_ASSERT(type() == ExitFrameType::VMFunction);
-    return reinterpret_cast<const VMFunctionData*>(data_);
+    return reinterpret_cast<const VMFunction*>(data_);
   }
 
   // This should only be called for function()->outParam == Type_Handle
@@ -724,15 +717,15 @@ class InterpreterStubExitFrameLayout : public CalledFromJitExitFrameLayout {
   static ExitFrameType Type() { return ExitFrameType::InterpreterStub; }
 };
 
-class WasmGenericJitEntryFrameLayout : CalledFromJitExitFrameLayout {
+class WasmExitFrameLayout : CalledFromJitExitFrameLayout {
  public:
-  static ExitFrameType Type() { return ExitFrameType::WasmGenericJitEntry; }
+  static ExitFrameType Type() { return ExitFrameType::WasmJitEntry; }
 };
 
 template <>
 inline bool ExitFrameLayout::is<CalledFromJitExitFrameLayout>() {
   return is<InterpreterStubExitFrameLayout>() ||
-         is<LazyLinkExitFrameLayout>() || is<WasmGenericJitEntryFrameLayout>();
+         is<LazyLinkExitFrameLayout>() || is<WasmExitFrameLayout>();
 }
 
 template <>
@@ -744,15 +737,6 @@ ExitFrameLayout::as<CalledFromJitExitFrameLayout>() {
   return reinterpret_cast<CalledFromJitExitFrameLayout*>(sp);
 }
 
-class DirectWasmJitCallFrameLayout {
- protected:  // silence clang warning about unused private fields
-  ExitFooterFrame footer_;
-  ExitFrameLayout exit_;
-
- public:
-  static ExitFrameType Type() { return ExitFrameType::DirectWasmJitCall; }
-};
-
 class ICStub;
 
 class JitStubFrameLayout : public CommonFrameLayout {
@@ -762,7 +746,7 @@ class JitStubFrameLayout : public CommonFrameLayout {
     // --------------------
     // |JitStubFrameLayout|
     // +------------------+
-    // | - Descriptor     | => Marks end of FrameType::IonJS
+    // | - Descriptor     | => Marks end of JitFrame_IonJS
     // | - returnaddres   |
     // +------------------+
     // | - StubPtr        | => First thing pushed in a stub only when the stub will do
@@ -788,7 +772,7 @@ class BaselineStubFrameLayout : public JitStubFrameLayout {
     // -------------------------
     // |BaselineStubFrameLayout|
     // +-----------------------+
-    // | - Descriptor          | => Marks end of FrameType::BaselineJS
+    // | - Descriptor          | => Marks end of JitFrame_BaselineJS
     // | - returnaddres        |
     // +-----------------------+
     // | - StubPtr             | => First thing pushed in a stub only when the stub will do

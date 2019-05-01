@@ -1,3 +1,6 @@
+if (typeof TypedObject === "undefined")
+  quit();
+
 A = Array.bind()
 var {
     StructType

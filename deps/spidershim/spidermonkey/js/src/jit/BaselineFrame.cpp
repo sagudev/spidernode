@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,26 +38,16 @@ void BaselineFrame::trace(JSTracer* trc, const JSJitFrameIter& frameIterator) {
   }
 
   // Trace environment chain, if it exists.
-  if (envChain_) {
-    TraceRoot(trc, &envChain_, "baseline-envchain");
-  }
+  if (envChain_) TraceRoot(trc, &envChain_, "baseline-envchain");
 
   // Trace return value.
-  if (hasReturnValue()) {
+  if (hasReturnValue())
     TraceRoot(trc, returnValue().address(), "baseline-rval");
-  }
 
-  if (isEvalFrame() && script()->isDirectEvalInFunction()) {
+  if (isEvalFrame() && script()->isDirectEvalInFunction())
     TraceRoot(trc, evalNewTargetAddress(), "baseline-evalNewTarget");
-  }
 
-  if (hasArgsObj()) {
-    TraceRoot(trc, &argsObj_, "baseline-args-obj");
-  }
-
-  if (runningInInterpreter()) {
-    TraceRoot(trc, &interpreterScript_, "baseline-interpreterScript");
-  }
+  if (hasArgsObj()) TraceRoot(trc, &argsObj_, "baseline-args-obj");
 
   // Trace locals and stack values.
   JSScript* script = this->script();
@@ -68,9 +58,7 @@ void BaselineFrame::trace(JSTracer* trc, const JSJitFrameIter& frameIterator) {
 
   // NB: It is possible that numValueSlots() could be zero, even if nfixed is
   // nonzero.  This is the case if the function has an early stack check.
-  if (numValueSlots() == 0) {
-    return;
-  }
+  if (numValueSlots() == 0) return;
 
   MOZ_ASSERT(nfixed <= numValueSlots());
 
@@ -82,17 +70,14 @@ void BaselineFrame::trace(JSTracer* trc, const JSJitFrameIter& frameIterator) {
     TraceLocals(this, trc, nfixed, numValueSlots());
 
     // Clear dead block-scoped locals.
-    while (nfixed > nlivefixed) {
-      unaliasedLocal(--nfixed).setUndefined();
-    }
+    while (nfixed > nlivefixed) unaliasedLocal(--nfixed).setUndefined();
 
     // Trace live locals.
     TraceLocals(this, trc, 0, nlivefixed);
   }
 
-  if (auto* debugEnvs = script->realm()->debugEnvs()) {
-    debugEnvs->traceLiveFrame(trc, this);
-  }
+  if (script->compartment()->debugEnvs)
+    script->compartment()->debugEnvs->traceLiveFrame(trc, this);
 }
 
 bool BaselineFrame::isNonGlobalEvalFrame() const {
@@ -108,74 +93,45 @@ bool BaselineFrame::pushVarEnvironment(JSContext* cx, HandleScope scope) {
   return js::PushVarEnvironmentObject(cx, scope, this);
 }
 
-void BaselineFrame::setInterpreterPC(jsbytecode* pc) {
-  uint32_t pcOffset = script()->pcToOffset(pc);
-  ICScript* icScript = script()->icScript();
-  interpreterPC_ = pc;
-  interpreterICEntry_ = icScript->interpreterICEntryFromPCOffset(pcOffset);
-}
-
 bool BaselineFrame::initForOsr(InterpreterFrame* fp, uint32_t numStackValues) {
   mozilla::PodZero(this);
 
   envChain_ = fp->environmentChain();
 
-  if (fp->hasInitialEnvironmentUnchecked()) {
+  if (fp->hasInitialEnvironmentUnchecked())
     flags_ |= BaselineFrame::HAS_INITIAL_ENV;
-  }
 
   if (fp->script()->needsArgsObj() && fp->hasArgsObj()) {
     flags_ |= BaselineFrame::HAS_ARGS_OBJ;
     argsObj_ = &fp->argsObj();
   }
 
-  if (fp->hasReturnValue()) {
-    setReturnValue(fp->returnValue());
-  }
-
-  JSContext* cx =
-      fp->script()->runtimeFromMainThread()->mainContextFromOwnThread();
-
-  if (!fp->script()->hasBaselineScript()) {
-    // If we don't have a BaselineScript, we are doing OSR into the Baseline
-    // Interpreter. Initialize Baseline Interpreter fields. We can get the pc
-    // from the C++ interpreter's activation, we just have to skip the
-    // JitActivation.
-    Activation* interpActivation = cx->activation()->prev();
-    jsbytecode* pc = interpActivation->asInterpreter()->regs().pc;
-    MOZ_ASSERT(fp->script()->containsPC(pc));
-    flags_ |= BaselineFrame::RUNNING_IN_INTERPRETER;
-    interpreterScript_ = fp->script();
-    setInterpreterPC(pc);
-  }
+  if (fp->hasReturnValue()) setReturnValue(fp->returnValue());
 
   frameSize_ = BaselineFrame::FramePointerOffset + BaselineFrame::Size() +
                numStackValues * sizeof(Value);
 
   MOZ_ASSERT(numValueSlots() == numStackValues);
 
-  for (uint32_t i = 0; i < numStackValues; i++) {
-    *valueSlot(i) = fp->slots()[i];
-  }
+  for (uint32_t i = 0; i < numStackValues; i++) *valueSlot(i) = fp->slots()[i];
 
   if (fp->isDebuggee()) {
+    JSContext* cx = TlsContext.get();
+
     // For debuggee frames, update any Debugger.Frame objects for the
     // InterpreterFrame to point to the BaselineFrame.
 
     // The caller pushed a fake return address. ScriptFrameIter, used by the
     // debugger, wants a valid return address, but it's okay to just pick one.
-    // In debug mode there's always at least one RetAddrEntry (since there are
-    // always debug prologue/epilogue calls).
+    // In debug mode there's always at least 1 ICEntry (since there are always
+    // debug prologue/epilogue calls).
     JSJitFrameIter frame(cx->activation()->asJit());
     MOZ_ASSERT(frame.returnAddress() == nullptr);
     BaselineScript* baseline = fp->script()->baselineScript();
-    uint8_t* retAddr =
-        baseline->returnAddressForEntry(baseline->retAddrEntry(0));
-    frame.current()->setReturnAddress(retAddr);
+    frame.current()->setReturnAddress(
+        baseline->returnAddressForIC(baseline->icEntry(0)));
 
-    if (!Debugger::handleBaselineOsr(cx, fp, this)) {
-      return false;
-    }
+    if (!Debugger::handleBaselineOsr(cx, fp, this)) return false;
 
     setIsDebuggee();
   }

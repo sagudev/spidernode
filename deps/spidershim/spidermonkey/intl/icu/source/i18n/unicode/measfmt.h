@@ -22,7 +22,7 @@
 
 /**
  * \file 
- * \brief C++ API: Compatibility APIs for measure formatting.
+ * \brief C++ API: Formatter for measure objects.
  */
 
 /**
@@ -87,9 +87,8 @@ class ListFormatter;
 class DateFormat;
 
 /**
- * <p><strong>IMPORTANT:</strong> New users are strongly encouraged to see if
- * numberformatter.h fits their use case.  Although not deprecated, this header
- * is provided for backwards compatibility only.
+ * 
+ * A formatter for measure objects.
  *
  * @see Format
  * @author Alan Liu
@@ -102,9 +101,6 @@ class U_I18N_API MeasureFormat : public Format {
 
     /**
      * Constructor.
-     * <p>
-     * <strong>NOTE:</strong> New users are strongly encouraged to use
-     * {@link icu::number::NumberFormatter} instead of NumberFormat.
      * @stable ICU 53
      */
     MeasureFormat(
@@ -112,9 +108,6 @@ class U_I18N_API MeasureFormat : public Format {
 
     /**
      * Constructor.
-     * <p>
-     * <strong>NOTE:</strong> New users are strongly encouraged to use
-     * {@link icu::number::NumberFormatter} instead of NumberFormat.
      * @stable ICU 53
      */
     MeasureFormat(
@@ -202,7 +195,7 @@ class U_I18N_API MeasureFormat : public Format {
      * formatted string is 3.5 meters per second.
      * @param measure The measure object. In above example, 3.5 meters.
      * @param perUnit The per unit. In above example, it is
-     *        `*%MeasureUnit::createSecond(status)`.
+     *        *MeasureUnit::createSecond(status).
      * @param appendTo formatted string appended here.
      * @param pos the field position.
      * @param status the error.
@@ -223,7 +216,7 @@ class U_I18N_API MeasureFormat : public Format {
      * @param unit  The unit for which to get a display name.
      * @param status the error.
      * @return  The display name in the locale and width specified in
-     *          the MeasureFormat constructor, or null if there is no display name available
+     *          {@link MeasureFormat#getInstance}, or null if there is no display name available
      *          for the specified unit.
      *
      * @stable ICU 58
@@ -234,9 +227,6 @@ class U_I18N_API MeasureFormat : public Format {
     /**
      * Return a formatter for CurrencyAmount objects in the given
      * locale.
-     * <p>
-     * <strong>NOTE:</strong> New users are strongly encouraged to use
-     * {@link icu::number::NumberFormatter} instead of NumberFormat.
      * @param locale desired locale
      * @param ec input-output error code
      * @return a formatter object, or NULL upon error
@@ -248,9 +238,6 @@ class U_I18N_API MeasureFormat : public Format {
     /**
      * Return a formatter for CurrencyAmount objects in the default
      * locale.
-     * <p>
-     * <strong>NOTE:</strong> New users are strongly encouraged to use
-     * {@link icu::number::NumberFormatter} instead of NumberFormat.
      * @param ec input-output error code
      * @return a formatter object, or NULL upon error
      * @stable ICU 3.0
@@ -322,14 +309,7 @@ class U_I18N_API MeasureFormat : public Format {
      * ICU use only.
      * @internal.
      */
-    const NumberFormat &getNumberFormatInternal() const;
-
-    /**
-     * ICU use only.
-     * Always returns the short form currency formatter.
-     * @internal.
-     */
-    const NumberFormat& getCurrencyFormatInternal() const;
+    const NumberFormat &getNumberFormat() const;
 
     /**
      * ICU use only.
@@ -355,12 +335,33 @@ class U_I18N_API MeasureFormat : public Format {
     const MeasureFormatCacheData *cache;
     const SharedNumberFormat *numberFormat;
     const SharedPluralRules *pluralRules;
-    UMeasureFormatWidth fWidth;    
+    UMeasureFormatWidth width;    
 
     // Declared outside of MeasureFormatSharedData because ListFormatter
     // objects are relatively cheap to copy; therefore, they don't need to be
     // shared across instances.
     ListFormatter *listFormatter;
+
+    const SimpleFormatter *getFormatterOrNull(
+            const MeasureUnit &unit, UMeasureFormatWidth width, int32_t index) const;
+
+    const SimpleFormatter *getFormatter(
+            const MeasureUnit &unit, UMeasureFormatWidth width, int32_t index,
+            UErrorCode &errorCode) const;
+
+    const SimpleFormatter *getPluralFormatter(
+            const MeasureUnit &unit, UMeasureFormatWidth width, int32_t index,
+            UErrorCode &errorCode) const;
+
+    const SimpleFormatter *getPerFormatter(
+            UMeasureFormatWidth width,
+            UErrorCode &status) const;
+
+    int32_t withPerUnitAndAppend(
+        const UnicodeString &formatted,
+        const MeasureUnit &perUnit,
+        UnicodeString &appendTo,
+        UErrorCode &status) const;
 
     UnicodeString &formatMeasure(
         const Measure &measure,

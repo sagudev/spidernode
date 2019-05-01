@@ -1,4 +1,4 @@
-g = newGlobal({newCompartment: true});
+g = newGlobal();
 g.parent = this;
 
 function installHook() {

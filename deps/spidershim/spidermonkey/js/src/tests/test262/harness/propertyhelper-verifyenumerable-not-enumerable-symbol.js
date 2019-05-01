@@ -5,7 +5,7 @@
 description: >
     Objects whose specified symbol property is not enumerable do not satisfy the
     assertion.
-includes: [propertyHelper.js]
+includes: [propertyHelper.js,sta.js]
 features: [Symbol]
 ---*/
 var threw = false;

@@ -5,15 +5,15 @@ const dbg = new Debugger();
 
 dbg.memory.trackingAllocationSites = true;
 
-const root1 = newGlobal({newCompartment: true});
+const root1 = newGlobal();
 dbg.addDebuggee(root1);
 root1.eval("this.alloc = {}");
 
-const root2 = newGlobal({newCompartment: true});
+const root2 = newGlobal();
 dbg.addDebuggee(root2);
 root2.eval("this.alloc = {}");
 
-const root3 = newGlobal({newCompartment: true});
+const root3 = newGlobal();
 dbg.addDebuggee(root3);
 root3.eval("this.alloc = {}");
 

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,9 +27,7 @@ const Registers::SetType Registers::CallMask = (1 << Registers::v0);
 
 FloatRegisters::Encoding FloatRegisters::FromName(const char* name) {
   for (size_t i = 0; i < Total; i++) {
-    if (strcmp(GetName(Encoding(i)), name) == 0) {
-      return Encoding(i);
-    }
+    if (strcmp(GetName(Encoding(i)), name) == 0) return Encoding(i);
   }
 
   return Invalid;
@@ -37,17 +35,13 @@ FloatRegisters::Encoding FloatRegisters::FromName(const char* name) {
 
 FloatRegister FloatRegister::singleOverlay() const {
   MOZ_ASSERT(!isInvalid());
-  if (kind_ == Codes::Double) {
-    return FloatRegister(reg_, Codes::Single);
-  }
+  if (kind_ == Codes::Double) return FloatRegister(reg_, Codes::Single);
   return *this;
 }
 
 FloatRegister FloatRegister::doubleOverlay() const {
   MOZ_ASSERT(!isInvalid());
-  if (kind_ != Codes::Double) {
-    return FloatRegister(reg_, Codes::Double);
-  }
+  if (kind_ != Codes::Double) return FloatRegister(reg_, Codes::Double);
   return *this;
 }
 

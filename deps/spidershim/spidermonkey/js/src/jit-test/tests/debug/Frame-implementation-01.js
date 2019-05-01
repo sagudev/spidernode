@@ -7,7 +7,7 @@ function testFrameImpl(jitopts, assertFrameImpl) {
     return;
 
   withJitOptions(jitopts, function () {
-    var g = newGlobal({newCompartment: true});
+    var g = newGlobal();
     var dbg = new Debugger;
 
     g.toggle = function toggle(d) {

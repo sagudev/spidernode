@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty('BigInt')) -- BigInt is not enabled unconditionally
+// |reftest| skip -- BigInt is not supported
 // Copyright (C) 2017 Caio Lima. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -6,17 +6,10 @@
 description: Invalid String into BigInt constructor should throw SyntaxError
 esid: sec-string-to-bigint
 info: |
-  ToBigInt ( argument )
+  Apply the algorithm in 3.1.3.1 with the following changes:
 
-  String:
-
-  Let n be StringToBigInt(prim).
-  If n is NaN, throw a SyntaxError exception.
-  Return n.
-
-  StringToBigInt ( argument )
-
-  Replace the StrUnsignedDecimalLiteral production with DecimalDigits to not allow Infinity, decimal points, or exponents.
+  - Replace the StrUnsignedDecimalLiteral production with DecimalDigits
+    to not allow decimal points or exponents.
 
 features: [BigInt]
 ---*/

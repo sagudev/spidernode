@@ -12,9 +12,6 @@
 #define __SHARED_DATEFORMATSYMBOLS_H__
 
 #include "unicode/utypes.h"
-
-#if !UCONFIG_NO_FORMATTING
-
 #include "sharedobject.h"
 #include "unicode/dtfmtsym.h"
 
@@ -35,7 +32,5 @@ private:
 };
 
 U_NAMESPACE_END
-
-#endif /* !UCONFIG_NO_FORMATTING */
 
 #endif

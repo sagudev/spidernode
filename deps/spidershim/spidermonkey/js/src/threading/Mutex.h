@@ -32,9 +32,7 @@ class Mutex : public mozilla::detail::MutexImpl {
   static bool Init() { return true; }
   static void ShutDown() {}
 
-  explicit Mutex(const MutexId& id)
-      : mozilla::detail::MutexImpl(
-            mozilla::recordreplay::Behavior::DontPreserve) {}
+  explicit Mutex(const MutexId& id) {}
 
   using MutexImpl::lock;
   using MutexImpl::unlock;
@@ -52,12 +50,7 @@ class Mutex : public mozilla::detail::MutexImpl {
   static bool Init();
   static void ShutDown();
 
-  explicit Mutex(const MutexId& id)
-      : mozilla::detail::MutexImpl(
-            mozilla::recordreplay::Behavior::DontPreserve),
-        id_(id) {
-    MOZ_ASSERT(id_.order != 0);
-  }
+  explicit Mutex(const MutexId& id) : id_(id) { MOZ_ASSERT(id_.order != 0); }
 
   void lock();
   void unlock();

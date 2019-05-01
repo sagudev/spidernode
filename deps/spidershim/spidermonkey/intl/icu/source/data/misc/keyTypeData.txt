@@ -335,7 +335,6 @@ keyTypeData:table(nofallback){
             mnt{""}
             mop{""}
             mro{""}
-            mru{""}
             mtl{""}
             mtp{""}
             mur{""}
@@ -422,11 +421,9 @@ keyTypeData:table(nofallback){
             uyi{""}
             uyp{""}
             uyu{""}
-            uyw{""}
             uzs{""}
             veb{""}
             vef{""}
-            ves{""}
             vnd{""}
             vnn{""}
             vuv{""}
@@ -490,7 +487,6 @@ keyTypeData:table(nofallback){
             remove{""}
             title{""}
             upper{""}
-            zawgyi{""}
         }
         em{
             default{""}
@@ -575,9 +571,7 @@ keyTypeData:table(nofallback){
             c{"c11"}
             css{""}
             din{""}
-            ewts{""}
             gost{""}
-            iast{""}
             iso{""}
             java{""}
             mcst{""}
@@ -616,7 +610,6 @@ keyTypeData:table(nofallback){
             finance{""}
             fullwide{""}
             geor{""}
-            gong{""}
             gonm{""}
             grek{""}
             greklow{""}
@@ -630,11 +623,9 @@ keyTypeData:table(nofallback){
             hantfin{""}
             hebr{""}
             hmng{""}
-            hmnp{""}
             java{""}
             jpan{""}
             jpanfin{""}
-            jpanyear{""}
             kali{""}
             khmr{""}
             knda{""}
@@ -663,7 +654,6 @@ keyTypeData:table(nofallback){
             olck{""}
             orya{""}
             osma{""}
-            rohg{""}
             roman{""}
             romanlow{""}
             saur{""}
@@ -683,7 +673,6 @@ keyTypeData:table(nofallback){
             traditional{"traditio"}
             vaii{""}
             wara{""}
-            wcho{""}
         }
         rg{
             RG_KEY_VALUE{""}

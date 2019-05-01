@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +13,6 @@
 #include "jit/CompileInfo.h"
 #include "jit/JitAllocPolicy.h"
 #include "jit/JitSpewer.h"
-#include "jit/shared/Assembler-shared.h"
 #include "js/TrackedOptimizationInfo.h"
 #include "vm/TypeInference.h"
 
@@ -21,12 +20,7 @@ namespace js {
 
 namespace jit {
 
-struct NativeToTrackedOptimizations {
-  // [startOffset, endOffset]
-  CodeOffset startOffset;
-  CodeOffset endOffset;
-  const TrackedOptimizations* optimizations;
-};
+struct NativeToTrackedOptimizations;
 
 class OptimizationAttempt {
   JS::TrackedStrategy strategy_;
@@ -72,7 +66,7 @@ class OptimizationTypeInfo {
   OptimizationTypeInfo(OptimizationTypeInfo&& other)
       : site_(other.site_),
         mirType_(other.mirType_),
-        types_(std::move(other.types_)) {}
+        types_(mozilla::Move(other.types_)) {}
 
   OptimizationTypeInfo(TempAllocator& alloc, JS::TrackedTypeSite site,
                        MIRType mirType)
@@ -165,6 +159,7 @@ class UniqueTrackedOptimizations {
  public:
   explicit UniqueTrackedOptimizations(JSContext* cx) : map_(cx), sorted_(cx) {}
 
+  MOZ_MUST_USE bool init() { return map_.init(); }
   MOZ_MUST_USE bool add(const TrackedOptimizations* optimizations);
 
   MOZ_MUST_USE bool sortByFrequency(JSContext* cx);
@@ -449,7 +444,7 @@ struct IonTrackedTypeWithAddendum {
   };
 
   explicit IonTrackedTypeWithAddendum(TypeSet::Type type)
-      : type(type), hasAddendum(HasNothing), script(nullptr), offset(0) {}
+      : type(type), hasAddendum(HasNothing) {}
 
   IonTrackedTypeWithAddendum(TypeSet::Type type, JSScript* script,
                              uint32_t offset)
@@ -524,9 +519,7 @@ class IonTrackedOptimizationsOffsetsTable {
   Entry entry(uint32_t index) const {
     const uint8_t* start = payloadEnd() - entryOffset(index);
     const uint8_t* end = payloadEnd();
-    if (index < numEntries() - 1) {
-      end -= entryOffset(index + 1);
-    }
+    if (index < numEntries() - 1) end -= entryOffset(index + 1);
     return Entry(start, end);
   }
 };

@@ -1,9 +1,11 @@
-// |jit-test| exitstatus: 6; skip-if: !wasmDebuggingIsSupported()
+// |jit-test| exitstatus: 6;
 
 // Don't include wasm.js in timeout tests: when wasm isn't supported, it will
 // quit(0) which will cause the test to fail.
+if (!wasmDebuggingIsSupported())
+    quit(6);
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.parent = this;
 g.eval("Debugger(parent).onEnterFrame = function() {};");
 timeout(0.01);

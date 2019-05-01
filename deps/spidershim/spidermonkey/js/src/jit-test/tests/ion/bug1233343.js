@@ -10,7 +10,7 @@ function removeAdd() {
     }
 }
 function testInterrupt() {
-    g = newGlobal({newCompartment: true});
+    g = newGlobal();
     dbg = new Debugger;
     g.eval("" + function f() {
         return g();

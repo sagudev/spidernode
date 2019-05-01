@@ -1,4 +1,9 @@
-// |jit-test| skip-if: helperThreadCount() === 0 || !('oomTest' in this)
+if (helperThreadCount() === 0)
+    quit();
+
+if (!('oomTest' in this))
+    quit();
+
 options('strict');
 evaluate(`
     oomTest(() => {

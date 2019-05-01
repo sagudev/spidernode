@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +10,7 @@
 
 #include "jit/BaselineJIT.h"
 #include "jit/Ion.h"
-#include "jit/JitRealm.h"
+#include "jit/JitCompartment.h"
 #include "jit/JitSpewer.h"
 #include "jit/Snapshots.h"
 #include "vm/JSContext.h"
@@ -25,7 +25,7 @@ using namespace js::jit;
 
 using mozilla::IsInRange;
 
-bool jit::Bailout(BailoutStack* sp, BaselineBailoutInfo** bailoutInfo) {
+uint32_t jit::Bailout(BailoutStack* sp, BaselineBailoutInfo** bailoutInfo) {
   JSContext* cx = TlsContext.get();
   MOZ_ASSERT(bailoutInfo);
 
@@ -52,13 +52,15 @@ bool jit::Bailout(BailoutStack* sp, BaselineBailoutInfo** bailoutInfo) {
   MOZ_ASSERT(IsBaselineEnabled(cx));
 
   *bailoutInfo = nullptr;
-  bool success = BailoutIonToBaseline(cx, bailoutData.activation(), frame,
-                                      false, bailoutInfo,
-                                      /* excInfo = */ nullptr);
-  MOZ_ASSERT_IF(success, *bailoutInfo != nullptr);
+  uint32_t retval = BailoutIonToBaseline(cx, bailoutData.activation(), frame,
+                                         false, bailoutInfo,
+                                         /* excInfo = */ nullptr);
+  MOZ_ASSERT(retval == BAILOUT_RETURN_OK ||
+             retval == BAILOUT_RETURN_FATAL_ERROR ||
+             retval == BAILOUT_RETURN_OVERRECURSED);
+  MOZ_ASSERT_IF(retval == BAILOUT_RETURN_OK, *bailoutInfo != nullptr);
 
-  if (!success) {
-    MOZ_ASSERT(cx->isExceptionPending());
+  if (retval != BAILOUT_RETURN_OK) {
     JSScript* script = frame.script();
     probes::ExitScript(cx, script, script->functionNonDelazifying(),
                        /* popProfilerFrame = */ false);
@@ -72,10 +74,9 @@ bool jit::Bailout(BailoutStack* sp, BaselineBailoutInfo** bailoutInfo) {
   // invalidated (see InvalidateActivation), we remove references to it and
   // increment the reference counter for each activation that appear on the
   // stack. As the bailed frame is one of them, we have to decrement it now.
-  if (frame.ionScript()->invalidated()) {
+  if (frame.ionScript()->invalidated())
     frame.ionScript()->decrementInvalidationCount(
         cx->runtime()->defaultFreeOp());
-  }
 
   // NB: Commentary on how |lastProfilingFrame| is set from bailouts.
   //
@@ -95,16 +96,15 @@ bool jit::Bailout(BailoutStack* sp, BaselineBailoutInfo** bailoutInfo) {
   // In both cases, we want to temporarily set the |lastProfilingFrame|
   // to the current frame being bailed out, and then fix it up later.
   if (cx->runtime()->jitRuntime()->isProfilerInstrumentationEnabled(
-          cx->runtime())) {
+          cx->runtime()))
     cx->jitActivation->setLastProfilingFrame(currentFramePtr);
-  }
 
-  return success;
+  return retval;
 }
 
-bool jit::InvalidationBailout(InvalidationBailoutStack* sp,
-                              size_t* frameSizeOut,
-                              BaselineBailoutInfo** bailoutInfo) {
+uint32_t jit::InvalidationBailout(InvalidationBailoutStack* sp,
+                                  size_t* frameSizeOut,
+                                  BaselineBailoutInfo** bailoutInfo) {
   sp->checkInvariants();
 
   JSContext* cx = TlsContext.get();
@@ -129,14 +129,15 @@ bool jit::InvalidationBailout(InvalidationBailoutStack* sp,
   MOZ_ASSERT(IsBaselineEnabled(cx));
 
   *bailoutInfo = nullptr;
-  bool success = BailoutIonToBaseline(cx, bailoutData.activation(), frame, true,
-                                      bailoutInfo,
-                                      /* excInfo = */ nullptr);
-  MOZ_ASSERT_IF(success, *bailoutInfo != nullptr);
+  uint32_t retval = BailoutIonToBaseline(cx, bailoutData.activation(), frame,
+                                         true, bailoutInfo,
+                                         /* excInfo = */ nullptr);
+  MOZ_ASSERT(retval == BAILOUT_RETURN_OK ||
+             retval == BAILOUT_RETURN_FATAL_ERROR ||
+             retval == BAILOUT_RETURN_OVERRECURSED);
+  MOZ_ASSERT_IF(retval == BAILOUT_RETURN_OK, *bailoutInfo != nullptr);
 
-  if (!success) {
-    MOZ_ASSERT(cx->isExceptionPending());
-
+  if (retval != BAILOUT_RETURN_OK) {
     // If the bailout failed, then bailout trampoline will pop the
     // current frame and jump straight to exception handling code when
     // this function returns.  Any Gecko Profiler entry pushed for this
@@ -154,7 +155,9 @@ bool jit::InvalidationBailout(InvalidationBailoutStack* sp,
 
 #ifdef JS_JITSPEW
     JitFrameLayout* layout = frame.jsFrame();
-    JitSpew(JitSpew_IonInvalidate, "Bailout failed (Fatal Error)");
+    JitSpew(JitSpew_IonInvalidate, "Bailout failed (%s)",
+            (retval == BAILOUT_RETURN_FATAL_ERROR) ? "Fatal Error"
+                                                   : "Over Recursion");
     JitSpew(JitSpew_IonInvalidate, "   calleeToken %p",
             (void*)layout->calleeToken());
     JitSpew(JitSpew_IonInvalidate, "   frameSize %u",
@@ -167,11 +170,10 @@ bool jit::InvalidationBailout(InvalidationBailoutStack* sp,
 
   // Make the frame being bailed out the top profiled frame.
   if (cx->runtime()->jitRuntime()->isProfilerInstrumentationEnabled(
-          cx->runtime())) {
+          cx->runtime()))
     cx->jitActivation->setLastProfilingFrame(currentFramePtr);
-  }
 
-  return success;
+  return retval;
 }
 
 BailoutFrameInfo::BailoutFrameInfo(const JitActivationIterator& activations,
@@ -186,10 +188,11 @@ BailoutFrameInfo::BailoutFrameInfo(const JitActivationIterator& activations,
   snapshotOffset_ = osiIndex->snapshotOffset();
 }
 
-bool jit::ExceptionHandlerBailout(JSContext* cx,
-                                  const InlineFrameIterator& frame,
-                                  ResumeFromException* rfe,
-                                  const ExceptionBailoutInfo& excInfo) {
+uint32_t jit::ExceptionHandlerBailout(JSContext* cx,
+                                      const InlineFrameIterator& frame,
+                                      ResumeFromException* rfe,
+                                      const ExceptionBailoutInfo& excInfo,
+                                      bool* overrecursed) {
   // We can be propagating debug mode exceptions without there being an
   // actual exception pending. For instance, when we return false from an
   // operation callback like a timeout handler.
@@ -210,32 +213,55 @@ bool jit::ExceptionHandlerBailout(JSContext* cx,
   CommonFrameLayout* currentFramePtr = frameView.current();
 
   BaselineBailoutInfo* bailoutInfo = nullptr;
-  bool success = BailoutIonToBaseline(cx, bailoutData.activation(), frameView,
-                                      true, &bailoutInfo, &excInfo);
-  if (success) {
+  uint32_t retval;
+
+  {
+    // Currently we do not tolerate OOM here so as not to complicate the
+    // exception handling code further.
+    AutoEnterOOMUnsafeRegion oomUnsafe;
+
+    retval = BailoutIonToBaseline(cx, bailoutData.activation(), frameView, true,
+                                  &bailoutInfo, &excInfo);
+    if (retval == BAILOUT_RETURN_FATAL_ERROR && cx->isThrowingOutOfMemory())
+      oomUnsafe.crash("ExceptionHandlerBailout");
+  }
+
+  if (retval == BAILOUT_RETURN_OK) {
     MOZ_ASSERT(bailoutInfo);
 
     // Overwrite the kind so HandleException after the bailout returns
     // false, jumping directly to the exception tail.
-    if (excInfo.propagatingIonExceptionForDebugMode()) {
+    if (excInfo.propagatingIonExceptionForDebugMode())
       bailoutInfo->bailoutKind = Bailout_IonExceptionDebugMode;
-    }
 
     rfe->kind = ResumeFromException::RESUME_BAILOUT;
     rfe->target = cx->runtime()->jitRuntime()->getBailoutTail().value;
     rfe->bailoutInfo = bailoutInfo;
   } else {
+    // Bailout failed. If the overrecursion check failed, clear the
+    // exception to turn this into an uncatchable error, continue popping
+    // all inline frames and have the caller report the error.
     MOZ_ASSERT(!bailoutInfo);
-    MOZ_ASSERT(cx->isExceptionPending());
+
+    if (retval == BAILOUT_RETURN_OVERRECURSED) {
+      *overrecursed = true;
+      if (!excInfo.propagatingIonExceptionForDebugMode())
+        cx->clearPendingException();
+    } else {
+      MOZ_ASSERT(retval == BAILOUT_RETURN_FATAL_ERROR);
+
+      // Crash for now so as not to complicate the exception handling code
+      // further.
+      MOZ_CRASH();
+    }
   }
 
   // Make the frame being bailed out the top profiled frame.
   if (cx->runtime()->jitRuntime()->isProfilerInstrumentationEnabled(
-          cx->runtime())) {
+          cx->runtime()))
     cx->jitActivation->setLastProfilingFrame(currentFramePtr);
-  }
 
-  return success;
+  return retval;
 }
 
 // Initialize the decl env Object, call object, and any arguments obj of the
@@ -251,9 +277,7 @@ bool jit::EnsureHasEnvironmentObjects(JSContext* cx, AbstractFramePtr fp) {
 
     if (!fp.hasInitialEnvironment() &&
         fp.callee()->needsFunctionEnvironmentObjects()) {
-      if (!fp.initFunctionEnvironmentObjects(cx)) {
-        return false;
-      }
+      if (!fp.initFunctionEnvironmentObjects(cx)) return false;
     }
   }
 
@@ -274,9 +298,8 @@ void jit::CheckFrequentBailouts(JSContext* cx, JSScript* script,
       // the first execution bailout can be related to an inlined script,
       // so there is no need to penalize the caller.
       if (bailoutKind != Bailout_FirstExecution &&
-          !script->hadFrequentBailouts()) {
+          !script->hadFrequentBailouts())
         script->setHadFrequentBailouts();
-      }
 
       JitSpew(JitSpew_IonInvalidate, "Invalidating due to too many bailouts");
 

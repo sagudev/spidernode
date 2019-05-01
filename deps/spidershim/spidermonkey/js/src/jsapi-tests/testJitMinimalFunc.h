@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,9 +23,7 @@ struct MinimalAlloc {
   // We are not testing the fallible allocator in these test cases, thus make
   // the lifo alloc chunk extremely large for our test cases.
   MinimalAlloc() : lifo(128 * 1024), alloc(&lifo) {
-    if (!alloc.ensureBallast()) {
-      MOZ_CRASH("[OOM] Not enough RAM for the test.");
-    }
+    if (!alloc.ensureBallast()) MOZ_CRASH("[OOM] Not enough RAM for the test.");
   }
 };
 
@@ -40,8 +38,8 @@ struct MinimalFunc : MinimalAlloc {
       : options(),
         info(0),
         graph(&alloc),
-        mir(static_cast<CompileRealm*>(nullptr), options, &alloc, &graph, &info,
-            static_cast<const OptimizationInfo*>(nullptr)),
+        mir(static_cast<CompileCompartment*>(nullptr), options, &alloc, &graph,
+            &info, static_cast<const OptimizationInfo*>(nullptr)),
         numParams(0) {}
 
   MBasicBlock* createEntryBlock() {
@@ -72,47 +70,26 @@ struct MinimalFunc : MinimalAlloc {
   }
 
   bool runGVN() {
-    if (!SplitCriticalEdges(graph)) {
-      return false;
-    }
+    if (!SplitCriticalEdges(graph)) return false;
     RenumberBlocks(graph);
-    if (!BuildDominatorTree(graph)) {
-      return false;
-    }
-    if (!BuildPhiReverseMapping(graph)) {
-      return false;
-    }
+    if (!BuildDominatorTree(graph)) return false;
+    if (!BuildPhiReverseMapping(graph)) return false;
     ValueNumberer gvn(&mir, graph);
-    if (!gvn.run(ValueNumberer::DontUpdateAliasAnalysis)) {
-      return false;
-    }
+    if (!gvn.init()) return false;
+    if (!gvn.run(ValueNumberer::DontUpdateAliasAnalysis)) return false;
     return true;
   }
 
   bool runRangeAnalysis() {
-    if (!SplitCriticalEdges(graph)) {
-      return false;
-    }
+    if (!SplitCriticalEdges(graph)) return false;
     RenumberBlocks(graph);
-    if (!BuildDominatorTree(graph)) {
-      return false;
-    }
-    if (!BuildPhiReverseMapping(graph)) {
-      return false;
-    }
+    if (!BuildDominatorTree(graph)) return false;
+    if (!BuildPhiReverseMapping(graph)) return false;
     RangeAnalysis rangeAnalysis(&mir, graph);
-    if (!rangeAnalysis.addBetaNodes()) {
-      return false;
-    }
-    if (!rangeAnalysis.analyze()) {
-      return false;
-    }
-    if (!rangeAnalysis.addRangeAssertions()) {
-      return false;
-    }
-    if (!rangeAnalysis.removeBetaNodes()) {
-      return false;
-    }
+    if (!rangeAnalysis.addBetaNodes()) return false;
+    if (!rangeAnalysis.analyze()) return false;
+    if (!rangeAnalysis.addRangeAssertions()) return false;
+    if (!rangeAnalysis.removeBetaNodes()) return false;
     return true;
   }
 };

@@ -4,7 +4,7 @@
 load(libdir + "asserts.js");
 load(libdir + "debuggerNXHelper.js");
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 
 g.eval(`

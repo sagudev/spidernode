@@ -4,7 +4,7 @@
 // debuggers should be collected.
 
 for (var i = 0; i < 4; i++) {
-    var g = newGlobal({newCompartment: true});
+    var g = newGlobal();
     var dbg = new Debugger(g);
     dbg.onDebuggerStatement = function () { throw "FAIL"; };
     dbg.o = makeFinalizeObserver();

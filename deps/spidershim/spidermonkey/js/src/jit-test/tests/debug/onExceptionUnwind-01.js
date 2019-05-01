@@ -2,7 +2,7 @@
 
 load(libdir + "asserts.js");
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = Debugger(g);
 var hit = false;
 dbg.onExceptionUnwind = function (frame, exc) {

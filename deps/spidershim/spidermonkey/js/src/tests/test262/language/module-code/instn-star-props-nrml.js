@@ -1,4 +1,4 @@
-// |reftest| skip module -- export-star-as-namespace-from-module is not supported
+// |reftest| module
 // Copyright (C) 2016 the V8 project authors. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
@@ -26,7 +26,6 @@ info: |
                unambiguousNames.
        d. Let namespace be ModuleNamespaceCreate(module, unambiguousNames).
 flags: [module]
-features: [export-star-as-namespace-from-module]
 ---*/
 
 import * as ns from './instn-star-props-nrml-1_FIXTURE.js';
@@ -42,7 +41,6 @@ assert('localBindingId' in ns, 'localBindingId');
 assert('localIdName' in ns, 'localIdName');
 assert('indirectIdName' in ns, 'indirectIdName');
 assert('indirectIdName2' in ns, 'indirectIdName2');
-assert('namespaceBinding' in ns, 'namespaceBinding');
 
 // Export entries defined by a re-exported module
 assert('starVarDecl' in ns, 'starVarDecl');
@@ -55,9 +53,8 @@ assert('starBindingId' in ns, 'starBindingId');
 assert('starIdName' in ns, 'starIdName');
 assert('starIndirectIdName' in ns, 'starIndirectIdName');
 assert('starIndirectIdName2' in ns, 'starIndirectIdName2');
-assert('starIndirectNamespaceBinding' in ns, 'starIndirectNamespaceBinding');
 
-// Bindings that were not exported from any module
+// Bindings that were not exported from either module
 assert.sameValue('nonExportedVar1' in ns, false, 'nonExportedVar1');
 assert.sameValue('nonExportedVar2' in ns, false, 'nonExportedVar2');
 assert.sameValue('nonExportedLet1' in ns, false, 'nonExportedLet1');

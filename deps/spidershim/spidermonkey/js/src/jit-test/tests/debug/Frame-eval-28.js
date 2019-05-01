@@ -1,6 +1,6 @@
 // Test that strict Debugger.Frame.eval has a correct static scope.
 options('strict_mode');
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 var hits = 0;
 dbg.onEnterFrame = function(f) {

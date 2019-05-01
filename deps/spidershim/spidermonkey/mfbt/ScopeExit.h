@@ -80,7 +80,6 @@
  *   scope.
  */
 
-#include "mozilla/Attributes.h"
 #include "mozilla/GuardObjects.h"
 #include "mozilla/Move.h"
 
@@ -99,7 +98,7 @@ class MOZ_STACK_CLASS ScopeExit {
   }
 
   ScopeExit(ScopeExit&& rhs)
-      : mExitFunction(std::move(rhs.mExitFunction)),
+      : mExitFunction(mozilla::Move(rhs.mExitFunction)),
         mExecuteOnDestruction(rhs.mExecuteOnDestruction) {
     rhs.release();
   }
@@ -119,9 +118,8 @@ class MOZ_STACK_CLASS ScopeExit {
 };
 
 template <typename ExitFunction>
-MOZ_MUST_USE ScopeExit<ExitFunction> MakeScopeExit(
-    ExitFunction&& exitFunction) {
-  return ScopeExit<ExitFunction>(std::move(exitFunction));
+ScopeExit<ExitFunction> MakeScopeExit(ExitFunction&& exitFunction) {
+  return ScopeExit<ExitFunction>(mozilla::Move(exitFunction));
 }
 
 } /* namespace mozilla */

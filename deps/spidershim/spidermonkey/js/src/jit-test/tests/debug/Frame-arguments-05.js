@@ -1,6 +1,6 @@
 // frame.arguments is "live" (it reflects assignments to arguments).
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 var log = '';
 var args;

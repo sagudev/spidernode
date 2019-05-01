@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,11 +25,11 @@ class CFGControlInstruction;
 #define TRIVIAL_CFG_NEW_WRAPPERS                                             \
   template <typename... Args>                                                \
   static CFGThisOpcode* New(TempAllocator& alloc, Args&&... args) {          \
-    return new (alloc) CFGThisOpcode(std::forward<Args>(args)...);           \
+    return new (alloc) CFGThisOpcode(mozilla::Forward<Args>(args)...);       \
   }                                                                          \
   template <typename... Args>                                                \
   static CFGThisOpcode* New(TempAllocator::Fallible alloc, Args&&... args) { \
-    return new (alloc) CFGThisOpcode(std::forward<Args>(args)...);           \
+    return new (alloc) CFGThisOpcode(mozilla::Forward<Args>(args)...);       \
   }
 
 class CFGSpace {
@@ -53,10 +53,11 @@ class CFGBlock : public TempObject {
   jsbytecode* start;
   jsbytecode* stop;
   CFGControlInstruction* end;
+  bool inWorkList;
 
  public:
   explicit CFGBlock(jsbytecode* start)
-      : id_(-1), start(start), stop(nullptr), end(nullptr) {}
+      : id_(-1), start(start), stop(nullptr), end(nullptr), inWorkList(false) {}
 
   static CFGBlock* New(TempAllocator& alloc, jsbytecode* start) {
     return new (alloc) CFGBlock(start);
@@ -76,13 +77,22 @@ class CFGBlock : public TempObject {
     return end;
   }
   void setStopIns(CFGControlInstruction* stopIns) { end = stopIns; }
+  bool isInWorkList() const { return inWorkList; }
+  void setInWorklist() {
+    MOZ_ASSERT(!inWorkList);
+    inWorkList = true;
+  }
+  void clearInWorkList() {
+    MOZ_ASSERT(inWorkList);
+    inWorkList = false;
+  }
   size_t id() const { return id_; }
   void setId(size_t id) { id_ = id; }
 };
 
 #define CFG_CONTROL_OPCODE_LIST(_) \
   _(Test)                          \
-  _(CondSwitchCase)                \
+  _(Compare)                       \
   _(Goto)                          \
   _(Return)                        \
   _(RetRVal)                       \
@@ -177,11 +187,10 @@ class CFGTry : public CFGControlInstruction {
   }
   void replaceSuccessor(size_t i, CFGBlock* succ) final {
     MOZ_ASSERT(i < numSuccessors());
-    if (i == 0) {
+    if (i == 0)
       tryBlock_ = succ;
-    } else {
+    else
       mergePoint_ = succ;
-    }
   }
 
   CFGBlock* tryBlock() const { return getSuccessor(0); }
@@ -236,56 +245,52 @@ class CFGTableSwitch : public CFGControlInstruction {
 };
 
 /**
- * CFGCondSwitchCase
+ * CFGCompare
  *
- * IFEQ
+ * PEEK
+ * PEEK
+ * STRICTEQ
  *    POP truePopAmount
  *    JUMP succ1
- * IFNE
+ * STRICTNEQ
  *    POP falsePopAmount
  *    JUMP succ2
  */
-class CFGCondSwitchCase : public CFGAryControlInstruction<2> {
-  const uint8_t truePopAmount_;
-  const uint8_t falsePopAmount_;
+class CFGCompare : public CFGAryControlInstruction<2> {
+  const size_t truePopAmount_;
+  const size_t falsePopAmount_;
 
-  CFGCondSwitchCase(CFGBlock* succ1, size_t truePopAmount, CFGBlock* succ2,
-                    size_t falsePopAmount)
+  CFGCompare(CFGBlock* succ1, size_t truePopAmount, CFGBlock* succ2,
+             size_t falsePopAmount)
       : truePopAmount_(truePopAmount), falsePopAmount_(falsePopAmount) {
-    MOZ_ASSERT(truePopAmount_ == truePopAmount,
-               "truePopAmount should fit in uint8_t");
-    MOZ_ASSERT(falsePopAmount_ == falsePopAmount,
-               "falsePopAmount should fit in uint8_t");
     replaceSuccessor(0, succ1);
     replaceSuccessor(1, succ2);
   }
 
  public:
-  CFG_CONTROL_HEADER(CondSwitchCase);
+  CFG_CONTROL_HEADER(Compare);
 
-  static CFGCondSwitchCase* NewFalseBranchIsDefault(TempAllocator& alloc,
-                                                    CFGBlock* case_,
-                                                    CFGBlock* default_) {
+  static CFGCompare* NewFalseBranchIsDefault(TempAllocator& alloc,
+                                             CFGBlock* case_,
+                                             CFGBlock* default_) {
     // True and false branch both go to a body and don't need the lhs and
     // rhs to the compare. Pop them.
-    return new (alloc) CFGCondSwitchCase(case_, 2, default_, 2);
+    return new (alloc) CFGCompare(case_, 2, default_, 2);
   }
 
-  static CFGCondSwitchCase* NewFalseBranchIsNextCase(TempAllocator& alloc,
-                                                     CFGBlock* case_,
-                                                     CFGBlock* nextCase) {
-    // True branch goes to the body and doesn't need the lhs and
-    // rhs to the compare anymore. Pop them. The next case still
+  static CFGCompare* NewFalseBranchIsNextCompare(TempAllocator& alloc,
+                                                 CFGBlock* case_,
+                                                 CFGBlock* nextCompare) {
+    // True branch goes to the body and don't need the lhs and
+    // rhs to the compare anymore. Pop them. The next compare still
     // needs the lhs.
-    return new (alloc) CFGCondSwitchCase(case_, 2, nextCase, 1);
+    return new (alloc) CFGCompare(case_, 2, nextCompare, 1);
   }
 
-  static CFGCondSwitchCase* CopyWithNewTargets(TempAllocator& alloc,
-                                               CFGCondSwitchCase* old,
-                                               CFGBlock* succ1,
-                                               CFGBlock* succ2) {
-    return new (alloc) CFGCondSwitchCase(succ1, old->truePopAmount(), succ2,
-                                         old->falsePopAmount());
+  static CFGCompare* CopyWithNewTargets(TempAllocator& alloc, CFGCompare* old,
+                                        CFGBlock* succ1, CFGBlock* succ2) {
+    return new (alloc)
+        CFGCompare(succ1, old->truePopAmount(), succ2, old->falsePopAmount());
   }
 
   CFGBlock* trueBranch() const { return getSuccessor(0); }
@@ -441,7 +446,6 @@ class CFGBackEdge : public CFGUnaryControlInstruction {
 class CFGLoopEntry : public CFGUnaryControlInstruction {
   bool canOsr_;
   bool isForIn_;
-  bool isBrokenLoop_;
   size_t stackPhiCount_;
   jsbytecode* loopStopPc_;
 
@@ -449,16 +453,14 @@ class CFGLoopEntry : public CFGUnaryControlInstruction {
       : CFGUnaryControlInstruction(block),
         canOsr_(false),
         isForIn_(false),
-        isBrokenLoop_(false),
         stackPhiCount_(stackPhiCount),
         loopStopPc_(nullptr) {}
 
-  CFGLoopEntry(CFGBlock* block, bool canOsr, bool isForIn, bool isBrokenLoop,
-               size_t stackPhiCount, jsbytecode* loopStopPc)
+  CFGLoopEntry(CFGBlock* block, bool canOsr, bool isForIn, size_t stackPhiCount,
+               jsbytecode* loopStopPc)
       : CFGUnaryControlInstruction(block),
         canOsr_(canOsr),
         isForIn_(isForIn),
-        isBrokenLoop_(isBrokenLoop),
         stackPhiCount_(stackPhiCount),
         loopStopPc_(loopStopPc) {}
 
@@ -470,14 +472,10 @@ class CFGLoopEntry : public CFGUnaryControlInstruction {
                                           CFGLoopEntry* old,
                                           CFGBlock* loopEntry) {
     return new (alloc) CFGLoopEntry(loopEntry, old->canOsr(), old->isForIn(),
-                                    old->isBrokenLoop(), old->stackPhiCount(),
-                                    old->maybeLoopStopPc());
+                                    old->stackPhiCount(), old->loopStopPc());
   }
 
   void setCanOsr() { canOsr_ = true; }
-
-  bool isBrokenLoop() const { return isBrokenLoop_; }
-  void setIsBrokenLoop() { isBrokenLoop_ = true; }
 
   bool canOsr() const { return canOsr_; }
 
@@ -485,8 +483,6 @@ class CFGLoopEntry : public CFGUnaryControlInstruction {
   bool isForIn() const { return isForIn_; }
 
   size_t stackPhiCount() const { return stackPhiCount_; }
-
-  jsbytecode* maybeLoopStopPc() const { return loopStopPc_; }
 
   jsbytecode* loopStopPc() const {
     MOZ_ASSERT(loopStopPc_);
@@ -695,12 +691,8 @@ class ControlFlowGenerator {
   MOZ_MUST_USE bool addBlock(CFGBlock* block);
   ControlFlowGraph* getGraph(TempAllocator& alloc) {
     ControlFlowGraph* cfg = ControlFlowGraph::New(alloc);
-    if (!cfg) {
-      return nullptr;
-    }
-    if (!cfg->init(alloc, blocks_)) {
-      return nullptr;
-    }
+    if (!cfg) return nullptr;
+    if (!cfg->init(alloc, blocks_)) return nullptr;
     return cfg;
   }
 
@@ -725,7 +717,7 @@ class ControlFlowGenerator {
   ControlStatus processForCondEnd(CFGState& state);
   ControlStatus processForBodyEnd(CFGState& state);
   ControlStatus processForUpdateEnd(CFGState& state);
-  ControlStatus processWhileOrForInOrForOfLoop(jssrcnote* sn);
+  ControlStatus processWhileOrForInLoop(jssrcnote* sn);
   ControlStatus processNextTableSwitchCase(CFGState& state);
   ControlStatus processCondSwitch();
   ControlStatus processCondSwitchCase(CFGState& state);
@@ -740,6 +732,7 @@ class ControlFlowGenerator {
   ControlStatus processContinue(JSOp op);
   ControlStatus processBreak(JSOp op, jssrcnote* sn);
   ControlStatus processReturn(JSOp op);
+  ControlStatus maybeLoop(JSOp op, jssrcnote* sn);
   ControlStatus snoopControlFlow(JSOp op);
   ControlStatus processBrokenLoop(CFGState& state);
   ControlStatus finishLoop(CFGState& state, CFGBlock* successor);

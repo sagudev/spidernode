@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,35 +9,34 @@
 #include "js/Initialization.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/TextUtils.h"
+
+#include <ctype.h>
 
 #include "jstypes.h"
 
 #include "builtin/AtomicsObject.h"
 #include "ds/MemoryProtectionExceptionHandler.h"
 #include "gc/Statistics.h"
-#include "jit/AtomicOperations.h"
 #include "jit/ExecutableAllocator.h"
 #include "jit/Ion.h"
 #include "jit/JitCommon.h"
 #include "js/Utility.h"
 #if ENABLE_INTL_API
-#  include "unicode/putil.h"
-#  include "unicode/uclean.h"
-#  include "unicode/utypes.h"
+#include "unicode/uclean.h"
+#include "unicode/utypes.h"
 #endif  // ENABLE_INTL_API
-#include "vm/BigIntType.h"
 #include "vm/DateTime.h"
 #include "vm/HelperThreads.h"
 #include "vm/Runtime.h"
 #include "vm/Time.h"
 #include "vm/TraceLogging.h"
 #include "vtune/VTuneWrapper.h"
-#include "wasm/WasmProcess.h"
+#include "wasm/WasmBuiltins.h"
+#include "wasm/WasmInstance.h"
 
-using js::FutexThread;
 using JS::detail::InitState;
 using JS::detail::libraryInitState;
+using js::FutexThread;
 
 InitState JS::detail::libraryInitState;
 
@@ -45,20 +44,18 @@ InitState JS::detail::libraryInitState;
 static unsigned MessageParameterCount(const char* format) {
   unsigned numfmtspecs = 0;
   for (const char* fmt = format; *fmt != '\0'; fmt++) {
-    if (*fmt == '{' && mozilla::IsAsciiDigit(fmt[1])) {
-      ++numfmtspecs;
-    }
+    if (*fmt == '{' && isdigit(fmt[1])) ++numfmtspecs;
   }
   return numfmtspecs;
 }
 
 static void CheckMessageParameterCounts() {
-  // Assert that each message format has the correct number of braced
-  // parameters.
-#  define MSG_DEF(name, count, exception, format) \
-    MOZ_ASSERT(MessageParameterCount(format) == count);
-#  include "js.msg"
-#  undef MSG_DEF
+// Assert that each message format has the correct number of braced
+// parameters.
+#define MSG_DEF(name, count, exception, format) \
+  MOZ_ASSERT(MessageParameterCount(format) == count);
+#include "js.msg"
+#undef MSG_DEF
 }
 #endif /* DEBUG */
 
@@ -69,7 +66,7 @@ static void CheckMessageParameterCounts() {
 
 JS_PUBLIC_API const char* JS::detail::InitWithFailureDiagnostic(
     bool isDebugBuild) {
-  // Verify that our DEBUG setting matches the caller's.
+// Verify that our DEBUG setting matches the caller's.
 #ifdef DEBUG
   MOZ_RELEASE_ASSERT(isDebugBuild);
 #else
@@ -85,8 +82,6 @@ JS_PUBLIC_API const char* JS::detail::InitWithFailureDiagnostic(
   libraryInitState = InitState::Initializing;
 
   PRMJ_NowInit();
-
-  js::SliceBudget::Init();
 
   // The first invocation of `ProcessCreation` creates a temporary thread
   // and crashes if that fails, i.e. because we're out of memory. To prevent
@@ -104,17 +99,13 @@ JS_PUBLIC_API const char* JS::detail::InitWithFailureDiagnostic(
   RETURN_IF_FAIL(js::oom::InitThreadType());
 #endif
 
-  js::gDisablePoisoning = bool(getenv("JSGC_DISABLE_POISONING"));
-
   js::InitMallocAllocator();
 
   RETURN_IF_FAIL(js::Mutex::Init());
 
-  RETURN_IF_FAIL(js::wasm::Init());
+  RETURN_IF_FAIL(js::wasm::InitInstanceStaticData());
 
   js::gc::InitMemorySubsystem();  // Ensure gc::SystemPageSize() works.
-
-  js::coverage::InitLCov();
 
   RETURN_IF_FAIL(js::jit::InitProcessExecutableMemory());
 
@@ -128,21 +119,10 @@ JS_PUBLIC_API const char* JS::detail::InitWithFailureDiagnostic(
   RETURN_IF_FAIL(js::vtune::Initialize());
 #endif
 
-  RETURN_IF_FAIL(js::jit::AtomicOperations::Initialize());
-
 #if EXPOSE_INTL_API
-#  if !MOZ_SYSTEM_ICU
-  // Explicitly set the data directory to its default value, but only when we're
-  // sure that we use our in-tree ICU copy. See bug 1527879 and ICU bug
-  // report <https://unicode-org.atlassian.net/browse/ICU-20491>.
-  u_setDataDirectory("");
-#  endif
-
   UErrorCode err = U_ZERO_ERROR;
   u_init(&err);
-  if (U_FAILURE(err)) {
-    return "u_init() failed";
-  }
+  if (U_FAILURE(err)) return "u_init() failed";
 #endif  // EXPOSE_INTL_API
 
   RETURN_IF_FAIL(js::CreateHelperThreadsState());
@@ -151,10 +131,6 @@ JS_PUBLIC_API const char* JS::detail::InitWithFailureDiagnostic(
 
 #ifdef JS_SIMULATOR
   RETURN_IF_FAIL(js::jit::SimulatorProcess::initialize());
-#endif
-
-#ifdef JS_TRACE_LOGGING
-  RETURN_IF_FAIL(JS::InitTraceLogger());
 #endif
 
   libraryInitState = InitState::Running;
@@ -185,8 +161,6 @@ JS_PUBLIC_API void JS_ShutDown(void) {
   js::jit::SimulatorProcess::destroy();
 #endif
 
-  js::jit::AtomicOperations::ShutDown();
-
 #ifdef JS_TRACE_LOGGING
   js::DestroyTraceLoggerThreadState();
   js::DestroyTraceLoggerGraphState();
@@ -194,7 +168,8 @@ JS_PUBLIC_API void JS_ShutDown(void) {
 
   js::MemoryProtectionExceptionHandler::uninstall();
 
-  js::wasm::ShutDown();
+  js::wasm::ShutDownInstanceStaticData();
+  js::wasm::ShutDownProcessStaticData();
 
   js::Mutex::ShutDown();
 
@@ -220,6 +195,7 @@ JS_PUBLIC_API void JS_ShutDown(void) {
   js::FinishDateTimeState();
 
   if (!JSRuntime::hasLiveRuntimes()) {
+    js::wasm::ReleaseBuiltinThunks();
     js::jit::ReleaseProcessExecutableMemory();
     MOZ_ASSERT(!js::LiveMappedBufferCount());
   }

@@ -11,7 +11,7 @@ import shutil
 import sys
 import os
 
-def dump_symbols(target, tracking_file, count_ctors=False):
+def dump_symbols(target, tracking_file):
     # Our tracking file, if present, will contain path(s) to the previously generated
     # symbols. Remove them in this case so we don't simply accumulate old symbols
     # during incremental builds.
@@ -37,13 +37,8 @@ def dump_symbols(target, tracking_file, count_ctors=False):
         sym_store_args.extend(['-c', '--vcs-info'])
         if os.environ.get('PDBSTR_PATH'):
             sym_store_args.append('-i')
-        os.environ['PATH'] = os.pathsep.join((buildconfig.substs['WIN_DIA_SDK_BIN_DIR'],
-                                              os.environ['PATH']))
     elif os_arch == 'Darwin':
-        cpu = {
-            'x86': 'i386',
-        }.get(buildconfig.substs['TARGET_CPU'], buildconfig.substs['TARGET_CPU'])
-        sym_store_args.extend(['-c', '-a', cpu, '--vcs-info'])
+        sym_store_args.extend(['-c', '-a', buildconfig.substs['OS_TEST'], '--vcs-info'])
     elif os_arch == 'Linux':
         sym_store_args.extend(['-c', '--vcs-info'])
 
@@ -65,8 +60,6 @@ def dump_symbols(target, tracking_file, count_ctors=False):
                                                                       'dist',
                                                                       'crashreporter-symbols'),
              os.path.abspath(target)])
-    if count_ctors:
-        args.append('--count-ctors')
     print('Running: %s' % ' '.join(args))
     out_files = subprocess.check_output(args)
     with open(tracking_file, 'w') as fh:
@@ -74,19 +67,12 @@ def dump_symbols(target, tracking_file, count_ctors=False):
         fh.flush()
 
 def main(argv):
-    parser = argparse.ArgumentParser(
-        usage="Usage: dumpsymbols.py <library or program> <tracking file>")
-    parser.add_argument("--count-ctors",
-                        action="store_true", default=False,
-                        help="Count static initializers")
-    parser.add_argument("library_or_program",
-                        help="Path to library or program")
-    parser.add_argument("tracking_file",
-                        help="Tracking file")
-    args = parser.parse_args()
+    if len(argv) != 2:
+        print("Usage: dumpsymbols.py <library or program> <tracking file>",
+              file=sys.stderr)
+        return 1
 
-    return dump_symbols(args.library_or_program, args.tracking_file,
-                        args.count_ctors)
+    return dump_symbols(*argv)
 
 
 if __name__ == '__main__':

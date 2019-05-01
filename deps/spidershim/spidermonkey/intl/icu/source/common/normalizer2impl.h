@@ -24,20 +24,12 @@
 #if !UCONFIG_NO_NORMALIZATION
 
 #include "unicode/normalizer2.h"
-#include "unicode/ucptrie.h"
 #include "unicode/unistr.h"
 #include "unicode/unorm.h"
-#include "unicode/utf.h"
 #include "unicode/utf16.h"
 #include "mutex.h"
-#include "udataswp.h"
 #include "uset_imp.h"
-
-// When the nfc.nrm data is *not* hardcoded into the common library
-// (with this constant set to 0),
-// then it needs to be built into the data package:
-// Add nfc.nrm to icu4c/source/data/Makefile.in DAT_FILES_SHORT
-#define NORM2_HARDCODE_NFC_DATA 1
+#include "utrie2.h"
 
 U_NAMESPACE_BEGIN
 
@@ -126,7 +118,7 @@ public:
             buffer[0]=(UChar)(JAMO_L_BASE+c/JAMO_V_COUNT);
             buffer[1]=(UChar)(JAMO_V_BASE+c%JAMO_V_COUNT);
         } else {
-            buffer[0]=(UChar)(orig-c2);  // LV syllable
+            buffer[0]=orig-c2;  // LV syllable
             buffer[1]=(UChar)(JAMO_T_BASE+c2);
         }
     }
@@ -166,7 +158,8 @@ public:
             appendBMP((UChar)c, cc, errorCode) :
             appendSupplementary(c, cc, errorCode);
     }
-    UBool append(const UChar *s, int32_t length, UBool isNFD,
+    // s must be in NFD, otherwise change the implementation.
+    UBool append(const UChar *s, int32_t length,
                  uint8_t leadCC, uint8_t trailCC,
                  UErrorCode &errorCode);
     UBool appendBMP(UChar c, uint8_t cc, UErrorCode &errorCode) {
@@ -250,7 +243,7 @@ public:
     }
     virtual ~Normalizer2Impl();
 
-    void init(const int32_t *inIndexes, const UCPTrie *inTrie,
+    void init(const int32_t *inIndexes, const UTrie2 *inTrie,
               const uint16_t *inExtraData, const uint8_t *inSmallFCD);
 
     void addLcccChars(UnicodeSet &set) const;
@@ -261,14 +254,7 @@ public:
 
     UBool ensureCanonIterData(UErrorCode &errorCode) const;
 
-    // The trie stores values for lead surrogate code *units*.
-    // Surrogate code *points* are inert.
-    uint16_t getNorm16(UChar32 c) const {
-        return U_IS_LEAD(c) ?
-            static_cast<uint16_t>(INERT) :
-            UCPTRIE_FAST_GET(normTrie, UCPTRIE_16, c);
-    }
-    uint16_t getRawNorm16(UChar32 c) const { return UCPTRIE_FAST_GET(normTrie, UCPTRIE_16, c); }
+    uint16_t getNorm16(UChar32 c) const { return UTRIE2_GET16(normTrie, c); }
 
     UNormalizationCheckResult getCompQuickCheck(uint16_t norm16) const {
         if(norm16<minNoNo || MIN_YES_YES_WITH_CC<=norm16) {
@@ -718,7 +704,7 @@ private:
     uint16_t centerNoNoDelta;
     uint16_t minMaybeYes;
 
-    const UCPTrie *normTrie;
+    const UTrie2 *normTrie;
     const uint16_t *maybeYesCompositions;
     const uint16_t *extraData;  // mappings and/or compositions for yesYes, yesNo & noNo characters
     const uint8_t *smallFCD;  // [0x100] one bit per 32 BMP code points, set if any FCD!=0
@@ -778,7 +764,7 @@ unorm_getFCD16(UChar32 c);
 
 /**
  * Format of Normalizer2 .nrm data files.
- * Format version 4.0.
+ * Format version 3.0.
  *
  * Normalizer2 .nrm data files provide data for the Unicode Normalization algorithms.
  * ICU ships with data files for standard Unicode Normalization Forms
@@ -832,7 +818,7 @@ unorm_getFCD16(UChar32 c);
  *          minMaybeYes=indexes[IX_MIN_MAYBE_YES];
  *      See the normTrie description below and the design doc for details.
  *
- * UCPTrie normTrie; -- see ucptrie_impl.h and ucptrie.h, same as Java CodePointTrie
+ * UTrie2 normTrie; -- see utrie2_impl.h and utrie2.h
  *
  *      The trie holds the main normalization data. Each code point is mapped to a 16-bit value.
  *      Rather than using independent bits in the value (which would require more than 16 bits),
@@ -960,20 +946,6 @@ unorm_getFCD16(UChar32 c);
  *   which is artificially assigned "worst case" values lccc=1 and tccc=255.
  *
  * - A mapping to an empty string has explicit lccc=1 and tccc=255 values.
- *
- * Changes from format version 3 to format version 4 (ICU 63) ------------------
- *
- * Switched from UTrie2 to UCPTrie/CodePointTrie.
- *
- * The new trie no longer stores different values for surrogate code *units* vs.
- * surrogate code *points*.
- * Lead surrogates still have values for optimized UTF-16 string processing.
- * When looking up code point properties, the code now checks for lead surrogates and
- * treats them as inert.
- *
- * gennorm2 now has to reject mappings for surrogate code points.
- * UTS #46 maps unpaired surrogates to U+FFFD in code rather than via its
- * custom normalization data file.
  */
 
 #endif  /* !UCONFIG_NO_NORMALIZATION */

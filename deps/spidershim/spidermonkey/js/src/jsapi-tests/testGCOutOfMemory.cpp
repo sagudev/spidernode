@@ -1,18 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/licenses/publicdomain/
  * Contributor: Igor Bukanov
  */
 
-#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
-
-#include "js/CompilationAndEvaluation.h"  // JS::Evaluate
-#include "js/SourceText.h"                // JS::Source{Ownership,Text}
 #include "jsapi-tests/tests.h"
 
 BEGIN_TEST(testGCOutOfMemory) {
+  JS::RootedValue root(cx);
+
   // Count the number of allocations until we hit OOM, and store it in 'max'.
   static const char source[] =
       "var max = 0; (function() {"
@@ -21,14 +19,8 @@ BEGIN_TEST(testGCOutOfMemory) {
       "        array.push({});"
       "    array = []; array.push(0);"
       "})();";
-
   JS::CompileOptions opts(cx);
-
-  JS::SourceText<mozilla::Utf8Unit> srcBuf;
-  CHECK(srcBuf.init(cx, source, strlen(source), JS::SourceOwnership::Borrowed));
-
-  JS::RootedValue root(cx);
-  bool ok = JS::Evaluate(cx, opts, srcBuf, &root);
+  bool ok = JS::Evaluate(cx, opts, source, strlen(source), &root);
 
   /* Check that we get OOM. */
   CHECK(!ok);
@@ -64,10 +56,8 @@ virtual JSContext* createContext() override {
   // OOM. (Actually, this only happens with nursery zeal, because normally
   // the nursery will start out with only a single chunk before triggering a
   // major GC.)
-  JSContext* cx = JS_NewContext(1024 * 1024, js::gc::ChunkSize);
-  if (!cx) {
-    return nullptr;
-  }
+  JSContext* cx = JS_NewContext(1024 * 1024, 128 * 1024);
+  if (!cx) return nullptr;
   setNativeStackQuota(cx);
   return cx;
 }

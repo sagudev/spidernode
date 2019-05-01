@@ -11,7 +11,6 @@ info: |
   BindingPattern[Yield] :
     ObjectBindingPattern[?Yield]
     ArrayBindingPattern[?Yield]
-features: [destructuring-binding]
 ---*/
 
 function fn1([{}]) {}

@@ -1,6 +1,7 @@
-// |reftest| skip-if(!this.hasOwnProperty('BigInt')) -- BigInt is not enabled unconditionally
+// |reftest| skip -- BigInt is not supported
 // Copyright (C) 2017 Josh Wolfe. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
+
 /*---
 description: Strict inequality comparison of BigInt and large Number values
 esid: sec-strict-equality-comparison
@@ -9,54 +10,34 @@ info: |
 
 features: [BigInt]
 ---*/
-assert.sameValue(1n !== Number.MAX_VALUE, true, 'The result of (1n !== Number.MAX_VALUE) is true');
-assert.sameValue(Number.MAX_VALUE !== 1n, true, 'The result of (Number.MAX_VALUE !== 1n) is true');
 
-assert.sameValue(
-  1n !== -Number.MAX_VALUE,
-  true,
-  'The result of (1n !== -Number.MAX_VALUE) is true'
-);
-
-assert.sameValue(
-  -Number.MAX_VALUE !== 1n,
-  true,
-  'The result of (-Number.MAX_VALUE !== 1n) is true'
-);
-
+assert.sameValue(1n !== Number.MAX_VALUE, true, "1n !== Number.MAX_VALUE");
+assert.sameValue(Number.MAX_VALUE !== 1n, true, "Number.MAX_VALUE !== 1n");
+assert.sameValue(1n !== -Number.MAX_VALUE, true, "1n !== -Number.MAX_VALUE");
+assert.sameValue(-Number.MAX_VALUE !== 1n, true, "-Number.MAX_VALUE !== 1n");
 assert.sameValue(
   0xfffffffffffff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn !== Number.MAX_VALUE,
   true,
-  'The result of (0xfffffffffffff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn !== Number.MAX_VALUE) is true'
-);
-
+  "0xfffffffffffff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn !== Number.MAX_VALUE");
 assert.sameValue(
   Number.MAX_VALUE !== 0xfffffffffffff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn,
   true,
-  'The result of (Number.MAX_VALUE !== 0xfffffffffffff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn) is true'
-);
-
+  "Number.MAX_VALUE !== 0xfffffffffffff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn");
 assert.sameValue(
   0xfffffffffffff800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000n !== Number.MAX_VALUE,
   true,
-  'The result of (0xfffffffffffff800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000n !== Number.MAX_VALUE) is true'
-);
-
+  "0xfffffffffffff800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000n !== Number.MAX_VALUE");
 assert.sameValue(
   Number.MAX_VALUE !== 0xfffffffffffff800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000n,
   true,
-  'The result of (Number.MAX_VALUE !== 0xfffffffffffff800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000n) is true'
-);
-
+  "Number.MAX_VALUE !== 0xfffffffffffff800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000n");
 assert.sameValue(
   0xfffffffffffff800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001n !== Number.MAX_VALUE,
   true,
-  'The result of (0xfffffffffffff800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001n !== Number.MAX_VALUE) is true'
-);
-
+  "0xfffffffffffff800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001n !== Number.MAX_VALUE");
 assert.sameValue(
   Number.MAX_VALUE !== 0xfffffffffffff800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001n,
   true,
-  'The result of (Number.MAX_VALUE !== 0xfffffffffffff800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001n) is true'
-);
+  "Number.MAX_VALUE !== 0xfffffffffffff800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001n");
+
 reportCompare(0, 0);

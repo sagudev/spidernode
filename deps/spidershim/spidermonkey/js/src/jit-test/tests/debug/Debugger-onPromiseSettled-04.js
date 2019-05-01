@@ -1,5 +1,8 @@
 // An onPromiseSettled handler can disable itself.
-var g = newGlobal({newCompartment: true});
+if (!('Promise' in this))
+    quit(0);
+
+var g = newGlobal();
 var dbg = new Debugger(g);
 var log;
 

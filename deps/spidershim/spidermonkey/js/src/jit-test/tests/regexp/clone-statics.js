@@ -1,4 +1,5 @@
-// |jit-test| skip-if: helperThreadCount() === 0
+if (helperThreadCount() === 0)
+  quit(0);
 
 offThreadCompileScript(`
   function foo(x, {}) {

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -173,7 +173,6 @@ class Registers {
       27;  // No named special-function registers.
 
   static const SetType AllMask = 0xFFFFFFFF;
-  static const SetType NoneMask = 0x0;
 
   static const SetType ArgRegMask =
       (1 << Registers::x0) | (1 << Registers::x1) | (1 << Registers::x2) |
@@ -185,9 +184,9 @@ class Registers {
       (1 << Registers::x3) | (1 << Registers::x4) | (1 << Registers::x5) |
       (1 << Registers::x6) | (1 << Registers::x7) | (1 << Registers::x8) |
       (1 << Registers::x9) | (1 << Registers::x10) | (1 << Registers::x11) |
-      (1 << Registers::x12) | (1 << Registers::x13) | (1 << Registers::x14) |
-      (1 << Registers::x15) | (1 << Registers::x16) | (1 << Registers::x17) |
-      (1 << Registers::x18);
+      (1 << Registers::x11) | (1 << Registers::x12) | (1 << Registers::x13) |
+      (1 << Registers::x14) | (1 << Registers::x14) | (1 << Registers::x15) |
+      (1 << Registers::x16) | (1 << Registers::x17) | (1 << Registers::x18);
 
   static const SetType NonVolatileMask =
       (1 << Registers::x19) | (1 << Registers::x20) | (1 << Registers::x21) |
@@ -346,7 +345,6 @@ class FloatRegisters {
   static const uint32_t Total = 64;
   static const uint32_t TotalPhys = 32;
   static const SetType AllMask = 0xFFFFFFFFFFFFFFFFULL;
-  static const SetType NoneMask = 0x0ULL;
   static const SetType AllPhysMask = 0xFFFFFFFFULL;
   static const SetType SpreadCoefficient = 0x100000001ULL;
 
@@ -383,7 +381,7 @@ class FloatRegisters {
     float s;
     double d;
   };
-  enum Kind : uint8_t { Double, Single };
+  enum Kind { Double, Single };
 };
 
 // In bytes: slots needed for potential memory->memory move spills.
@@ -394,12 +392,10 @@ static const uint32_t ION_FRAME_SLACK_SIZE = 24;
 
 static const uint32_t ShadowStackSpace = 0;
 
-// When our only strategy for far jumps is to encode the offset directly, and
-// not insert any jump islands during assembly for even further jumps, then the
-// architecture restricts us to -2^27 .. 2^27-4, to fit into a signed 28-bit
-// value.  We further reduce this range to allow the far-jump inserting code to
-// have some breathing room.
-static const uint32_t JumpImmediateRange = ((1 << 27) - (20 * 1024 * 1024));
+// TODO:
+// This constant needs to be updated to account for whatever near/far branching
+// strategy is used by ARM64.
+static const uint32_t JumpImmediateRange = UINT32_MAX;
 
 static const uint32_t ABIStackAlignment = 16;
 static const uint32_t CodeAlignment = 16;
@@ -453,25 +449,23 @@ struct FloatRegister {
   bool volatile_() const {
     return !!((SetType(1) << code()) & FloatRegisters::VolatileMask);
   }
-  constexpr bool operator!=(FloatRegister other) const {
+  bool operator!=(FloatRegister other) const {
     return other.code_ != code_ || other.k_ != k_;
   }
-  constexpr bool operator==(FloatRegister other) const {
+  bool operator==(FloatRegister other) const {
     return other.code_ == code_ && other.k_ == k_;
   }
   bool aliases(FloatRegister other) const { return other.code_ == code_; }
   uint32_t numAliased() const { return 2; }
   static FloatRegisters::Kind otherkind(FloatRegisters::Kind k) {
-    if (k == FloatRegisters::Double) {
-      return FloatRegisters::Single;
-    }
+    if (k == FloatRegisters::Double) return FloatRegisters::Single;
     return FloatRegisters::Double;
   }
-  FloatRegister aliased(uint32_t aliasIdx) {
-    if (aliasIdx == 0) {
-      return *this;
-    }
-    return FloatRegister(code_, otherkind(k_));
+  void aliased(uint32_t aliasIdx, FloatRegister* ret) {
+    if (aliasIdx == 0)
+      *ret = *this;
+    else
+      *ret = FloatRegister(code_, otherkind(k_));
   }
   // This function mostly exists for the ARM backend.  It is to ensure that two
   // floating point registers' types are equivalent.  e.g. S0 is not equivalent
@@ -483,9 +477,9 @@ struct FloatRegister {
     return k_ == FloatRegisters::Double ? sizeof(double) : sizeof(float);
   }
   uint32_t numAlignedAliased() { return numAliased(); }
-  FloatRegister alignedAliased(uint32_t aliasIdx) {
+  void alignedAliased(uint32_t aliasIdx, FloatRegister* ret) {
     MOZ_ASSERT(aliasIdx < numAliased());
-    return aliased(aliasIdx);
+    aliased(aliasIdx, ret);
   }
   SetType alignedOrDominatedAliasedSet() const {
     return Codes::SpreadCoefficient << code_;
@@ -532,8 +526,8 @@ struct FloatRegister {
   uint32_t getRegisterDumpOffsetInBytes();
 
  public:
-  Code code_;
-  FloatRegisters::Kind k_;
+  Code code_ : 8;
+  FloatRegisters::Kind k_ : 1;
 };
 
 template <>

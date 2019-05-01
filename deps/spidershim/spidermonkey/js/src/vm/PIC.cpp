@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,15 +9,16 @@
 #include "gc/FreeOp.h"
 #include "gc/Marking.h"
 #include "vm/GlobalObject.h"
+#include "vm/JSCompartment.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
-#include "vm/Realm.h"
 #include "vm/SelfHosting.h"
 
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
 
 using namespace js;
+using namespace js::gc;
 
 bool js::ForOfPIC::Chain::initialize(JSContext* cx) {
   MOZ_ASSERT(!initialized_);
@@ -25,16 +26,12 @@ bool js::ForOfPIC::Chain::initialize(JSContext* cx) {
   // Get the canonical Array.prototype
   RootedNativeObject arrayProto(
       cx, GlobalObject::getOrCreateArrayPrototype(cx, cx->global()));
-  if (!arrayProto) {
-    return false;
-  }
+  if (!arrayProto) return false;
 
   // Get the canonical ArrayIterator.prototype
   RootedNativeObject arrayIteratorProto(
       cx, GlobalObject::getOrCreateArrayIteratorPrototype(cx, cx->global()));
-  if (!arrayIteratorProto) {
-    return false;
-  }
+  if (!arrayIteratorProto) return false;
 
   // From this point on, we can't fail.  Set initialized and fill the fields
   // for the canonical Array.prototype and ArrayIterator.prototype objects.
@@ -49,37 +46,27 @@ bool js::ForOfPIC::Chain::initialize(JSContext* cx) {
   // Look up Array.prototype[@@iterator], ensure it's a slotful shape.
   Shape* iterShape =
       arrayProto->lookup(cx, SYMBOL_TO_JSID(cx->wellKnownSymbols().iterator));
-  if (!iterShape || !iterShape->isDataProperty()) {
-    return true;
-  }
+  if (!iterShape || !iterShape->isDataProperty()) return true;
 
   // Get the referred value, and ensure it holds the canonical ArrayValues
   // function.
   Value iterator = arrayProto->getSlot(iterShape->slot());
   JSFunction* iterFun;
-  if (!IsFunctionObject(iterator, &iterFun)) {
+  if (!IsFunctionObject(iterator, &iterFun)) return true;
+  if (!IsSelfHostedFunctionWithName(iterFun, cx->names().ArrayValues))
     return true;
-  }
-  if (!IsSelfHostedFunctionWithName(iterFun, cx->names().ArrayValues)) {
-    return true;
-  }
 
   // Look up the 'next' value on ArrayIterator.prototype
   Shape* nextShape = arrayIteratorProto->lookup(cx, cx->names().next);
-  if (!nextShape || !nextShape->isDataProperty()) {
-    return true;
-  }
+  if (!nextShape || !nextShape->isDataProperty()) return true;
 
   // Get the referred value, ensure it holds the canonical ArrayIteratorNext
   // function.
   Value next = arrayIteratorProto->getSlot(nextShape->slot());
   JSFunction* nextFun;
-  if (!IsFunctionObject(next, &nextFun)) {
+  if (!IsFunctionObject(next, &nextFun)) return true;
+  if (!IsSelfHostedFunctionWithName(nextFun, cx->names().ArrayIteratorNext))
     return true;
-  }
-  if (!IsSelfHostedFunctionWithName(nextFun, cx->names().ArrayIteratorNext)) {
-    return true;
-  }
 
   disabled_ = false;
   arrayProtoShape_ = arrayProto->lastProperty();
@@ -100,32 +87,24 @@ bool js::ForOfPIC::Chain::tryOptimizeArray(JSContext* cx,
 
   if (!initialized_) {
     // If PIC is not initialized, initialize it.
-    if (!initialize(cx)) {
-      return false;
-    }
+    if (!initialize(cx)) return false;
 
   } else if (!disabled_ && !isArrayStateStillSane()) {
     // Otherwise, if array state is no longer sane, reinitialize.
     reset();
 
-    if (!initialize(cx)) {
-      return false;
-    }
+    if (!initialize(cx)) return false;
   }
   MOZ_ASSERT(initialized_);
 
   // If PIC is disabled, don't bother trying to optimize.
-  if (disabled_) {
-    return true;
-  }
+  if (disabled_) return true;
 
   // By the time we get here, we should have a sane array state to work with.
   MOZ_ASSERT(isArrayStateStillSane());
 
   // Ensure array's prototype is the actual Array.prototype
-  if (array->staticPrototype() != arrayProto_) {
-    return true;
-  }
+  if (array->staticPrototype() != arrayProto_) return true;
 
   // Check if stub already exists.
   if (hasMatchingStub(array)) {
@@ -134,59 +113,21 @@ bool js::ForOfPIC::Chain::tryOptimizeArray(JSContext* cx,
   }
 
   // Ensure array doesn't define @@iterator directly.
-  if (array->lookup(cx, SYMBOL_TO_JSID(cx->wellKnownSymbols().iterator))) {
+  if (array->lookup(cx, SYMBOL_TO_JSID(cx->wellKnownSymbols().iterator)))
     return true;
-  }
 
   // If the number of stubs is about to exceed the limit, throw away entire
   // existing cache before adding new stubs.  We shouldn't really have heavy
   // churn on these.
-  if (numStubs() >= MAX_STUBS) {
-    eraseChain();
-  }
+  if (numStubs() >= MAX_STUBS) eraseChain();
 
   // Good to optimize now, create stub to add.
   RootedShape shape(cx, array->lastProperty());
   Stub* stub = cx->new_<Stub>(shape);
-  if (!stub) {
-    return false;
-  }
+  if (!stub) return false;
 
   // Add the stub.
   addStub(stub);
-
-  *optimized = true;
-  return true;
-}
-
-bool js::ForOfPIC::Chain::tryOptimizeArrayIteratorNext(JSContext* cx,
-                                                       bool* optimized) {
-  MOZ_ASSERT(optimized);
-
-  *optimized = false;
-
-  if (!initialized_) {
-    // If PIC is not initialized, initialize it.
-    if (!initialize(cx)) {
-      return false;
-    }
-  } else if (!disabled_ && !isArrayNextStillSane()) {
-    // Otherwise, if array iterator state is no longer sane, reinitialize.
-    reset();
-
-    if (!initialize(cx)) {
-      return false;
-    }
-  }
-  MOZ_ASSERT(initialized_);
-
-  // If PIC is disabled, don't bother trying to optimize.
-  if (disabled_) {
-    return true;
-  }
-
-  // By the time we get here, we should have a sane iterator state to work with.
-  MOZ_ASSERT(isArrayNextStillSane());
 
   *optimized = true;
   return true;
@@ -198,9 +139,7 @@ bool js::ForOfPIC::Chain::hasMatchingStub(ArrayObject* obj) {
 
   // Check if there is a matching stub.
   for (Stub* stub = stubs(); stub != nullptr; stub = stub->next()) {
-    if (stub->shape() == obj->shape()) {
-      return true;
-    }
+    if (stub->shape() == obj->shape()) return true;
   }
 
   return false;
@@ -208,15 +147,12 @@ bool js::ForOfPIC::Chain::hasMatchingStub(ArrayObject* obj) {
 
 bool js::ForOfPIC::Chain::isArrayStateStillSane() {
   // Ensure that canonical Array.prototype has matching shape.
-  if (arrayProto_->lastProperty() != arrayProtoShape_) {
-    return false;
-  }
+  if (arrayProto_->lastProperty() != arrayProtoShape_) return false;
 
   // Ensure that Array.prototype[@@iterator] contains the
   // canonical iterator function.
-  if (arrayProto_->getSlot(arrayProtoIteratorSlot_) != canonicalIteratorFunc_) {
+  if (arrayProto_->getSlot(arrayProtoIteratorSlot_) != canonicalIteratorFunc_)
     return false;
-  }
 
   // Chain to isArrayNextStillSane.
   return isArrayNextStillSane();
@@ -259,9 +195,7 @@ void js::ForOfPIC::Chain::eraseChain() {
 
 // Trace the pointers stored directly on the stub.
 void js::ForOfPIC::Chain::trace(JSTracer* trc) {
-  if (!initialized_ || disabled_) {
-    return;
-  }
+  if (!initialized_ || disabled_) return;
 
   TraceEdge(trc, &arrayProto_, "ForOfPIC Array.prototype.");
   TraceEdge(trc, &arrayIteratorProto_, "ForOfPIC ArrayIterator.prototype.");
@@ -275,9 +209,7 @@ void js::ForOfPIC::Chain::trace(JSTracer* trc) {
             "ForOfPIC ArrayIterator.prototype.next builtin.");
 
   // Free all the stubs in the chain.
-  while (stubs_) {
-    removeStub(stubs_, nullptr);
-  }
+  while (stubs_) removeStub(stubs_, nullptr);
 }
 
 void js::ForOfPIC::Chain::sweep(FreeOp* fop) {
@@ -292,17 +224,13 @@ void js::ForOfPIC::Chain::sweep(FreeOp* fop) {
 
 static void ForOfPIC_finalize(FreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->maybeOnHelperThread());
-  if (ForOfPIC::Chain* chain =
-          ForOfPIC::fromJSObject(&obj->as<NativeObject>())) {
+  if (ForOfPIC::Chain* chain = ForOfPIC::fromJSObject(&obj->as<NativeObject>()))
     chain->sweep(fop);
-  }
 }
 
 static void ForOfPIC_traceObject(JSTracer* trc, JSObject* obj) {
-  if (ForOfPIC::Chain* chain =
-          ForOfPIC::fromJSObject(&obj->as<NativeObject>())) {
+  if (ForOfPIC::Chain* chain = ForOfPIC::fromJSObject(&obj->as<NativeObject>()))
     chain->trace(trc);
-  }
 }
 
 static const ClassOps ForOfPICClassOps = {nullptr,
@@ -321,19 +249,14 @@ const Class ForOfPIC::class_ = {
     "ForOfPIC", JSCLASS_HAS_PRIVATE | JSCLASS_BACKGROUND_FINALIZE,
     &ForOfPICClassOps};
 
-/* static */
-NativeObject* js::ForOfPIC::createForOfPICObject(JSContext* cx,
-                                                 Handle<GlobalObject*> global) {
-  cx->check(global);
-  NativeObject* obj = NewNativeObjectWithGivenProto(cx, &ForOfPIC::class_,
-                                                    nullptr, TenuredObject);
-  if (!obj) {
-    return nullptr;
-  }
+/* static */ NativeObject* js::ForOfPIC::createForOfPICObject(
+    JSContext* cx, Handle<GlobalObject*> global) {
+  assertSameCompartment(cx, global);
+  NativeObject* obj =
+      NewNativeObjectWithGivenProto(cx, &ForOfPIC::class_, nullptr);
+  if (!obj) return nullptr;
   ForOfPIC::Chain* chain = cx->new_<ForOfPIC::Chain>();
-  if (!chain) {
-    return nullptr;
-  }
+  if (!chain) return nullptr;
   obj->setPrivate(chain);
   return obj;
 }
@@ -342,8 +265,6 @@ NativeObject* js::ForOfPIC::createForOfPICObject(JSContext* cx,
   MOZ_ASSERT(!cx->global()->getForOfPICObject());
   Rooted<GlobalObject*> global(cx, cx->global());
   NativeObject* obj = GlobalObject::getOrCreateForOfPICObject(cx, global);
-  if (!obj) {
-    return nullptr;
-  }
+  if (!obj) return nullptr;
   return fromJSObject(obj);
 }

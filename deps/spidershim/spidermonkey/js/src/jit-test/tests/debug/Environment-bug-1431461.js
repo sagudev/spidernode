@@ -1,6 +1,6 @@
 // Check that duplicate bindings are not created for let/const variables.
 
-let g = newGlobal({newCompartment: true});
+let g = newGlobal();
 let dbg = new Debugger(g);
 
 g.eval(`

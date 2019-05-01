@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !this.hasOwnProperty("TypedObject")
+if (!this.hasOwnProperty("TypedObject"))
+  quit();
 
 v = new new TypedObject.StructType({
     f: TypedObject.Any

@@ -1,6 +1,6 @@
 // |jit-test| error: ReferenceError
 
-let g = newGlobal({newCompartment: true});
+let g = newGlobal();
 let dbg = Debugger(g);
 
 let forceException = g.eval(`

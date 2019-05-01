@@ -1,12 +1,15 @@
-// |jit-test| test-also=--wasm-compiler=ion; skip-if: !wasmDebuggingIsSupported()
+// |jit-test| test-also-no-wasm-baseline
 // Tests debugEnabled state of wasm when allowUnobservedAsmJS == true.
 
 load(libdir + "asserts.js");
 
+if (!wasmDebuggingIsSupported())
+    quit();
+
 // Checking that there are no offsets are present in a wasm instance script for
 // which debug mode was not enabled.
 function getWasmScriptWithoutAllowUnobservedAsmJS(wast) {
-    var sandbox = newGlobal({newCompartment: true});
+    var sandbox = newGlobal('');
     var dbg = new Debugger();
     dbg.allowUnobservedAsmJS = true;
     dbg.addDebuggee(sandbox);

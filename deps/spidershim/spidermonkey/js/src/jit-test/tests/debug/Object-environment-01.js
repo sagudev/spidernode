@@ -1,6 +1,6 @@
 // obj.environment is undefined when the referent is not a JS function.
 
-var g = newGlobal({newCompartment: true})
+var g = newGlobal()
 var dbg = new Debugger;
 var gw = dbg.addDebuggee(g);
 assertEq(gw.environment, undefined);

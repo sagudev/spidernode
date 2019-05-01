@@ -1,5 +1,5 @@
 const mainGlobal = this;
-const debuggerGlobal = newGlobal({newCompartment: true});
+const debuggerGlobal = newGlobal();
 
 function Memory({global}) {
   this.dbg = new (debuggerGlobal.Debugger);

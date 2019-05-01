@@ -7,25 +7,16 @@ function testGetParam(key) {
 function testChangeParam(key) {
     let prev = gcparam(key);
     let value = prev - 1;
-    try {
-        gcparam(key, value);
-        assertEq(gcparam(key), value);
-        gcparam(key, prev);
-        assertEq(gcparam(key), prev);
-    } catch {
-        assertEq(gcparam(key), prev);
-    }
+    gcparam(key, value);
+    assertEq(gcparam(key), value);
+    gcparam(key, prev);
 }
 
-function testMBParamValue(key) {
+function testLargeParamValue(key) {
     let prev = gcparam(key);
-    const value = 1024;
-    try {
-        gcparam(key, value);
-        assertEq(gcparam(key), value);
-    } catch {
-        assertEq(gcparam(key), prev);
-    }
+    const value = 1000000;
+    gcparam(key, value);
+    assertEq(gcparam(key), value);
     gcparam(key, prev);
 }
 
@@ -52,5 +43,5 @@ testChangeParam("minEmptyChunkCount");
 testChangeParam("maxEmptyChunkCount");
 testChangeParam("compactingEnabled");
 
-testMBParamValue("highFrequencyLowLimit");
-testMBParamValue("highFrequencyHighLimit");
+testLargeParamValue("highFrequencyLowLimit");
+testLargeParamValue("highFrequencyHighLimit");

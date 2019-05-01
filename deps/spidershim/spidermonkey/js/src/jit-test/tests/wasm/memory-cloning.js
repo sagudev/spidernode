@@ -1,6 +1,7 @@
-// |jit-test| skip-if: !wasmThreadsSupported()
-
 // Basic structured cloning tests (specific to SpiderMonkey shell)
+
+if (!wasmThreadsSupported())
+    quit(0);
 
 // Should *not* be possible to serialize and deserialize memories that are not
 // shared, whether we transfer them or not.
@@ -55,7 +56,7 @@
     // then we grow mem1
     wasmEvalText(`(module
 		   (memory (import "" "memory") 2 4 shared)
-		   (func (export "g") (drop (memory.grow (i32.const 1)))))`,
+		   (func (export "g") (drop (grow_memory (i32.const 1)))))`,
 		 {"": {memory: mem1}}).exports.g();
 
     // after growing mem1, mem2 can be accessed at index

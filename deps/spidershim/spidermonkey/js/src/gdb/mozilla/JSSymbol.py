@@ -1,5 +1,6 @@
 # Pretty-printer for SpiderMonkey symbols.
 
+import gdb
 import mozilla.prettyprinters
 from mozilla.prettyprinters import ptr_pretty_printer
 
@@ -9,7 +10,6 @@ mozilla.prettyprinters.clear_module_printers(__name__)
 # JS::SymbolCode enumerators
 InSymbolRegistry = 0xfffffffe
 UniqueSymbol = 0xffffffff
-
 
 @ptr_pretty_printer("JS::Symbol")
 class JSSymbolPtr(mozilla.prettyprinters.Pointer):
@@ -30,3 +30,4 @@ class JSSymbolPtr(mozilla.prettyprinters.Pointer):
             assert desc[0] == '"'
             assert desc[-1] == '"'
             return desc[1:-1]
+

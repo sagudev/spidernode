@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,16 +10,13 @@
 // This file declares various analysis passes that operate on MIR.
 
 #include "jit/JitAllocPolicy.h"
+#include "jit/MIR.h"
 
 namespace js {
 namespace jit {
 
-class MBasicBlock;
-class MCompare;
-class MDefinition;
 class MIRGenerator;
 class MIRGraph;
-class MTest;
 
 MOZ_MUST_USE bool PruneUnusedBranches(MIRGenerator* mir, MIRGraph& graph);
 
@@ -80,6 +77,8 @@ MOZ_MUST_USE bool EliminateRedundantChecks(MIRGraph& graph);
 
 MOZ_MUST_USE bool AddKeepAliveInstructions(MIRGraph& graph);
 
+class MDefinition;
+
 // Simple linear sum of the form 'n' or 'x + n'.
 struct SimpleLinearSum {
   MDefinition* term;
@@ -121,9 +120,8 @@ class LinearSum {
   LinearSum(const LinearSum& other)
       : terms_(other.terms_.allocPolicy()), constant_(other.constant_) {
     AutoEnterOOMUnsafeRegion oomUnsafe;
-    if (!terms_.appendAll(other.terms_)) {
+    if (!terms_.appendAll(other.terms_))
       oomUnsafe.crash("LinearSum::LinearSum");
-    }
   }
 
   // These return false on an integer overflow, and afterwards the sum must
@@ -165,7 +163,7 @@ MCompare* ConvertLinearInequality(TempAllocator& alloc, MBasicBlock* block,
 MOZ_MUST_USE bool AnalyzeNewScriptDefiniteProperties(
     JSContext* cx, HandleFunction fun, ObjectGroup* group,
     HandlePlainObject baseobj,
-    Vector<TypeNewScriptInitializer>* initializerList);
+    Vector<TypeNewScript::Initializer>* initializerList);
 
 MOZ_MUST_USE bool AnalyzeArgumentsUsage(JSContext* cx, JSScript* script);
 

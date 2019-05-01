@@ -1,5 +1,4 @@
-// |jit-test| skip-if: !wasmDebugSupport()
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.parent = this;
 g.eval("Debugger(parent).onExceptionUnwind = function () {};");
 lfModule = new WebAssembly.Module(wasmTextToBinary(`

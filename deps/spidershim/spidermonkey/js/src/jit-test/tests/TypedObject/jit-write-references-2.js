@@ -1,4 +1,6 @@
-// |jit-test| skip-if: typeof Intl === 'undefined'
+if (typeof TypedObject === "undefined" || typeof Intl === "undefined")
+    quit();
+
 try {
     gczeal(4)
 } catch (exc) {}

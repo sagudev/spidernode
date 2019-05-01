@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,75 +14,32 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Vector.h"
 
+#include "builtin/Promise.h"
 #include "ds/TraceableFifo.h"
 #include "gc/Barrier.h"
 #include "gc/WeakMap.h"
 #include "js/Debug.h"
 #include "js/GCVariant.h"
 #include "js/HashTable.h"
-#include "js/Promise.h"
-#include "js/Utility.h"
 #include "js/Wrapper.h"
-#include "proxy/DeadObjectProxy.h"
 #include "vm/GlobalObject.h"
+#include "vm/JSCompartment.h"
 #include "vm/JSContext.h"
-#include "vm/Realm.h"
 #include "vm/SavedStacks.h"
-#include "vm/Stack.h"
+#include "wasm/WasmJS.h"
+
+enum JSTrapStatus {
+  JSTRAP_ERROR,
+  JSTRAP_CONTINUE,
+  JSTRAP_RETURN,
+  JSTRAP_THROW,
+  JSTRAP_LIMIT
+};
 
 namespace js {
 
-/**
- * Tells how the JS engine should resume debuggee execution after firing a
- * debugger hook.  Most debugger hooks get to choose how the debuggee proceeds;
- * see js/src/doc/Debugger/Conventions.md under "Resumption Values".
- *
- * Debugger::processHandlerResult() translates between JavaScript values and
- * this enum.
- *
- * The values `ResumeMode::Throw` and `ResumeMode::Return` are always
- * associated with a value (the exception value or return value). Sometimes
- * this is represented as an explicit `JS::Value` variable or parameter,
- * declared alongside the `ResumeMode`. In other cases, especially when
- * ResumeMode is used as a return type (as in Debugger::onEnterFrame), the
- * value is stashed in `cx`'s pending exception slot or the topmost frame's
- * return value slot.
- */
-enum class ResumeMode {
-  /**
-   * The debuggee should continue unchanged.
-   *
-   * This corresponds to a resumption value of `undefined`.
-   */
-  Continue,
-
-  /**
-   * Throw an exception in the debuggee.
-   *
-   * This corresponds to a resumption value of `{throw: <value>}`.
-   */
-  Throw,
-
-  /**
-   * Terminate the debuggee, as if it had been cancelled via the "slow
-   * script" ribbon.
-   *
-   * This corresponds to a resumption value of `null`.
-   */
-  Terminate,
-
-  /**
-   * Force the debuggee to return from the current frame.
-   *
-   * This corresponds to a resumption value of `{return: <value>}`.
-   */
-  Return,
-};
-
-class AbstractGeneratorObject;
 class Breakpoint;
 class DebuggerMemory;
-class PromiseObject;
 class ScriptedOnStepHandler;
 class ScriptedOnPopHandler;
 class WasmInstanceObject;
@@ -90,14 +47,6 @@ class WasmInstanceObject;
 typedef HashSet<ReadBarrieredGlobalObject,
                 MovableCellHasher<ReadBarrieredGlobalObject>, ZoneAllocPolicy>
     WeakGlobalObjectSet;
-
-#ifdef DEBUG
-extern void CheckDebuggeeThing(JSScript* script, bool invisibleOk);
-
-extern void CheckDebuggeeThing(LazyScript* script, bool invisibleOk);
-
-extern void CheckDebuggeeThing(JSObject* obj, bool invisibleOk);
-#endif
 
 /*
  * A weakmap from GC thing keys to JSObject values that supports the keys being
@@ -119,15 +68,14 @@ extern void CheckDebuggeeThing(JSObject* obj, bool invisibleOk);
  * created.
  *
  * Also note that keys in these weakmaps can be in any compartment, debuggee or
- * not, because they are not deleted when a compartment is no longer a
+ * not, because they cannot be deleted when a compartment is no longer a
  * debuggee: the values need to maintain object identity across add/remove/add
- * transitions. (Frames are an exception to the rule. Existing Debugger.Frame
- * objects are killed when debugging is disabled for their compartment, and if
- * it's re-enabled later, new Frame objects are created.)
+ * transitions.
  */
 template <class UnbarrieredKey, bool InvisibleKeysOk = false>
 class DebuggerWeakMap
-    : private WeakMap<HeapPtr<UnbarrieredKey>, HeapPtr<JSObject*>> {
+    : private WeakMap<HeapPtr<UnbarrieredKey>, HeapPtr<JSObject*>,
+                      MovableCellHasher<HeapPtr<UnbarrieredKey>>> {
  private:
   typedef HeapPtr<UnbarrieredKey> Key;
   typedef HeapPtr<JSObject*> Value;
@@ -137,71 +85,52 @@ class DebuggerWeakMap
       CountMap;
 
   CountMap zoneCounts;
-  JS::Compartment* compartment;
+  JSCompartment* compartment;
 
  public:
-  typedef WeakMap<Key, Value> Base;
+  typedef WeakMap<Key, Value, MovableCellHasher<Key>> Base;
 
   explicit DebuggerWeakMap(JSContext* cx)
       : Base(cx), zoneCounts(cx->zone()), compartment(cx->compartment()) {}
 
  public:
-  // Expose those parts of HashMap public interface that are used by Debugger
-  // methods.
+  /* Expose those parts of HashMap public interface that are used by Debugger
+   * methods. */
 
-  using Entry = typename Base::Entry;
-  using Ptr = typename Base::Ptr;
-  using AddPtr = typename Base::AddPtr;
-  using Range = typename Base::Range;
-  using Enum = typename Base::Enum;
-  using Lookup = typename Base::Lookup;
+  typedef typename Base::Entry Entry;
+  typedef typename Base::Ptr Ptr;
+  typedef typename Base::AddPtr AddPtr;
+  typedef typename Base::Range Range;
+  typedef typename Base::Enum Enum;
+  typedef typename Base::Lookup Lookup;
 
-  // Expose WeakMap public interface.
+  /* Expose WeakMap public interface */
 
   using Base::all;
-  using Base::lookup;
   using Base::lookupForAdd;
-  using Base::remove;
   using Base::trace;
+
+  MOZ_MUST_USE bool init(uint32_t len = 16) {
+    return Base::init(len) && zoneCounts.init();
+  }
 
   template <typename KeyInput, typename ValueInput>
   bool relookupOrAdd(AddPtr& p, const KeyInput& k, const ValueInput& v) {
     MOZ_ASSERT(v->compartment() == this->compartment);
-#ifdef DEBUG
-    CheckDebuggeeThing(k, InvisibleKeysOk);
-#endif
+    MOZ_ASSERT(!k->compartment()->creationOptions().mergeable());
+    MOZ_ASSERT_IF(!InvisibleKeysOk,
+                  !k->compartment()->creationOptions().invisibleToDebugger());
     MOZ_ASSERT(!Base::has(k));
-    if (!incZoneCount(k->zone())) {
-      return false;
-    }
+    if (!incZoneCount(k->zone())) return false;
     bool ok = Base::relookupOrAdd(p, k, v);
-    if (!ok) {
-      decZoneCount(k->zone());
-    }
+    if (!ok) decZoneCount(k->zone());
     return ok;
-  }
-
-  template <typename KeyInput>
-  bool has(const KeyInput& k) const {
-    return !!this->lookup(k);
   }
 
   void remove(const Lookup& l) {
     MOZ_ASSERT(Base::has(l));
     Base::remove(l);
     decZoneCount(l->zone());
-  }
-
-  // Remove entries whose keys satisfy the given predicate.
-  template <typename Predicate>
-  void removeIf(Predicate test) {
-    for (Enum e(*static_cast<Base*>(this)); !e.empty(); e.popFront()) {
-      JSObject* key = e.front().key();
-      if (test(key)) {
-        decZoneCount(key->zoneFromAnyThread());
-        e.removeFront();
-      }
-    }
   }
 
  public:
@@ -211,9 +140,7 @@ class DebuggerWeakMap
       traceValueEdges(tracer, e.front().value());
       Key key = e.front().key();
       TraceEdge(tracer, &key, "Debugger WeakMap key");
-      if (key != e.front().key()) {
-        e.rekeyFront(key);
-      }
+      if (key != e.front().key()) e.rekeyFront(key);
       key.unsafeSet(nullptr);
     }
   }
@@ -234,16 +161,12 @@ class DebuggerWeakMap
         e.removeFront();
       }
     }
-#ifdef DEBUG
     Base::assertEntriesNotAboutToBeFinalized();
-#endif
   }
 
   MOZ_MUST_USE bool incZoneCount(JS::Zone* zone) {
-    CountMap::AddPtr p = zoneCounts.lookupForAdd(zone);
-    if (!p && !zoneCounts.add(p, zone, 0)) {
-      return false;  // OOM'd while adding
-    }
+    CountMap::Ptr p = zoneCounts.lookupWithDefault(zone, 0);
+    if (!p) return false;
     ++p->value();
     return true;
   }
@@ -253,16 +176,8 @@ class DebuggerWeakMap
     MOZ_ASSERT(p);
     MOZ_ASSERT(p->value() > 0);
     --p->value();
-    if (p->value() == 0) {
-      zoneCounts.remove(zone);
-    }
+    if (p->value() == 0) zoneCounts.remove(zone);
   }
-
-#ifdef JS_GC_ZEAL
-  // Let the weak map marking verifier know that this map can
-  // contain keys in other zones.
-  virtual bool allowKeysInOtherZones() const override { return true; }
-#endif
 };
 
 class LeaveDebuggeeNoExecute;
@@ -291,13 +206,13 @@ class AutoSuppressDebuggeeNoExecuteChecks {
 };
 
 class MOZ_RAII EvalOptions {
-  JS::UniqueChars filename_;
-  unsigned lineno_ = 1;
+  const char* filename_;
+  unsigned lineno_;
 
  public:
-  EvalOptions() = default;
-  ~EvalOptions() = default;
-  const char* filename() const { return filename_.get(); }
+  EvalOptions() : filename_(nullptr), lineno_(1) {}
+  ~EvalOptions();
+  const char* filename() const { return filename_; }
   unsigned lineno() const { return lineno_; }
   MOZ_MUST_USE bool setFilename(JSContext* cx, const char* filename);
   void setLineno(unsigned lineno) { lineno_ = lineno; }
@@ -311,7 +226,7 @@ class MOZ_RAII EvalOptions {
  */
 typedef JSObject Env;
 
-// One of a real JSScript, a real LazyScript, or synthesized.
+// Either a real JSScript or synthesized.
 //
 // If synthesized, the referent is one of the following:
 //
@@ -319,13 +234,17 @@ typedef JSObject Env;
 //      script.
 //   2. A wasm JSFunction, denoting a synthesized wasm function script.
 //      NYI!
-typedef mozilla::Variant<JSScript*, LazyScript*, WasmInstanceObject*>
-    DebuggerScriptReferent;
+typedef mozilla::Variant<JSScript*, WasmInstanceObject*> DebuggerScriptReferent;
 
 // Either a ScriptSourceObject, for ordinary JS, or a WasmInstanceObject,
 // denoting the synthesized source of a wasm module.
 typedef mozilla::Variant<ScriptSourceObject*, WasmInstanceObject*>
     DebuggerSourceReferent;
+
+// Either a AbstractFramePtr, for ordinary JS, or a wasm::DebugFrame,
+// for synthesized frame of a wasm code.
+typedef mozilla::Variant<AbstractFramePtr, wasm::DebugFrame*>
+    DebuggerFrameReferent;
 
 class Debugger : private mozilla::LinkedListElement<Debugger> {
   friend class Breakpoint;
@@ -339,7 +258,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   friend bool(::JS_DefineDebuggerObject)(JSContext* cx, JS::HandleObject obj);
   friend bool(::JS::dbg::IsDebugger)(JSObject&);
   friend bool(::JS::dbg::GetDebuggeeGlobals)(JSContext*, JSObject&,
-                                             MutableHandleObjectVector);
+                                             AutoObjectVector&);
   friend bool JS::dbg::FireOnGarbageCollectionHookRequired(JSContext* cx);
   friend bool JS::dbg::FireOnGarbageCollectionHook(
       JSContext* cx, JS::dbg::GarbageCollectionEvent::Ptr&& data);
@@ -389,9 +308,9 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   // must be 0 and Observing must be 1.
   enum IsObserving { NotObserving = 0, Observing = 1 };
 
-  // Return true if the given realm is a debuggee of this debugger,
+  // Return true if the given compartment is a debuggee of this debugger,
   // false otherwise.
-  bool isDebuggeeUnbarriered(const Realm* realm) const;
+  bool isDebuggeeUnbarriered(const JSCompartment* compartment) const;
 
   // Return true if this Debugger observed a debuggee that participated in the
   // GC identified by the given GC number. Return false otherwise.
@@ -420,9 +339,8 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
           ctorName(ctorName),
           size(size),
           inNursery(inNursery) {
-      MOZ_ASSERT_IF(frame, UncheckedUnwrap(frame)->is<SavedFrame>() ||
-                               IsDeadProxyObject(frame));
-    }
+      MOZ_ASSERT_IF(frame, UncheckedUnwrap(frame)->is<SavedFrame>());
+    };
 
     HeapPtr<JSObject*> frame;
     mozilla::TimeStamp when;
@@ -444,7 +362,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   }
   static void writeBarrierPost(Debugger** vp, Debugger* prev, Debugger* next) {}
 #ifdef DEBUG
-  static void assertThingIsNotGray(Debugger* dbg) { return; }
+  static bool thingIsNotGray(Debugger* dbg) { return true; }
 #endif
 
  private:
@@ -455,6 +373,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   js::GCPtrObject uncaughtExceptionHook; /* Strong reference. */
   bool enabled;
   bool allowUnobservedAsmJS;
+  bool allowWasmBinarySource;
 
   // Whether to enable code coverage on the Debuggee.
   bool collectCoverageInfo;
@@ -557,61 +476,35 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
       FrameMap;
   FrameMap frames;
 
-  /*
-   * Map from generator objects to their Debugger.Frame instances.
-   *
-   * When a Debugger.Frame is created for a generator frame, it is added to
-   * this map and remains there for the lifetime of the generator, whether
-   * that frame is on the stack at the moment or not.  This is in addition to
-   * the entry in `frames` that exists as long as the generator frame is on
-   * the stack.
-   *
-   * We need to keep the Debugger.Frame object alive to deliver it to the
-   * onEnterFrame handler on resume, and to retain onStep and onPop hooks.
-   *
-   * An entry is present in this table when:
-   * -   both the debuggee generator object and the Debugger.Frame object exist
-   * -   the Debugger.Frame's owner is still an enabled debugger of
-   *     the debuggee compartment
-   * regardless of whether the frame is currently suspended. (This list is
-   * meant to explain why we update the table in the particular places where
-   * we do so.)
-   */
-  typedef DebuggerWeakMap<JSObject*> GeneratorWeakMap;
-  GeneratorWeakMap generatorFrames;
-
   /* An ephemeral map from JSScript* to Debugger.Script instances. */
   typedef DebuggerWeakMap<JSScript*> ScriptWeakMap;
   ScriptWeakMap scripts;
 
-  using LazyScriptWeakMap = DebuggerWeakMap<LazyScript*>;
-  LazyScriptWeakMap lazyScripts;
-
-  using LazyScriptVector = JS::GCVector<LazyScript*>;
-
-  // The map from debuggee source script objects to their Debugger.Source
-  // instances.
+  /* The map from debuggee source script objects to their Debugger.Source
+   * instances. */
   typedef DebuggerWeakMap<JSObject*, true> SourceWeakMap;
   SourceWeakMap sources;
 
-  // The map from debuggee objects to their Debugger.Object instances.
+  /* The map from debuggee objects to their Debugger.Object instances. */
   typedef DebuggerWeakMap<JSObject*> ObjectWeakMap;
   ObjectWeakMap objects;
 
-  // The map from debuggee Envs to Debugger.Environment instances.
+  /* The map from debuggee Envs to Debugger.Environment instances. */
   ObjectWeakMap environments;
 
-  // The map from WasmInstanceObjects to synthesized Debugger.Script
-  // instances.
+  /* The map from WasmInstanceObjects to synthesized Debugger.Script instances.
+   */
   typedef DebuggerWeakMap<WasmInstanceObject*> WasmInstanceWeakMap;
   WasmInstanceWeakMap wasmInstanceScripts;
 
-  // The map from WasmInstanceObjects to synthesized Debugger.Source
-  // instances.
+  /* The map from WasmInstanceObjects to synthesized Debugger.Source instances.
+   */
   WasmInstanceWeakMap wasmInstanceSources;
 
-  // Keep track of tracelogger last drained identifiers to know if there are
-  // lost events.
+  /*
+   * Keep track of tracelogger last drained identifiers to know if there are
+   * lost events.
+   */
 #ifdef NIGHTLY_BUILD
   uint32_t traceLoggerLastDrainedSize;
   uint32_t traceLoggerLastDrainedIteration;
@@ -619,38 +512,18 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   uint32_t traceLoggerScriptedCallsLastDrainedSize;
   uint32_t traceLoggerScriptedCallsLastDrainedIteration;
 
-  class QueryBase;
   class ScriptQuery;
-  class SourceQuery;
   class ObjectQuery;
 
   MOZ_MUST_USE bool addDebuggeeGlobal(JSContext* cx, Handle<GlobalObject*> obj);
   void removeDebuggeeGlobal(FreeOp* fop, GlobalObject* global,
                             WeakGlobalObjectSet::Enum* debugEnum);
 
-  enum class CallUncaughtExceptionHook { No, Yes };
-
   /*
-   * Apply the resumption information in (resumeMode, vp) to `frame` in
-   * anticipation of returning to the debuggee.
-   *
-   * This is the usual path for returning from the debugger to the debuggee
-   * when we have a resumption value to apply. This does final checks on the
-   * result value and exits the debugger's realm by calling `ar.reset()`.
-   * Some hooks don't call this because they don't allow the debugger to
-   * control resumption; those just call `ar.reset()` and return.
+   * Report and clear the pending exception on ac.context, if any, and return
+   * JSTRAP_ERROR.
    */
-  ResumeMode leaveDebugger(mozilla::Maybe<AutoRealm>& ar,
-                           AbstractFramePtr frame,
-                           const mozilla::Maybe<HandleValue>& maybeThisv,
-                           CallUncaughtExceptionHook callHook,
-                           ResumeMode resumeMode, MutableHandleValue vp);
-
-  /*
-   * Report and clear the pending exception on ar.context, if any, and return
-   * ResumeMode::Terminate.
-   */
-  ResumeMode reportUncaughtException(mozilla::Maybe<AutoRealm>& ar);
+  JSTrapStatus reportUncaughtException(mozilla::Maybe<AutoCompartment>& ac);
 
   /*
    * Cope with an error or exception in a debugger hook.
@@ -660,61 +533,68 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
    * uncaughtExceptionHook as a resumption value.
    *
    * If there is no uncaughtExceptionHook, or if it fails, report and clear
-   * the pending exception on ar.context and return ResumeMode::Terminate.
+   * the pending exception on ac.context and return JSTRAP_ERROR.
    *
-   * This always calls `ar.reset()`; ar is a parameter because this method
-   * must do some things in the debugger realm and some things in the
-   * debuggee realm.
+   * This always calls ac.leave(); ac is a parameter because this method must
+   * do some things in the debugger compartment and some things in the
+   * debuggee compartment.
    */
-  ResumeMode handleUncaughtException(mozilla::Maybe<AutoRealm>& ar);
-  ResumeMode handleUncaughtException(
-      mozilla::Maybe<AutoRealm>& ar, MutableHandleValue vp,
+  JSTrapStatus handleUncaughtException(mozilla::Maybe<AutoCompartment>& ac);
+  JSTrapStatus handleUncaughtException(
+      mozilla::Maybe<AutoCompartment>& ac, MutableHandleValue vp,
       const mozilla::Maybe<HandleValue>& thisVForCheck = mozilla::Nothing(),
       AbstractFramePtr frame = NullFramePtr());
 
-  ResumeMode handleUncaughtExceptionHelper(
-      mozilla::Maybe<AutoRealm>& ar, MutableHandleValue* vp,
+  JSTrapStatus handleUncaughtExceptionHelper(
+      mozilla::Maybe<AutoCompartment>& ac, MutableHandleValue* vp,
       const mozilla::Maybe<HandleValue>& thisVForCheck, AbstractFramePtr frame);
 
   /*
    * Handle the result of a hook that is expected to return a resumption
-   * value <https://wiki.mozilla.org/Debugger#Resumption_Values>. This is
-   * called when we return from a debugging hook to debuggee code. The
-   * interpreter wants a (ResumeMode, Value) pair telling it how to proceed.
+   * value <https://wiki.mozilla.org/Debugger#Resumption_Values>. This is called
+   * when we return from a debugging hook to debuggee code. The interpreter
+   * wants a (JSTrapStatus, Value) pair telling it how to proceed.
    *
-   * Precondition: ar is entered. We are in the debugger compartment.
+   * Precondition: ac is entered. We are in the debugger compartment.
    *
-   * Postcondition: This called ar.reset(). See handleUncaughtException.
+   * Postcondition: This called ac.leave(). See handleUncaughtException.
    *
-   * If `success` is false, the hook failed. If an exception is pending in
-   * ar.context(), return handleUncaughtException(ar, vp, callhook).
-   * Otherwise just return ResumeMode::Terminate.
+   * If ok is false, the hook failed. If an exception is pending in
+   * ac.context(), return handleUncaughtException(ac, vp, callhook).
+   * Otherwise just return JSTRAP_ERROR.
    *
-   * If `success` is true, there must be no exception pending in ar.context().
-   * `rv` may be:
-   *
-   *     undefined - Return `ResumeMode::Continue` to continue execution
-   *         normally.
-   *
+   * If ok is true, there must be no exception pending in ac.context(). rv may
+   * be: undefined - Return JSTRAP_CONTINUE to continue execution normally.
    *     {return: value} or {throw: value} - Call unwrapDebuggeeValue to
-   *         unwrap `value`. Store the result in `*vp` and return
-   *         `ResumeMode::Return` or `ResumeMode::Throw`. The interpreter
-   *         will force the current frame to return or throw an exception.
-   *
-   *     null - Return `ResumeMode::Terminate` to terminate the debuggee with
-   *         an uncatchable error.
-   *
+   *         unwrap value. Store the result in *vp and return JSTRAP_RETURN
+   *         or JSTRAP_THROW. The interpreter will force the current frame to
+   *         return or throw an exception.
+   *     null - Return JSTRAP_ERROR to terminate the debuggee with an
+   *         uncatchable error.
    *     anything else - Make a new TypeError the pending exception and
-   *         return handleUncaughtException(ar, vp, callHook).
+   *         return handleUncaughtException(ac, vp, callHook).
    */
-  ResumeMode processHandlerResult(mozilla::Maybe<AutoRealm>& ar, bool success,
-                                  const Value& rv, AbstractFramePtr frame,
-                                  jsbytecode* pc, MutableHandleValue vp);
+  JSTrapStatus processHandlerResult(mozilla::Maybe<AutoCompartment>& ac,
+                                    bool OK, const Value& rv,
+                                    AbstractFramePtr frame, jsbytecode* pc,
+                                    MutableHandleValue vp);
 
-  ResumeMode processParsedHandlerResult(mozilla::Maybe<AutoRealm>& ar,
-                                        AbstractFramePtr frame, jsbytecode* pc,
-                                        bool success, ResumeMode resumeMode,
-                                        MutableHandleValue vp);
+  JSTrapStatus processParsedHandlerResult(mozilla::Maybe<AutoCompartment>& ac,
+                                          AbstractFramePtr frame,
+                                          jsbytecode* pc, bool success,
+                                          JSTrapStatus status,
+                                          MutableHandleValue vp);
+
+  JSTrapStatus processParsedHandlerResultHelper(
+      mozilla::Maybe<AutoCompartment>& ac, AbstractFramePtr frame,
+      const mozilla::Maybe<HandleValue>& maybeThisv, bool success,
+      JSTrapStatus status, MutableHandleValue vp);
+
+  bool processResumptionValue(mozilla::Maybe<AutoCompartment>& ac,
+                              AbstractFramePtr frame,
+                              const mozilla::Maybe<HandleValue>& maybeThis,
+                              HandleValue rval, JSTrapStatus& statusp,
+                              MutableHandleValue vp);
 
   GlobalObject* unwrapDebuggeeArgument(JSContext* cx, const Value& v);
 
@@ -757,6 +637,8 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   static bool setUncaughtExceptionHook(JSContext* cx, unsigned argc, Value* vp);
   static bool getAllowUnobservedAsmJS(JSContext* cx, unsigned argc, Value* vp);
   static bool setAllowUnobservedAsmJS(JSContext* cx, unsigned argc, Value* vp);
+  static bool getAllowWasmBinarySource(JSContext* cx, unsigned argc, Value* vp);
+  static bool setAllowWasmBinarySource(JSContext* cx, unsigned argc, Value* vp);
   static bool getCollectCoverageInfo(JSContext* cx, unsigned argc, Value* vp);
   static bool setCollectCoverageInfo(JSContext* cx, unsigned argc, Value* vp);
   static bool getMemory(JSContext* cx, unsigned argc, Value* vp);
@@ -769,7 +651,6 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   static bool getNewestFrame(JSContext* cx, unsigned argc, Value* vp);
   static bool clearAllBreakpoints(JSContext* cx, unsigned argc, Value* vp);
   static bool findScripts(JSContext* cx, unsigned argc, Value* vp);
-  static bool findSources(JSContext* cx, unsigned argc, Value* vp);
   static bool findObjects(JSContext* cx, unsigned argc, Value* vp);
   static bool findAllGlobals(JSContext* cx, unsigned argc, Value* vp);
   static bool makeGlobalObjectReference(JSContext* cx, unsigned argc,
@@ -781,21 +662,18 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   static bool startTraceLogger(JSContext* cx, unsigned argc, Value* vp);
   static bool endTraceLogger(JSContext* cx, unsigned argc, Value* vp);
   static bool isCompilableUnit(JSContext* cx, unsigned argc, Value* vp);
-  static bool recordReplayProcessKind(JSContext* cx, unsigned argc, Value* vp);
 #ifdef NIGHTLY_BUILD
   static bool setupTraceLogger(JSContext* cx, unsigned argc, Value* vp);
   static bool drainTraceLogger(JSContext* cx, unsigned argc, Value* vp);
 #endif
   static bool adoptDebuggeeValue(JSContext* cx, unsigned argc, Value* vp);
-  static bool adoptSource(JSContext* cx, unsigned argc, Value* vp);
   static bool construct(JSContext* cx, unsigned argc, Value* vp);
   static const JSPropertySpec properties[];
   static const JSFunctionSpec methods[];
   static const JSFunctionSpec static_methods[];
 
   static void removeFromFrameMapsAndClearBreakpointsIn(JSContext* cx,
-                                                       AbstractFramePtr frame,
-                                                       bool suspending = false);
+                                                       AbstractFramePtr frame);
   static bool updateExecutionObservabilityOfFrames(
       JSContext* cx, const ExecutionObservableSet& obs, IsObserving observing);
   static bool updateExecutionObservabilityOfScripts(
@@ -804,7 +682,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
                                            ExecutionObservableSet& obs,
                                            IsObserving observing);
 
-  template <typename FrameFn /* void (DebuggerFrame*) */>
+  template <typename FrameFn /* void (NativeObject*) */>
   static void forEachDebuggerFrame(AbstractFramePtr frame, FrameFn fn);
 
   /*
@@ -818,7 +696,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
 
  public:
   static MOZ_MUST_USE bool ensureExecutionObservabilityOfOsrFrame(
-      JSContext* cx, AbstractFramePtr osrSourceFrame);
+      JSContext* cx, InterpreterFrame* frame);
 
   // Public for DebuggerScript_setBreakpoint.
   static MOZ_MUST_USE bool ensureExecutionObservabilityOfScript(
@@ -836,11 +714,13 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   // execution.
   IsObserving observesCoverage() const;
 
+  IsObserving observesBinarySource() const;
+
  private:
   static MOZ_MUST_USE bool ensureExecutionObservabilityOfFrame(
       JSContext* cx, AbstractFramePtr frame);
-  static MOZ_MUST_USE bool ensureExecutionObservabilityOfRealm(
-      JSContext* cx, JS::Realm* realm);
+  static MOZ_MUST_USE bool ensureExecutionObservabilityOfCompartment(
+      JSContext* cx, JSCompartment* comp);
 
   static bool hookObservesAllExecution(Hook which);
 
@@ -849,25 +729,22 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   MOZ_MUST_USE bool updateObservesCoverageOnDebuggees(JSContext* cx,
                                                       IsObserving observing);
   void updateObservesAsmJSOnDebuggees(IsObserving observing);
+  void updateObservesBinarySourceDebuggees(IsObserving observing);
 
   JSObject* getHook(Hook hook) const;
   bool hasAnyLiveHooks(JSRuntime* rt) const;
 
   static MOZ_MUST_USE bool slowPathCheckNoExecute(JSContext* cx,
                                                   HandleScript script);
-  static ResumeMode slowPathOnEnterFrame(JSContext* cx, AbstractFramePtr frame);
-  static ResumeMode slowPathOnResumeFrame(JSContext* cx,
-                                          AbstractFramePtr frame);
+  static JSTrapStatus slowPathOnEnterFrame(JSContext* cx,
+                                           AbstractFramePtr frame);
   static MOZ_MUST_USE bool slowPathOnLeaveFrame(JSContext* cx,
                                                 AbstractFramePtr frame,
                                                 jsbytecode* pc, bool ok);
-  static MOZ_MUST_USE bool slowPathOnNewGenerator(
-      JSContext* cx, AbstractFramePtr frame,
-      Handle<AbstractGeneratorObject*> genObj);
-  static ResumeMode slowPathOnDebuggerStatement(JSContext* cx,
+  static JSTrapStatus slowPathOnDebuggerStatement(JSContext* cx,
+                                                  AbstractFramePtr frame);
+  static JSTrapStatus slowPathOnExceptionUnwind(JSContext* cx,
                                                 AbstractFramePtr frame);
-  static ResumeMode slowPathOnExceptionUnwind(JSContext* cx,
-                                              AbstractFramePtr frame);
   static void slowPathOnNewScript(JSContext* cx, HandleScript script);
   static void slowPathOnNewWasmInstance(
       JSContext* cx, Handle<WasmInstanceObject*> wasmInstance);
@@ -880,17 +757,18 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
                                   Handle<PromiseObject*> promise);
 
   template <typename HookIsEnabledFun /* bool (Debugger*) */,
-            typename FireHookFun /* ResumeMode (Debugger*) */>
-  static ResumeMode dispatchHook(JSContext* cx, HookIsEnabledFun hookIsEnabled,
-                                 FireHookFun fireHook);
+            typename FireHookFun /* JSTrapStatus (Debugger*) */>
+  static JSTrapStatus dispatchHook(JSContext* cx,
+                                   HookIsEnabledFun hookIsEnabled,
+                                   FireHookFun fireHook);
 
-  ResumeMode fireDebuggerStatement(JSContext* cx, MutableHandleValue vp);
-  ResumeMode fireExceptionUnwind(JSContext* cx, MutableHandleValue vp);
-  ResumeMode fireEnterFrame(JSContext* cx, MutableHandleValue vp);
-  ResumeMode fireNewGlobalObject(JSContext* cx, Handle<GlobalObject*> global,
-                                 MutableHandleValue vp);
-  ResumeMode firePromiseHook(JSContext* cx, Hook hook, HandleObject promise,
-                             MutableHandleValue vp);
+  JSTrapStatus fireDebuggerStatement(JSContext* cx, MutableHandleValue vp);
+  JSTrapStatus fireExceptionUnwind(JSContext* cx, MutableHandleValue vp);
+  JSTrapStatus fireEnterFrame(JSContext* cx, MutableHandleValue vp);
+  JSTrapStatus fireNewGlobalObject(JSContext* cx, Handle<GlobalObject*> global,
+                                   MutableHandleValue vp);
+  JSTrapStatus firePromiseHook(JSContext* cx, Hook hook, HandleObject promise,
+                               MutableHandleValue vp);
 
   NativeObject* newVariantWrapper(JSContext* cx,
                                   Handle<DebuggerScriptReferent> referent) {
@@ -946,6 +824,19 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   void fireOnGarbageCollectionHook(
       JSContext* cx, const JS::dbg::GarbageCollectionEvent::Ptr& gcData);
 
+  /*
+   * Gets a Debugger.Frame object. If maybeIter is non-null, we eagerly copy
+   * its data if we need to make a new Debugger.Frame.
+   */
+  MOZ_MUST_USE bool getScriptFrameWithIter(JSContext* cx,
+                                           AbstractFramePtr frame,
+                                           const FrameIter* maybeIter,
+                                           MutableHandleValue vp);
+  MOZ_MUST_USE bool getScriptFrameWithIter(JSContext* cx,
+                                           AbstractFramePtr frame,
+                                           const FrameIter* maybeIter,
+                                           MutableHandleDebuggerFrame result);
+
   inline Breakpoint* firstBreakpoint() const;
 
   static MOZ_MUST_USE bool replaceFrameGuts(JSContext* cx,
@@ -957,6 +848,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   Debugger(JSContext* cx, NativeObject* dbg);
   ~Debugger();
 
+  MOZ_MUST_USE bool init(JSContext* cx);
   inline const js::GCPtrNativeObject& toJSObject() const;
   inline js::GCPtrNativeObject& toJSObjectRef();
   static inline Debugger* fromJSObject(const JSObject* obj);
@@ -991,7 +883,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   static void traceAllForMovingGC(JSTracer* trc);
   static void sweepAll(FreeOp* fop);
   static void detachAllDebuggersFromGlobal(FreeOp* fop, GlobalObject* global);
-  static MOZ_MUST_USE bool findSweepGroupEdges(JS::Zone* zone);
+  static void findZoneEdges(JS::Zone* v, gc::ZoneComponentFinder& finder);
 #ifdef DEBUG
   static bool isDebuggerCrossCompartmentEdge(JSObject* obj,
                                              const js::gc::Cell* cell);
@@ -1002,28 +894,33 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
                                                  HandleScript script);
 
   /*
+   * JSTrapStatus Overview
+   * ---------------------
+   *
+   * The |onEnterFrame|, |onDebuggerStatement|, and |onExceptionUnwind|
+   * methods below return a JSTrapStatus code that indicates how execution
+   * should proceed:
+   *
+   * - JSTRAP_CONTINUE: Continue execution normally.
+   *
+   * - JSTRAP_THROW: Throw an exception. The method has set |cx|'s
+   *   pending exception to the value to be thrown.
+   *
+   * - JSTRAP_ERROR: Terminate execution (as is done when a script is terminated
+   *   for running too long). The method has cleared |cx|'s pending
+   *   exception.
+   *
+   * - JSTRAP_RETURN: Return from the new frame immediately. The method has
+   *   set the youngest JS frame's return value appropriately.
+   */
+
+  /*
    * Announce to the debugger that the context has entered a new JavaScript
    * frame, |frame|. Call whatever hooks have been registered to observe new
    * frames.
    */
-  static inline ResumeMode onEnterFrame(JSContext* cx, AbstractFramePtr frame);
-
-  /*
-   * Like onEnterFrame, but for resuming execution of a generator or async
-   * function. `frame` is a new baseline or interpreter frame, but abstractly
-   * it can be identified with a particular generator frame that was
-   * suspended earlier.
-   *
-   * There is no separate user-visible Debugger.onResumeFrame hook; this
-   * fires .onEnterFrame (again, since we're re-entering the frame).
-   *
-   * Unfortunately, the interpreter and the baseline JIT arrange for this to
-   * be called in different ways. The interpreter calls it from JSOP_RESUME,
-   * immediately after pushing the resumed frame; the JIT calls it from
-   * JSOP_AFTERYIELD, just after the generator resumes. The difference
-   * should not be user-visible.
-   */
-  static inline ResumeMode onResumeFrame(JSContext* cx, AbstractFramePtr frame);
+  static inline JSTrapStatus onEnterFrame(JSContext* cx,
+                                          AbstractFramePtr frame);
 
   /*
    * Announce to the debugger a |debugger;| statement on has been
@@ -1033,15 +930,15 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
    * Note that this method is called for all |debugger;| statements,
    * regardless of the frame's debuggee-ness.
    */
-  static inline ResumeMode onDebuggerStatement(JSContext* cx,
-                                               AbstractFramePtr frame);
+  static inline JSTrapStatus onDebuggerStatement(JSContext* cx,
+                                                 AbstractFramePtr frame);
 
   /*
    * Announce to the debugger that an exception has been thrown and propagated
    * to |frame|. Call whatever hooks have been registered to observe this.
    */
-  static inline ResumeMode onExceptionUnwind(JSContext* cx,
-                                             AbstractFramePtr frame);
+  static inline JSTrapStatus onExceptionUnwind(JSContext* cx,
+                                               AbstractFramePtr frame);
 
   /*
    * Announce to the debugger that the thread has exited a JavaScript frame,
@@ -1062,16 +959,6 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
                                                AbstractFramePtr frame,
                                                jsbytecode* pc, bool ok);
 
-  /*
-   * Announce to the debugger that a generator object has been created,
-   * via JSOP_GENERATOR.
-   *
-   * This does not fire user hooks, but it's needed for debugger bookkeeping.
-   */
-  static inline MOZ_MUST_USE bool onNewGenerator(
-      JSContext* cx, AbstractFramePtr frame,
-      Handle<AbstractGeneratorObject*> genObj);
-
   static inline void onNewScript(JSContext* cx, HandleScript script);
   static inline void onNewWasmInstance(
       JSContext* cx, Handle<WasmInstanceObject*> wasmInstance);
@@ -1081,8 +968,8 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
                                                       JSObject* obj,
                                                       HandleSavedFrame frame,
                                                       mozilla::TimeStamp when);
-  static ResumeMode onTrap(JSContext* cx, MutableHandleValue vp);
-  static ResumeMode onSingleStep(JSContext* cx, MutableHandleValue vp);
+  static JSTrapStatus onTrap(JSContext* cx, MutableHandleValue vp);
+  static JSTrapStatus onSingleStep(JSContext* cx, MutableHandleValue vp);
   static MOZ_MUST_USE bool handleBaselineOsr(JSContext* cx,
                                              InterpreterFrame* from,
                                              jit::BaselineFrame* to);
@@ -1134,13 +1021,13 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
                                     MutableHandleDebuggerEnvironment result);
 
   /*
-   * Like cx->compartment()->wrap(cx, vp), but for the debugger realm.
+   * Like cx->compartment()->wrap(cx, vp), but for the debugger compartment.
    *
-   * Preconditions: *vp is a value from a debuggee realm; cx is in the
+   * Preconditions: *vp is a value from a debuggee compartment; cx is in the
    * debugger's compartment.
    *
    * If *vp is an object, this produces a (new or existing) Debugger.Object
-   * wrapper for it. Otherwise this is the same as Compartment::wrap.
+   * wrapper for it. Otherwise this is the same as JSCompartment::wrap.
    *
    * If *vp is a magic JS_OPTIMIZED_OUT value, this produces a plain object
    * of the form { optimizedOut: true }.
@@ -1175,7 +1062,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
    *
    * When passing values from the debugger to the debuggee:
    *     call unwrapDebuggeeValue;  // debugger-unwrapping
-   *     enter debuggee realm;
+   *     enter debuggee compartment;
    *     call cx->compartment()->wrap;  // compartment-rewrapping
    *
    * (Extreme nerd sidebar: Unwrapping happens in two steps because there are
@@ -1191,68 +1078,79 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
       JSContext* cx, HandleObject obj, MutableHandle<PropertyDescriptor> desc);
 
   /*
-   * Store the Debugger.Frame object for iter in *vp/result.
+   * Store the Debugger.Frame object for frame in *vp.
    *
-   * If this Debugger does not already have a Frame object for the frame
-   * `iter` points to, a new Frame object is created, and `iter`'s private
-   * data is copied into it.
+   * Use this if you have already access to a frame pointer without having
+   * to incur the cost of walking the stack.
    */
-  MOZ_MUST_USE bool getFrame(JSContext* cx, const FrameIter& iter,
-                             MutableHandleValue vp);
-  MOZ_MUST_USE bool getFrame(JSContext* cx, const FrameIter& iter,
-                             MutableHandleDebuggerFrame result);
+  MOZ_MUST_USE bool getScriptFrame(JSContext* cx, AbstractFramePtr frame,
+                                   MutableHandleValue vp) {
+    return getScriptFrameWithIter(cx, frame, nullptr, vp);
+  }
 
   /*
-   * Set |*resumeMode| and |*value| to a (ResumeMode, Value) pair reflecting a
+   * Store the Debugger.Frame object for iter in *vp/result. Eagerly copies a
+   * ScriptFrameIter::Data.
+   *
+   * Use this if you had to make a ScriptFrameIter to get the required
+   * frame, in which case the cost of walking the stack has already been
+   * paid.
+   */
+  MOZ_MUST_USE bool getScriptFrame(JSContext* cx, const FrameIter& iter,
+                                   MutableHandleValue vp) {
+    return getScriptFrameWithIter(cx, iter.abstractFramePtr(), &iter, vp);
+  }
+  MOZ_MUST_USE bool getScriptFrame(JSContext* cx, const FrameIter& iter,
+                                   MutableHandleDebuggerFrame result);
+
+  /*
+   * Set |*status| and |*value| to a (JSTrapStatus, Value) pair reflecting a
    * standard SpiderMonkey call state: a boolean success value |ok|, a return
    * value |rv|, and a context |cx| that may or may not have an exception set.
    * If an exception was pending on |cx|, it is cleared (and |ok| is asserted
    * to be false).
    */
   static void resultToCompletion(JSContext* cx, bool ok, const Value& rv,
-                                 ResumeMode* resumeMode,
+                                 JSTrapStatus* status,
                                  MutableHandleValue value);
 
   /*
-   * Set |*result| to a JavaScript completion value corresponding to
-   * |resumeMode| and |value|. |value| should be the return value or exception
-   * value, not wrapped as a debuggee value. |cx| must be in the debugger
-   * compartment.
+   * Set |*result| to a JavaScript completion value corresponding to |status|
+   * and |value|. |value| should be the return value or exception value, not
+   * wrapped as a debuggee value. |cx| must be in the debugger compartment.
    */
-  MOZ_MUST_USE bool newCompletionValue(JSContext* cx, ResumeMode resumeMode,
+  MOZ_MUST_USE bool newCompletionValue(JSContext* cx, JSTrapStatus status,
                                        const Value& value,
                                        MutableHandleValue result);
 
   /*
-   * Precondition: we are in the debuggee realm (ar is entered) and ok is true
-   * if the operation in the debuggee realm succeeded, false on error or
-   * exception.
+   * Precondition: we are in the debuggee compartment (ac is entered) and ok
+   * is true if the operation in the debuggee compartment succeeded, false on
+   * error or exception.
    *
-   * Postcondition: we are in the debugger realm, having called `ar.reset()`
-   * even if an error occurred.
+   * Postcondition: we are in the debugger compartment, having called
+   * ac.leave() even if an error occurred.
    *
-   * On success, a completion value is in vp and ar.context does not have a
+   * On success, a completion value is in vp and ac.context does not have a
    * pending exception. (This ordinarily returns true even if the ok argument
    * is false.)
    */
-  MOZ_MUST_USE bool receiveCompletionValue(mozilla::Maybe<AutoRealm>& ar,
+  MOZ_MUST_USE bool receiveCompletionValue(mozilla::Maybe<AutoCompartment>& ac,
                                            bool ok, HandleValue val,
                                            MutableHandleValue vp);
 
   /*
    * Return the Debugger.Script object for |script|, or create a new one if
-   * needed. The context |cx| must be in the debugger realm; |script| must be
-   * a script in a debuggee realm.
+   * needed. The context |cx| must be in the debugger compartment; |script|
+   * must be a script in a debuggee compartment.
    */
   JSObject* wrapScript(JSContext* cx, HandleScript script);
-
-  JSObject* wrapLazyScript(JSContext* cx, Handle<LazyScript*> script);
 
   /*
    * Return the Debugger.Script object for |wasmInstance| (the toplevel
    * script), synthesizing a new one if needed. The context |cx| must be in
    * the debugger compartment; |wasmInstance| must be a WasmInstanceObject in
-   * the debuggee realm.
+   * the debuggee compartment.
    */
   JSObject* wrapWasmScript(JSContext* cx,
                            Handle<WasmInstanceObject*> wasmInstance);
@@ -1260,35 +1158,18 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   /*
    * Return the Debugger.Source object for |source|, or create a new one if
    * needed. The context |cx| must be in the debugger compartment; |source|
-   * must be a script source object in a debuggee realm.
+   * must be a script source object in a debuggee compartment.
    */
-  JSObject* wrapSource(JSContext* cx, js::HandleScriptSourceObject source);
+  JSObject* wrapSource(JSContext* cx, js::HandleScriptSource source);
 
   /*
    * Return the Debugger.Source object for |wasmInstance| (the entire module),
    * synthesizing a new one if needed. The context |cx| must be in the
    * debugger compartment; |wasmInstance| must be a WasmInstanceObject in the
-   * debuggee realm.
+   * debuggee compartment.
    */
   JSObject* wrapWasmSource(JSContext* cx,
                            Handle<WasmInstanceObject*> wasmInstance);
-
-  /*
-   * Add a link between the given generator object and a Debugger.Frame
-   * object.  This link is used to make sure the same Debugger.Frame stays
-   * associated with a given generator object (or async function activation),
-   * even while it is suspended and removed from the stack.
-   *
-   * The context `cx` and `frameObj` must be in the debugger realm, and
-   * `genObj` must be in a debuggee realm.
-   *
-   * `frameObj` must be this `Debugger`'s debug wrapper for the generator or
-   * async function call associated with `genObj`. This activation may
-   * or may not actually be on the stack right now.
-   */
-  MOZ_MUST_USE bool addGeneratorFrame(JSContext* cx,
-                                      Handle<AbstractGeneratorObject*> genObj,
-                                      HandleDebuggerFrame frameObj);
 
  private:
   Debugger(const Debugger&) = delete;
@@ -1306,7 +1187,7 @@ class DebuggerEnvironment : public NativeObject {
   static const Class class_;
 
   static NativeObject* initClass(JSContext* cx, HandleObject dbgCtor,
-                                 Handle<GlobalObject*> global);
+                                 HandleObject objProto);
   static DebuggerEnvironment* create(JSContext* cx, HandleObject proto,
                                      HandleObject referent,
                                      HandleNativeObject debugger);
@@ -1435,11 +1316,11 @@ struct OnStepHandler : Handler {
   /*
    * If we have made a small amount of progress in a frame, this method is
    * called with the frame as argument. If succesful, this method should
-   * return true, with `resumeMode` and `vp` set to a resumption value
+   * return true, with `statusp` and `vp` set to a resumption value
    * specifiying how execution should continue.
    */
   virtual bool onStep(JSContext* cx, HandleDebuggerFrame frame,
-                      ResumeMode& resumeMode, MutableHandleValue vp) = 0;
+                      JSTrapStatus& statusp, MutableHandleValue vp) = 0;
 };
 
 class ScriptedOnStepHandler final : public OnStepHandler {
@@ -1449,7 +1330,7 @@ class ScriptedOnStepHandler final : public OnStepHandler {
   virtual void drop() override;
   virtual void trace(JSTracer* tracer) override;
   virtual bool onStep(JSContext* cx, HandleDebuggerFrame frame,
-                      ResumeMode& resumeMode, MutableHandleValue vp) override;
+                      JSTrapStatus& statusp, MutableHandleValue vp) override;
 
  private:
   HeapPtr<JSObject*> object_;
@@ -1462,13 +1343,13 @@ class ScriptedOnStepHandler final : public OnStepHandler {
 struct OnPopHandler : Handler {
   /*
    * If a frame is about the be popped, this method is called with the frame
-   * as argument, and `resumeMode` and `vp` set to a completion value specifying
+   * as argument, and `statusp` and `vp` set to a completion value specifying
    * how this frame's execution completed. If successful, this method should
-   * return true, with `resumeMode` and `vp` set to a resumption value
-   * specifying how execution should continue.
+   * return true, with `statusp` and `vp` set to a resumption value specifying
+   * how execution should continue.
    */
   virtual bool onPop(JSContext* cx, HandleDebuggerFrame frame,
-                     ResumeMode& resumeMode, MutableHandleValue vp) = 0;
+                     JSTrapStatus& statusp, MutableHandleValue vp) = 0;
 };
 
 class ScriptedOnPopHandler final : public OnPopHandler {
@@ -1478,7 +1359,7 @@ class ScriptedOnPopHandler final : public OnPopHandler {
   virtual void drop() override;
   virtual void trace(JSTracer* tracer) override;
   virtual bool onPop(JSContext* cx, HandleDebuggerFrame frame,
-                     ResumeMode& resumeMode, MutableHandleValue vp) override;
+                     JSTrapStatus& statusp, MutableHandleValue vp) override;
 
  private:
   HeapPtr<JSObject*> object_;
@@ -1490,14 +1371,18 @@ class DebuggerFrame : public NativeObject {
   friend class ScriptedOnPopHandler;
 
  public:
+  enum { OWNER_SLOT };
+
+  static const unsigned RESERVED_SLOTS = 1;
+
   static const Class class_;
 
   static NativeObject* initClass(JSContext* cx, HandleObject dbgCtor,
-                                 Handle<GlobalObject*> global);
+                                 HandleObject objProto);
   static DebuggerFrame* create(JSContext* cx, HandleObject proto,
-                               const FrameIter& iter,
+                               AbstractFramePtr referent,
+                               const FrameIter* maybeIter,
                                HandleNativeObject debugger);
-  void freeFrameIterData(FreeOp* fop);
 
   static MOZ_MUST_USE bool getArguments(JSContext* cx,
                                         HandleDebuggerFrame frame,
@@ -1528,21 +1413,12 @@ class DebuggerFrame : public NativeObject {
                                 mozilla::Range<const char16_t> chars,
                                 HandleObject bindings,
                                 const EvalOptions& options,
-                                ResumeMode& resumeMode,
-                                MutableHandleValue value);
+                                JSTrapStatus& status, MutableHandleValue value);
 
   bool isLive() const;
   OnStepHandler* onStepHandler() const;
   OnPopHandler* onPopHandler() const;
   void setOnPopHandler(OnPopHandler* handler);
-
-  /*
-   * Called after a generator/async frame is resumed, before exposing this
-   * Debugger.Frame object to any hooks.
-   */
-  bool resume(const FrameIter& iter);
-
-  bool hasAnyLiveHooks() const;
 
  private:
   static const ClassOps classOps_;
@@ -1589,16 +1465,13 @@ class DebuggerFrame : public NativeObject {
                                                   Value* vp);
 
   Debugger* owner() const;
-
- public:
-  FrameIter::Data* frameIterData() const;
 };
 
 class DebuggerObject : public NativeObject {
  public:
   static const Class class_;
 
-  static NativeObject* initClass(JSContext* cx, Handle<GlobalObject*> global,
+  static NativeObject* initClass(JSContext* cx, HandleObject obj,
                                  HandleObject debugCtor);
   static DebuggerObject* create(JSContext* cx, HandleObject proto,
                                 HandleObject obj, HandleNativeObject debugger);
@@ -1607,6 +1480,8 @@ class DebuggerObject : public NativeObject {
   static MOZ_MUST_USE bool getClassName(JSContext* cx,
                                         HandleDebuggerObject object,
                                         MutableHandleString result);
+  static MOZ_MUST_USE bool getGlobal(JSContext* cx, HandleDebuggerObject object,
+                                     MutableHandleDebuggerObject result);
   static MOZ_MUST_USE bool getParameterNames(
       JSContext* cx, HandleDebuggerObject object,
       MutableHandle<StringVector> result);
@@ -1655,14 +1530,6 @@ class DebuggerObject : public NativeObject {
                                     bool& result);
   static MOZ_MUST_USE bool isFrozen(JSContext* cx, HandleDebuggerObject object,
                                     bool& result);
-  static MOZ_MUST_USE bool getProperty(JSContext* cx,
-                                       HandleDebuggerObject object, HandleId id,
-                                       HandleValue receiver,
-                                       MutableHandleValue result);
-  static MOZ_MUST_USE bool setProperty(JSContext* cx,
-                                       HandleDebuggerObject object, HandleId id,
-                                       HandleValue value, HandleValue receiver,
-                                       MutableHandleValue result);
   static MOZ_MUST_USE bool getPrototypeOf(JSContext* cx,
                                           HandleDebuggerObject object,
                                           MutableHandleDebuggerObject result);
@@ -1699,7 +1566,7 @@ class DebuggerObject : public NativeObject {
                                            mozilla::Range<const char16_t> chars,
                                            HandleObject bindings,
                                            const EvalOptions& options,
-                                           ResumeMode& resumeMode,
+                                           JSTrapStatus& status,
                                            MutableHandleValue value);
   static MOZ_MUST_USE bool makeDebuggeeValue(JSContext* cx,
                                              HandleDebuggerObject object,
@@ -1782,6 +1649,8 @@ class DebuggerObject : public NativeObject {
                                            Value* vp);
   static MOZ_MUST_USE bool boundArgumentsGetter(JSContext* cx, unsigned argc,
                                                 Value* vp);
+  static MOZ_MUST_USE bool globalGetter(JSContext* cx, unsigned argc,
+                                        Value* vp);
   static MOZ_MUST_USE bool allocationSiteGetter(JSContext* cx, unsigned argc,
                                                 Value* vp);
   static MOZ_MUST_USE bool errorMessageNameGetter(JSContext* cx, unsigned argc,
@@ -1830,10 +1699,6 @@ class DebuggerObject : public NativeObject {
                                           Value* vp);
   static MOZ_MUST_USE bool isFrozenMethod(JSContext* cx, unsigned argc,
                                           Value* vp);
-  static MOZ_MUST_USE bool getPropertyMethod(JSContext* cx, unsigned argc,
-                                             Value* vp);
-  static MOZ_MUST_USE bool setPropertyMethod(JSContext* cx, unsigned argc,
-                                             Value* vp);
   static MOZ_MUST_USE bool getOwnPropertyNamesMethod(JSContext* cx,
                                                      unsigned argc, Value* vp);
   static MOZ_MUST_USE bool getOwnPropertySymbolsMethod(JSContext* cx,
@@ -1882,6 +1747,7 @@ class WasmBreakpointSite;
 
 class BreakpointSite {
   friend class Breakpoint;
+  friend struct ::JSCompartment;
   friend class ::JSScript;
   friend class Debugger;
 
@@ -1906,6 +1772,7 @@ class BreakpointSite {
 
  protected:
   virtual void recompile(FreeOp* fop) = 0;
+  bool isEmpty() const;
   inline bool isEnabled() const { return enabledCount > 0; }
 
  public:
@@ -1917,7 +1784,6 @@ class BreakpointSite {
 
   void inc(FreeOp* fop);
   void dec(FreeOp* fop);
-  bool isEmpty() const;
   virtual void destroyIfEmpty(FreeOp* fop) = 0;
 
   inline JSBreakpointSite* asJS();
@@ -1943,6 +1809,7 @@ class BreakpointSite {
  * Zone::sweepBreakpoints.
  */
 class Breakpoint {
+  friend struct ::JSCompartment;
   friend class Debugger;
   friend class BreakpointSite;
 
@@ -1951,10 +1818,7 @@ class Breakpoint {
   BreakpointSite* const site;
 
  private:
-  /*
-   * |handler| is marked unconditionally during minor GC so a post barrier is
-   * not required.
-   */
+  /* |handler| is marked unconditionally during minor GC. */
   js::PreBarrieredObject handler;
 
   /**
@@ -1965,14 +1829,10 @@ class Breakpoint {
 
  public:
   Breakpoint(Debugger* debugger, BreakpointSite* site, JSObject* handler);
-
-  enum MayDestroySite { False, True };
-  void destroy(FreeOp* fop,
-               MayDestroySite mayDestroySite = MayDestroySite::True);
-
+  void destroy(FreeOp* fop);
   Breakpoint* nextInDebugger();
   Breakpoint* nextInSite();
-  JSObject* getHandler() const { return handler; }
+  const PreBarrieredObject& getHandler() const { return handler; }
   PreBarrieredObject& getHandlerRef() { return handler; }
 
   inline WasmBreakpoint* asWasm();
@@ -2031,9 +1891,7 @@ inline WasmBreakpoint* Breakpoint::asWasm() {
 }
 
 Breakpoint* Debugger::firstBreakpoint() const {
-  if (breakpoints.isEmpty()) {
-    return nullptr;
-  }
+  if (breakpoints.isEmpty()) return nullptr;
   return &(*breakpoints.begin());
 }
 
@@ -2067,38 +1925,32 @@ bool Debugger::observesGlobal(GlobalObject* global) const {
 /* static */ void Debugger::onNewScript(JSContext* cx, HandleScript script) {
   // We early return in slowPathOnNewScript for self-hosted scripts, so we can
   // ignore those in our assertion here.
-  MOZ_ASSERT_IF(!script->realm()->creationOptions().invisibleToDebugger() &&
-                    !script->selfHosted(),
-                script->realm()->firedOnNewGlobalObject);
+  MOZ_ASSERT_IF(
+      !script->compartment()->creationOptions().invisibleToDebugger() &&
+          !script->selfHosted(),
+      script->compartment()->firedOnNewGlobalObject);
 
   // The script may not be ready to be interrogated by the debugger.
-  if (script->hideScriptFromDebugger()) {
-    return;
-  }
+  if (script->hideScriptFromDebugger()) return;
 
-  if (script->realm()->isDebuggee()) {
-    slowPathOnNewScript(cx, script);
-  }
+  if (script->compartment()->isDebuggee()) slowPathOnNewScript(cx, script);
 }
 
 /* static */ void Debugger::onNewGlobalObject(JSContext* cx,
                                               Handle<GlobalObject*> global) {
-  MOZ_ASSERT(!global->realm()->firedOnNewGlobalObject);
+  MOZ_ASSERT(!global->compartment()->firedOnNewGlobalObject);
 #ifdef DEBUG
-  global->realm()->firedOnNewGlobalObject = true;
+  global->compartment()->firedOnNewGlobalObject = true;
 #endif
-  if (!cx->runtime()->onNewGlobalObjectWatchers().isEmpty()) {
+  if (!cx->runtime()->onNewGlobalObjectWatchers().isEmpty())
     Debugger::slowPathOnNewGlobalObject(cx, global);
-  }
 }
 
 /* static */ bool Debugger::onLogAllocationSite(JSContext* cx, JSObject* obj,
                                                 HandleSavedFrame frame,
                                                 mozilla::TimeStamp when) {
   GlobalObject::DebuggerVector* dbgs = cx->global()->getDebuggers();
-  if (!dbgs || dbgs->empty()) {
-    return true;
-  }
+  if (!dbgs || dbgs->empty()) return true;
   RootedObject hobj(cx, obj);
   return Debugger::slowPathOnLogAllocationSite(cx, hobj, frame, when, *dbgs);
 }

@@ -12,12 +12,9 @@ info: |
         a. Return target.[[GetOwnProperty]](P).
     ...
 includes: [propertyHelper.js]
-features: [Proxy]
 ---*/
 
-var target = {
-  attr: 1
-};
+var target = {attr: 1};
 var p = new Proxy(target, {});
 
 var proxyDesc = Object.getOwnPropertyDescriptor(p, "attr");

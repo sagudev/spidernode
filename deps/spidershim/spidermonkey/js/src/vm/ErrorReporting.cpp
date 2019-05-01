@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,11 +13,11 @@
 #include "jsexn.h"
 #include "jsfriendapi.h"
 
-#include "js/Warnings.h"  // JS::WarningReporter
-#include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 
 #include "vm/JSContext-inl.h"
+
+using mozilla::Move;
 
 using JS::HandleObject;
 using JS::HandleValue;
@@ -27,9 +27,8 @@ void js::CallWarningReporter(JSContext* cx, JSErrorReport* reportp) {
   MOZ_ASSERT(reportp);
   MOZ_ASSERT(JSREPORT_IS_WARNING(reportp->flags));
 
-  if (JS::WarningReporter warningReporter = cx->runtime()->warningReporter) {
+  if (JS::WarningReporter warningReporter = cx->runtime()->warningReporter)
     warningReporter(cx, reportp);
-  }
 }
 
 void js::CompileError::throwError(JSContext* cx) {
@@ -52,24 +51,17 @@ void js::CompileError::throwError(JSContext* cx) {
   ErrorToException(cx, this, nullptr, nullptr);
 }
 
-bool js::ReportExceptionClosure::operator()(JSContext* cx) {
-  cx->setPendingExceptionAndCaptureStack(exn_);
-  return false;
-}
-
 bool js::ReportCompileWarning(JSContext* cx, ErrorMetadata&& metadata,
                               UniquePtr<JSErrorNotes> notes, unsigned flags,
-                              unsigned errorNumber, va_list* args) {
-  // On the main thread, report the error immediately. When compiling off
+                              unsigned errorNumber, va_list args) {
+  // On the active thread, report the error immediately. When compiling off
   // thread, save the error so that the thread finishing the parse can report
   // it later.
   CompileError tempErr;
   CompileError* err = &tempErr;
-  if (cx->helperThread() && !cx->addPendingCompileError(&err)) {
-    return false;
-  }
+  if (cx->helperThread() && !cx->addPendingCompileError(&err)) return false;
 
-  err->notes = std::move(notes);
+  err->notes = Move(notes);
   err->flags = flags;
   err->errorNumber = errorNumber;
 
@@ -78,36 +70,31 @@ bool js::ReportCompileWarning(JSContext* cx, ErrorMetadata&& metadata,
   err->column = metadata.columnNumber;
   err->isMuted = metadata.isMuted;
 
-  if (UniqueTwoByteChars lineOfContext = std::move(metadata.lineOfContext)) {
+  if (UniqueTwoByteChars lineOfContext = Move(metadata.lineOfContext))
     err->initOwnedLinebuf(lineOfContext.release(), metadata.lineLength,
                           metadata.tokenOffset);
-  }
 
   if (!ExpandErrorArgumentsVA(cx, GetErrorMessage, nullptr, errorNumber,
-                              nullptr, ArgumentsAreLatin1, err, *args)) {
+                              nullptr, ArgumentsAreLatin1, err, args)) {
     return false;
   }
 
-  if (!cx->helperThread()) {
-    err->throwError(cx);
-  }
+  if (!cx->helperThread()) err->throwError(cx);
 
   return true;
 }
 
 void js::ReportCompileError(JSContext* cx, ErrorMetadata&& metadata,
                             UniquePtr<JSErrorNotes> notes, unsigned flags,
-                            unsigned errorNumber, va_list* args) {
-  // On the main thread, report the error immediately. When compiling off
+                            unsigned errorNumber, va_list args) {
+  // On the active thread, report the error immediately. When compiling off
   // thread, save the error so that the thread finishing the parse can report
   // it later.
   CompileError tempErr;
   CompileError* err = &tempErr;
-  if (cx->helperThread() && !cx->addPendingCompileError(&err)) {
-    return;
-  }
+  if (cx->helperThread() && !cx->addPendingCompileError(&err)) return;
 
-  err->notes = std::move(notes);
+  err->notes = Move(notes);
   err->flags = flags;
   err->errorNumber = errorNumber;
 
@@ -116,22 +103,37 @@ void js::ReportCompileError(JSContext* cx, ErrorMetadata&& metadata,
   err->column = metadata.columnNumber;
   err->isMuted = metadata.isMuted;
 
-  if (UniqueTwoByteChars lineOfContext = std::move(metadata.lineOfContext)) {
+  if (UniqueTwoByteChars lineOfContext = Move(metadata.lineOfContext))
     err->initOwnedLinebuf(lineOfContext.release(), metadata.lineLength,
                           metadata.tokenOffset);
-  }
 
   if (!ExpandErrorArgumentsVA(cx, GetErrorMessage, nullptr, errorNumber,
-                              nullptr, ArgumentsAreLatin1, err, *args)) {
+                              nullptr, ArgumentsAreLatin1, err, args)) {
     return;
   }
 
-  if (!cx->helperThread()) {
-    err->throwError(cx);
-  }
+  if (!cx->helperThread()) err->throwError(cx);
 }
 
-void js::ReportErrorToGlobal(JSContext* cx, Handle<GlobalObject*> global,
+namespace {
+
+class MOZ_STACK_CLASS ReportExceptionClosure
+    : public js::ScriptEnvironmentPreparer::Closure {
+ public:
+  explicit ReportExceptionClosure(HandleValue& exn) : exn_(exn) {}
+
+  bool operator()(JSContext* cx) override {
+    cx->setPendingException(exn_);
+    return false;
+  }
+
+ private:
+  HandleValue& exn_;
+};
+
+}  // anonymous namespace
+
+void js::ReportErrorToGlobal(JSContext* cx, HandleObject global,
                              HandleValue error) {
   MOZ_ASSERT(!cx->isExceptionPending());
 #ifdef DEBUG
@@ -140,6 +142,6 @@ void js::ReportErrorToGlobal(JSContext* cx, Handle<GlobalObject*> global,
     AssertSameCompartment(global, &error.toObject());
   }
 #endif  // DEBUG
-  js::ReportExceptionClosure report(error);
+  ReportExceptionClosure report(error);
   PrepareScriptEnvironmentAndInvoke(cx, global, report);
 }

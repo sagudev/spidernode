@@ -1,5 +1,5 @@
 enableShellAllocationMetadataBuilder();
-var g = newGlobal({newCompartment: true})
+var g = newGlobal()
 g.eval("function f(a) { return h(); }");
 g.h = function () {
     return [1, 2, 3];

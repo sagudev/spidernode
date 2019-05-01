@@ -4,7 +4,7 @@
 /*---
 description: >
     Objects whose specified property is writable do not satisfy the assertion.
-includes: [propertyHelper.js]
+includes: [propertyHelper.js,sta.js]
 ---*/
 var threw = false;
 var obj = {};

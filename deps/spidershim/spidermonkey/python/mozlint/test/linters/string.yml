@@ -4,6 +4,9 @@ StringLinter:
         Make sure the string foobar never appears in browser js
         files because it is bad
     rule: no-foobar
-    extensions: ['.js', 'jsm']
+    include:
+        - '**/*.js'
+        - '**/*.jsm'
     type: string
+    extensions: ['.js', 'jsm']
     payload: foobar

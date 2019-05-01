@@ -4,38 +4,11 @@
 
 from __future__ import absolute_import, print_function
 
-import ctypes
 import os
 import sys
 import subprocess
 
 from mozboot.base import BaseBootstrapper
-
-
-def is_aarch64_host():
-    from ctypes import wintypes
-    kernel32 = ctypes.windll.kernel32
-    IMAGE_FILE_MACHINE_UNKNOWN = 0
-    IMAGE_FILE_MACHINE_ARM64 = 0xAA64
-
-    try:
-        iswow64process2 = kernel32.IsWow64Process2
-    except Exception:
-        # If we can't access the symbol, we know we're not on aarch64.
-        return False
-
-    currentProcess = kernel32.GetCurrentProcess()
-    processMachine = wintypes.USHORT(IMAGE_FILE_MACHINE_UNKNOWN)
-    nativeMachine = wintypes.USHORT(IMAGE_FILE_MACHINE_UNKNOWN)
-
-    gotValue = iswow64process2(currentProcess,
-                               ctypes.byref(processMachine),
-                               ctypes.byref(nativeMachine))
-    # If this call fails, we have no idea.
-    if not gotValue:
-        return False
-
-    return nativeMachine.value == IMAGE_FILE_MACHINE_ARM64
 
 
 class WindowsBootstrapper(BaseBootstrapper):
@@ -57,7 +30,6 @@ class WindowsBootstrapper(BaseBootstrapper):
     ]
 
     BROWSER_PACKAGES = [
-        'mingw-w64-x86_64-nasm',
         'mingw-w64-x86_64-yasm',
         'mingw-w64-i686-nsis'
     ]
@@ -78,8 +50,8 @@ class WindowsBootstrapper(BaseBootstrapper):
                                       'pacman. Get msys2 at http://msys2.github.io/')
         print('Using an experimental bootstrapper for Windows.')
 
-    def which(self, name, *extra_search_dirs):
-        return BaseBootstrapper.which(self, name + '.exe', *extra_search_dirs)
+    def which(self, name):
+        return BaseBootstrapper.which(self, name + '.exe')
 
     def install_system_packages(self):
         self.pacman_install(*self.SYSTEM_PACKAGES)
@@ -99,34 +71,9 @@ class WindowsBootstrapper(BaseBootstrapper):
     def install_mobile_android_artifact_mode_packages(self):
         raise NotImplementedError('We do not support building Android on Windows. Sorry!')
 
-    def ensure_clang_static_analysis_package(self, state_dir, checkout_root):
-        from mozboot import static_analysis
-        self.install_toolchain_static_analysis(
-            state_dir, checkout_root, static_analysis.WINDOWS_CLANG_TIDY)
-
     def ensure_stylo_packages(self, state_dir, checkout_root):
-        # On-device artifact builds are supported; on-device desktop builds are not.
-        if is_aarch64_host():
-            raise Exception('You should not be performing desktop builds on an '
-                            'AArch64 device.  If you want to do artifact builds '
-                            'instead, please choose the appropriate artifact build '
-                            'option when beginning bootstrap.')
-
         from mozboot import stylo
-        self.install_toolchain_artifact(state_dir, checkout_root, stylo.WINDOWS_CLANG)
-        self.install_toolchain_artifact(state_dir, checkout_root, stylo.WINDOWS_CBINDGEN)
-
-    def ensure_nasm_packages(self, state_dir, checkout_root):
-        from mozboot import nasm
-        self.install_toolchain_artifact(state_dir, checkout_root, nasm.WINDOWS_NASM)
-
-    def ensure_node_packages(self, state_dir, checkout_root):
-        from mozboot import node
-        # We don't have native aarch64 node available, but aarch64 windows
-        # runs x86 binaries, so just use the x86 packages for such hosts.
-        node_artifact = node.WIN32 if is_aarch64_host() else node.WIN64
-        self.install_toolchain_artifact(
-            state_dir, checkout_root, node_artifact)
+        self.install_toolchain_artifact(state_dir, checkout_root, stylo.WINDOWS)
 
     def _update_package_manager(self):
         self.pacman_update()

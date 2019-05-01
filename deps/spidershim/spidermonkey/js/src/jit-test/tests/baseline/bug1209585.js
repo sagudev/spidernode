@@ -1,4 +1,8 @@
-// |jit-test| skip-if: helperThreadCount() === 0 || !('oomAtAllocation' in this)
+if (helperThreadCount() == 0)
+    quit();
+
+if (!("oomAtAllocation" in this && "resetOOMFailure" in this))
+    quit();
 
 if ("gczeal" in this)
     gczeal(0);
@@ -29,9 +33,4 @@ function oomTest(f) {
 var g = newGlobal();
 oomTest(function() { new revocable(); });
 `);
-try {
-    lfGlobal.runOffThreadScript();
-} catch(e) {
-    // This can happen if we OOM while bailing out in Ion.
-    assertEq(e, "out of memory");
-}
+lfGlobal.runOffThreadScript();

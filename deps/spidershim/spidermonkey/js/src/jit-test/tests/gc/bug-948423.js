@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !this.hasOwnProperty("TypedObject")
+if (!this.hasOwnProperty("TypedObject"))
+  quit();
 
 var ArrayType = TypedObject.ArrayType;
 var StructType = TypedObject.StructType;
@@ -9,7 +10,7 @@ function runTests() {
   (function DimensionLinkedToUndimension() {
     var FiveUintsA = uint32.array(5);
     var FiveUintsB = uint32.array(5);
-    assertEq(true,
+    assertEq(true, 
 	FiveUintsA.equivalent(FiveUintsB)
 	);
   })();

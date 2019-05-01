@@ -1,6 +1,6 @@
 // Test how stepping interacts with for-in/of statements.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger;
 var gw = dbg.addDebuggee(g);
 var log;

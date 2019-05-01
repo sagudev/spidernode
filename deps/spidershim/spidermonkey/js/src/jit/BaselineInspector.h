@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,7 +39,7 @@ class SetElemICInspector : public ICInspector {
 class BaselineInspector {
  private:
   JSScript* script;
-  ICEntry* prevLookedUpEntry;
+  BaselineICEntry* prevLookedUpEntry;
 
  public:
   explicit BaselineInspector(JSScript* script)
@@ -47,23 +47,41 @@ class BaselineInspector {
     MOZ_ASSERT(script);
   }
 
-  bool hasICScript() const { return script->hasICScript(); }
+  bool hasBaselineScript() const { return script->hasBaselineScript(); }
 
-  ICScript* icScript() const;
+  BaselineScript* baselineScript() const { return script->baselineScript(); }
 
  private:
 #ifdef DEBUG
   bool isValidPC(jsbytecode* pc) { return script->containsPC(pc); }
 #endif
 
-  ICEntry& icEntryFromPC(jsbytecode* pc);
-  ICEntry* maybeICEntryFromPC(jsbytecode* pc);
+  BaselineICEntry& icEntryFromPC(jsbytecode* pc) {
+    MOZ_ASSERT(hasBaselineScript());
+    MOZ_ASSERT(isValidPC(pc));
+    BaselineICEntry& ent = baselineScript()->icEntryFromPCOffset(
+        script->pcToOffset(pc), prevLookedUpEntry);
+    MOZ_ASSERT(ent.isForOp());
+    prevLookedUpEntry = &ent;
+    return ent;
+  }
+
+  BaselineICEntry* maybeICEntryFromPC(jsbytecode* pc) {
+    MOZ_ASSERT(hasBaselineScript());
+    MOZ_ASSERT(isValidPC(pc));
+    BaselineICEntry* ent = baselineScript()->maybeICEntryFromPCOffset(
+        script->pcToOffset(pc), prevLookedUpEntry);
+    if (!ent) return nullptr;
+    MOZ_ASSERT(ent->isForOp());
+    prevLookedUpEntry = ent;
+    return ent;
+  }
 
   template <typename ICInspectorType>
   ICInspectorType makeICInspector(jsbytecode* pc,
                                   ICStub::Kind expectedFallbackKind) {
-    ICEntry* ent = nullptr;
-    if (hasICScript()) {
+    BaselineICEntry* ent = nullptr;
+    if (hasBaselineScript()) {
       ent = &icEntryFromPC(pc);
       MOZ_ASSERT(ent->fallbackStub()->kind() == expectedFallbackKind);
     }
@@ -77,12 +95,13 @@ class BaselineInspector {
  public:
   typedef Vector<ReceiverGuard, 4, JitAllocPolicy> ReceiverVector;
   typedef Vector<ObjectGroup*, 4, JitAllocPolicy> ObjectGroupVector;
-  MOZ_MUST_USE bool maybeInfoForPropertyOp(jsbytecode* pc,
-                                           ReceiverVector& receivers);
+  MOZ_MUST_USE bool maybeInfoForPropertyOp(
+      jsbytecode* pc, ReceiverVector& receivers,
+      ObjectGroupVector& convertUnboxedGroups);
 
-  MOZ_MUST_USE bool maybeInfoForProtoReadSlot(jsbytecode* pc,
-                                              ReceiverVector& receivers,
-                                              JSObject** holder);
+  MOZ_MUST_USE bool maybeInfoForProtoReadSlot(
+      jsbytecode* pc, ReceiverVector& receivers,
+      ObjectGroupVector& convertUnboxedGroups, JSObject** holder);
 
   SetElemICInspector setElemICInspector(jsbytecode* pc) {
     return makeICInspector<SetElemICInspector>(pc, ICStub::SetElem_Fallback);
@@ -94,9 +113,9 @@ class BaselineInspector {
   MIRType expectedPropertyAccessInputType(jsbytecode* pc);
 
   bool hasSeenNegativeIndexGetElement(jsbytecode* pc);
-  bool hasSeenNonIntegerIndex(jsbytecode* pc);
   bool hasSeenAccessedGetter(jsbytecode* pc);
   bool hasSeenDoubleResult(jsbytecode* pc);
+  bool hasSeenNonStringIterMore(jsbytecode* pc);
 
   MOZ_MUST_USE bool isOptimizableConstStringSplit(jsbytecode* pc,
                                                   JSString** strOut,
@@ -105,6 +124,7 @@ class BaselineInspector {
   JSObject* getTemplateObject(jsbytecode* pc);
   JSObject* getTemplateObjectForNative(jsbytecode* pc, Native native);
   JSObject* getTemplateObjectForClassHook(jsbytecode* pc, const Class* clasp);
+  JSObject* getTemplateObjectForSimdCtor(jsbytecode* pc, SimdType simdType);
 
   // Sometimes the group a template object will have is known, even if the
   // object itself isn't.
@@ -120,18 +140,17 @@ class BaselineInspector {
   // global object) instead. In this case we should only look for Baseline
   // stubs that performed the same optimization.
   MOZ_MUST_USE bool commonGetPropFunction(
-      jsbytecode* pc, jsid id, bool innerized, JSObject** holder,
-      Shape** holderShape, JSFunction** commonGetter, Shape** globalShape,
-      bool* isOwnProperty, ReceiverVector& receivers);
+      jsbytecode* pc, bool innerized, JSObject** holder, Shape** holderShape,
+      JSFunction** commonGetter, Shape** globalShape, bool* isOwnProperty,
+      ReceiverVector& receivers, ObjectGroupVector& convertUnboxedGroups);
 
   MOZ_MUST_USE bool megamorphicGetterSetterFunction(
-      jsbytecode* pc, jsid id, bool isGetter, JSFunction** getterOrSetter);
+      jsbytecode* pc, bool isGetter, JSFunction** getterOrSetter);
 
-  MOZ_MUST_USE bool commonSetPropFunction(jsbytecode* pc, JSObject** holder,
-                                          Shape** holderShape,
-                                          JSFunction** commonSetter,
-                                          bool* isOwnProperty,
-                                          ReceiverVector& receivers);
+  MOZ_MUST_USE bool commonSetPropFunction(
+      jsbytecode* pc, JSObject** holder, Shape** holderShape,
+      JSFunction** commonSetter, bool* isOwnProperty, ReceiverVector& receivers,
+      ObjectGroupVector& convertUnboxedGroups);
 
   MOZ_MUST_USE bool instanceOfData(jsbytecode* pc, Shape** shape,
                                    uint32_t* slot, JSObject** prototypeObject);

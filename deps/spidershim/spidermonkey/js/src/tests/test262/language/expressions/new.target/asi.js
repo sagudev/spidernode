@@ -4,7 +4,6 @@
 esid: sec-meta-properties-runtime-semantics-evaluation
 es6id: 12.3.8.1
 description: NewTarget is composed of three distinct tokens
-features: [new.target]
 ---*/
 
 var newTarget = null;

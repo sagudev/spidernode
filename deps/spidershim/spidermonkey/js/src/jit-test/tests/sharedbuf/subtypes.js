@@ -1,6 +1,7 @@
-// |jit-test| skip-if: !this.SharedArrayBuffer
-
 // Test cases for subclasses of SharedArrayBuffer.
+
+if (!this.SharedArrayBuffer)
+    quit(0);
 
 load(libdir + "asserts.js");
 

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -85,9 +85,7 @@ bool js::gc::ArenaList::isCursorAtEnd() const {
 }
 
 void js::gc::ArenaList::moveCursorToEnd() {
-  while (!isCursorAtEnd()) {
-    cursorp_ = &(*cursorp_)->next;
-  }
+  while (!isCursorAtEnd()) cursorp_ = &(*cursorp_)->next;
 }
 
 js::gc::Arena* js::gc::ArenaList::arenaAfterCursor() const {
@@ -98,9 +96,7 @@ js::gc::Arena* js::gc::ArenaList::arenaAfterCursor() const {
 js::gc::Arena* js::gc::ArenaList::takeNextArena() {
   check();
   Arena* arena = *cursorp_;
-  if (!arena) {
-    return nullptr;
-  }
+  if (!arena) return nullptr;
   cursorp_ = &arena->next;
   check();
   return arena;
@@ -112,9 +108,7 @@ void js::gc::ArenaList::insertAtCursor(Arena* a) {
   *cursorp_ = a;
   // At this point, the cursor is sitting before |a|. Move it after |a|
   // if necessary.
-  if (!a->hasFreeThings()) {
-    cursorp_ = &a->next;
-  }
+  if (!a->hasFreeThings()) cursorp_ = &a->next;
   check();
 }
 
@@ -131,9 +125,7 @@ js::gc::ArenaList& js::gc::ArenaList::insertListWithCursorAtEnd(
   check();
   other.check();
   MOZ_ASSERT(other.isCursorAtEnd());
-  if (other.isCursorAtHead()) {
-    return *this;
-  }
+  if (other.isCursorAtHead()) return *this;
   // Insert the full arenas of |other| after those of |this|.
   *other.cursorp_ = *cursorp_;
   *cursorp_ = other.head_;
@@ -154,9 +146,7 @@ void js::gc::SortedArenaList::setThingsPerArena(size_t thingsPerArena) {
 void js::gc::SortedArenaList::reset(size_t thingsPerArena) {
   setThingsPerArena(thingsPerArena);
   // Initialize the segments.
-  for (size_t i = 0; i <= thingsPerArena; ++i) {
-    segments[i].clear();
-  }
+  for (size_t i = 0; i <= thingsPerArena; ++i) segments[i].clear();
 }
 
 void js::gc::SortedArenaList::insertAt(Arena* arena, size_t nfree) {
@@ -190,52 +180,20 @@ js::gc::ArenaList js::gc::SortedArenaList::toArenaList() {
   return ArenaList(segments[0]);
 }
 
+void js::gc::ArenaLists::setFreeList(AllocKind i, FreeSpan* span) {
 #ifdef DEBUG
-
-bool js::gc::FreeLists::allEmpty() const {
-  for (auto i : AllAllocKinds()) {
-    if (!isEmpty(i)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool js::gc::FreeLists::isEmpty(AllocKind kind) const {
-  return freeLists_[kind]->isEmpty();
-}
-
+  auto old = freeList(i);
+  if (!old->isEmpty()) old->getArena()->checkNoMarkedFreeCells();
 #endif
+  freeLists()[i] = span;
+}
 
-void js::gc::FreeLists::clear() {
-  for (auto i : AllAllocKinds()) {
+void js::gc::ArenaLists::clearFreeList(AllocKind i) {
 #ifdef DEBUG
-    auto old = freeLists_[i];
-    if (!old->isEmpty()) {
-      old->getArena()->checkNoMarkedFreeCells();
-    }
+  auto old = freeList(i);
+  if (!old->isEmpty()) old->getArena()->checkNoMarkedFreeCells();
 #endif
-    freeLists_[i] = &emptySentinel;
-  }
-}
-
-js::gc::TenuredCell* js::gc::FreeLists::allocate(AllocKind kind) {
-  return freeLists_[kind]->allocate(Arena::thingSize(kind));
-}
-
-void js::gc::FreeLists::unmarkPreMarkedFreeCells(AllocKind kind) {
-  FreeSpan* freeSpan = freeLists_[kind];
-  if (!freeSpan->isEmpty()) {
-    freeSpan->getArena()->unmarkPreMarkedFreeCells();
-  }
-}
-
-JSRuntime* js::gc::ArenaLists::runtime() {
-  return zone_->runtimeFromMainThread();
-}
-
-JSRuntime* js::gc::ArenaLists::runtimeFromAnyThread() {
-  return zone_->runtimeFromAnyThread();
+  freeLists()[i] = &placeholder;
 }
 
 js::gc::Arena* js::gc::ArenaLists::getFirstArena(AllocKind thingKind) const {
@@ -249,9 +207,7 @@ js::gc::Arena* js::gc::ArenaLists::getFirstArenaToSweep(
 
 js::gc::Arena* js::gc::ArenaLists::getFirstSweptArena(
     AllocKind thingKind) const {
-  if (thingKind != incrementalSweptArenaKind.ref()) {
-    return nullptr;
-  }
+  if (thingKind != incrementalSweptArenaKind.ref()) return nullptr;
   return incrementalSweptArenas.ref().head();
 }
 
@@ -266,12 +222,8 @@ bool js::gc::ArenaLists::arenaListsAreEmpty() const {
      * The arena cannot be empty if the background finalization is not yet
      * done.
      */
-    if (concurrentUse(i) == ConcurrentUse::BackgroundFinalize) {
-      return false;
-    }
-    if (!arenaLists(i).isEmpty()) {
-      return false;
-    }
+    if (backgroundFinalizeState(i) != BFS_DONE) return false;
+    if (!arenaLists(i).isEmpty()) return false;
   }
   return true;
 }
@@ -279,48 +231,52 @@ bool js::gc::ArenaLists::arenaListsAreEmpty() const {
 void js::gc::ArenaLists::unmarkAll() {
   for (auto i : AllAllocKinds()) {
     /* The background finalization must have stopped at this point. */
-    MOZ_ASSERT(concurrentUse(i) == ConcurrentUse::None);
-    for (Arena* arena = arenaLists(i).head(); arena; arena = arena->next) {
+    MOZ_ASSERT(backgroundFinalizeState(i) == BFS_DONE);
+    for (Arena* arena = arenaLists(i).head(); arena; arena = arena->next)
       arena->unmarkAll();
-    }
   }
 }
 
 bool js::gc::ArenaLists::doneBackgroundFinalize(AllocKind kind) const {
-  return concurrentUse(kind) != ConcurrentUse::BackgroundFinalize;
+  return backgroundFinalizeState(kind) == BFS_DONE;
 }
 
 bool js::gc::ArenaLists::needBackgroundFinalizeWait(AllocKind kind) const {
-  return concurrentUse(kind) == ConcurrentUse::BackgroundFinalize;
+  return backgroundFinalizeState(kind) != BFS_DONE;
 }
 
-void js::gc::ArenaLists::clearFreeLists() { freeLists().clear(); }
+void js::gc::ArenaLists::clearFreeLists() {
+  for (auto i : AllAllocKinds()) clearFreeList(i);
+}
+
+bool js::gc::ArenaLists::arenaIsInUse(Arena* arena, AllocKind kind) const {
+  MOZ_ASSERT(arena);
+  return arena == freeList(kind)->getArenaUnchecked();
+}
 
 MOZ_ALWAYS_INLINE js::gc::TenuredCell* js::gc::ArenaLists::allocateFromFreeList(
-    AllocKind thingKind) {
-  return freeLists().allocate(thingKind);
-}
-
-void js::gc::ArenaLists::unmarkPreMarkedFreeCells() {
-  for (auto i : AllAllocKinds()) {
-    freeLists().unmarkPreMarkedFreeCells(i);
-  }
+    AllocKind thingKind, size_t thingSize) {
+  return freeList(thingKind)->allocate(thingSize);
 }
 
 void js::gc::ArenaLists::checkEmptyFreeLists() {
-  MOZ_ASSERT(freeLists().allEmpty());
+#ifdef DEBUG
+  for (auto i : AllAllocKinds()) checkEmptyFreeList(i);
+#endif
 }
 
 bool js::gc::ArenaLists::checkEmptyArenaLists() {
   bool empty = true;
 #ifdef DEBUG
   for (auto i : AllAllocKinds()) {
-    if (!checkEmptyArenaList(i)) {
-      empty = false;
-    }
+    if (!checkEmptyArenaList(i)) empty = false;
   }
 #endif
   return empty;
+}
+
+void js::gc::ArenaLists::checkEmptyFreeList(AllocKind kind) {
+  MOZ_ASSERT(freeList(kind)->isEmpty());
 }
 
 #endif  // gc_ArenaList_inl_h

@@ -1,9 +1,9 @@
-use crate::preferences::{Pref, Preferences};
-use crate::prefreader::{parse, serialize, PrefReaderError};
+use preferences::{Preferences, Pref};
+use prefreader::{parse, serialize, PrefReaderError};
 use std::collections::btree_map::Iter;
 use std::fs::File;
-use std::io::prelude::*;
 use std::io::Result as IoResult;
+use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use tempdir::TempDir;
 
@@ -16,26 +16,23 @@ pub struct Profile {
 }
 
 impl Profile {
-    pub fn new() -> IoResult<Profile> {
-        let dir = TempDir::new("rust_mozprofile")?;
-        let path = dir.path().to_path_buf();
-        let temp_dir = Some(dir);
-        Ok(Profile {
-            path,
-            temp_dir,
-            prefs: None,
-            user_prefs: None,
-        })
-    }
+    pub fn new(opt_path: Option<&Path>) -> IoResult<Profile> {
+        let mut temp_dir = None;
+        let path = match opt_path {
+            Some(p) => p.to_path_buf(),
+            None => {
+                let dir = try!(TempDir::new("rust_mozprofile"));
+                let temp_path = dir.path().to_path_buf();
+                temp_dir = Some(dir);
+                temp_path
+            }
+        };
 
-     pub fn new_from_path(p: &Path) -> IoResult<Profile> {
-        let path = p.to_path_buf();
-        let temp_dir = None;
         Ok(Profile {
-            path,
-            temp_dir,
+            path: path,
+            temp_dir: temp_dir,
             prefs: None,
-            user_prefs: None,
+            user_prefs: None
         })
     }
 
@@ -43,7 +40,7 @@ impl Profile {
         if self.prefs.is_none() {
             let mut pref_path = PathBuf::from(&self.path);
             pref_path.push("prefs.js");
-            self.prefs = Some(PrefFile::new(pref_path)?)
+            self.prefs = Some(try!(PrefFile::new(pref_path)))
         };
         // This error handling doesn't make much sense
         Ok(self.prefs.as_mut().unwrap())
@@ -53,7 +50,7 @@ impl Profile {
         if self.user_prefs.is_none() {
             let mut pref_path = PathBuf::from(&self.path);
             pref_path.push("user.js");
-            self.user_prefs = Some(PrefFile::new(pref_path)?)
+            self.user_prefs = Some(try!(PrefFile::new(pref_path)))
         };
         // This error handling doesn't make much sense
         Ok(self.user_prefs.as_mut().unwrap())
@@ -71,33 +68,32 @@ impl PrefFile {
         let prefs = if !path.exists() {
             Preferences::new()
         } else {
-            let mut f = File::open(&path)?;
+            let mut f = try!(File::open(&path));
             let mut buf = String::with_capacity(4096);
-            f.read_to_string(&mut buf)?;
-            parse(buf.as_bytes())?
+            try!(f.read_to_string(&mut buf));
+            try!(parse(buf.as_bytes()))
         };
 
-        Ok(PrefFile { path, prefs })
+        Ok(PrefFile {
+            path: path,
+            prefs: prefs
+        })
     }
 
     pub fn write(&self) -> IoResult<()> {
-        let mut f = File::create(&self.path)?;
+        let mut f = try!(File::create(&self.path));
         serialize(&self.prefs, &mut f)
     }
 
     pub fn insert_slice<K>(&mut self, preferences: &[(K, Pref)])
-    where
-        K: Into<String> + Clone,
-    {
+        where K: Into<String> + Clone {
         for &(ref name, ref value) in preferences.iter() {
             self.insert((*name).clone(), (*value).clone());
         }
     }
 
     pub fn insert<K>(&mut self, key: K, value: Pref)
-    where
-        K: Into<String>,
-    {
+        where K: Into<String> {
         self.prefs.insert(key.into(), value);
     }
 

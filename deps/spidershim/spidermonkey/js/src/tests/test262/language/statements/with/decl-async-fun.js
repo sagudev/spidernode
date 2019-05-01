@@ -17,6 +17,6 @@ features: [async-functions]
 flags: [noStrict]
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 with ({}) async function f() {}

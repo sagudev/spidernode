@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !('gczeal' in this)
+if (!('gczeal' in this))
+    quit();
 
 gczeal(16);
 let a = [];

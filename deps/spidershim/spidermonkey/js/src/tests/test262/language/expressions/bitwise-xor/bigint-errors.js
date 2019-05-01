@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty('BigInt')) -- BigInt is not enabled unconditionally
+// |reftest| skip -- BigInt is not supported
 // Copyright (C) 2017 Josh Wolfe. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
@@ -6,67 +6,60 @@ description: bitwise-xor operator ToNumeric with BigInt operands
 esid: sec-binary-bitwise-operators-runtime-semantics-evaluation
 features: [BigInt, Symbol, Symbol.toPrimitive, computed-property-names]
 ---*/
-assert.throws(TypeError, function() {
-  Symbol('1') ^ 0n;
-}, 'Symbol("1") ^ 0n throws TypeError');
 
 assert.throws(TypeError, function() {
-  0n ^ Symbol('1');
-}, '0n ^ Symbol("1") throws TypeError');
-
+  Symbol("1") ^ 0n;
+}, "ToBigInt: Symbol => TypeError");
 assert.throws(TypeError, function() {
-  Object(Symbol('1')) ^ 0n;
-}, 'Object(Symbol("1")) ^ 0n throws TypeError');
-
+  0n ^ Symbol("1");
+}, "ToBigInt: Symbol => TypeError");
 assert.throws(TypeError, function() {
-  0n ^ Object(Symbol('1'));
-}, '0n ^ Object(Symbol("1")) throws TypeError');
-
+  Object(Symbol("1")) ^ 0n;
+}, "ToBigInt: unbox object with internal slot => Symbol => TypeError");
+assert.throws(TypeError, function() {
+  0n ^ Object(Symbol("1"));
+}, "ToBigInt: unbox object with internal slot => Symbol => TypeError");
 assert.throws(TypeError, function() {
   ({
     [Symbol.toPrimitive]: function() {
-      return Symbol('1');
+      return Symbol("1");
     }
   }) ^ 0n;
-}, '({[Symbol.toPrimitive]: function() {return Symbol("1");}}) ^ 0n throws TypeError');
-
+}, "ToBigInt: @@toPrimitive => Symbol => TypeError");
 assert.throws(TypeError, function() {
   0n ^ {
     [Symbol.toPrimitive]: function() {
-      return Symbol('1');
+      return Symbol("1");
     }
   };
-}, '0n ^ {[Symbol.toPrimitive]: function() {return Symbol("1");}} throws TypeError');
-
+}, "ToBigInt: @@toPrimitive => Symbol => TypeError");
 assert.throws(TypeError, function() {
   ({
     valueOf: function() {
-      return Symbol('1');
+      return Symbol("1");
     }
   }) ^ 0n;
-}, '({valueOf: function() {return Symbol("1");}}) ^ 0n throws TypeError');
-
+}, "ToBigInt: valueOf => Symbol => TypeError");
 assert.throws(TypeError, function() {
   0n ^ {
     valueOf: function() {
-      return Symbol('1');
+      return Symbol("1");
     }
   };
-}, '0n ^ {valueOf: function() {return Symbol("1");}} throws TypeError');
-
+}, "ToBigInt: valueOf => Symbol => TypeError");
 assert.throws(TypeError, function() {
   ({
     toString: function() {
-      return Symbol('1');
+      return Symbol("1");
     }
   }) ^ 0n;
-}, '({toString: function() {return Symbol("1");}}) ^ 0n throws TypeError');
-
+}, "ToBigInt: toString => Symbol => TypeError");
 assert.throws(TypeError, function() {
   0n ^ {
     toString: function() {
-      return Symbol('1');
+      return Symbol("1");
     }
   };
-}, '0n ^ {toString: function() {return Symbol("1");}} throws TypeError');
+}, "ToBigInt: toString => Symbol => TypeError");
+
 reportCompare(0, 0);

@@ -1,6 +1,6 @@
 // |jit-test| error:dead object
 
-var P = newGlobal({newCompartment: true}).eval(`
+var P = newGlobal().eval(`
 (class extends Promise {
     static resolve(o) {
         return o;

@@ -1,2 +1,3 @@
-// |jit-test| skip-if: helperThreadCount() === 0
+if (helperThreadCount() === 0)
+   quit();
 evalInWorker(`schedulegc("s1");`);

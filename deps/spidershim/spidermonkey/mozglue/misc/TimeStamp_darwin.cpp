@@ -142,15 +142,12 @@ void TimeStamp::Startup() {
 void TimeStamp::Shutdown() {}
 
 TimeStamp TimeStamp::Now(bool aHighResolution) {
-  return TimeStamp::NowFuzzy(TimeStampValue(false, ClockTime()));
-}
-
-TimeStamp TimeStamp::NowUnfuzzed(bool aHighResolution) {
-  return TimeStamp(TimeStampValue(false, ClockTime()));
+  return TimeStamp(ClockTime());
 }
 
 // Computes and returns the process uptime in microseconds.
 // Returns 0 if an error was encountered.
+
 uint64_t TimeStamp::ComputeProcessUptime() {
   struct timeval tv;
   int rv = gettimeofday(&tv, nullptr);

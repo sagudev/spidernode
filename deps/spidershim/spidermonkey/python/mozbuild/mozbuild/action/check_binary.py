@@ -6,7 +6,6 @@ from __future__ import print_function, unicode_literals
 
 import argparse
 import os
-import re
 import subprocess
 import sys
 
@@ -18,11 +17,10 @@ from mozpack.executables import (
     get_type,
     ELF,
     MACHO,
-    UNKNOWN,
 )
 
 
-STDCXX_MAX_VERSION = Version('3.4.17')
+STDCXX_MAX_VERSION = Version('3.4.16')
 GLIBC_MAX_VERSION = Version('2.12')
 LIBGCC_MAX_VERSION = Version('4.8')
 
@@ -31,6 +29,7 @@ HOST = {
         buildconfig.substs.get('MOZ_LIBSTDCXX_HOST_VERSION'),
     'platform': buildconfig.substs['HOST_OS_ARCH'],
     'readelf': 'readelf',
+    'nm': 'nm',
 }
 
 TARGET = {
@@ -39,11 +38,13 @@ TARGET = {
     'platform': buildconfig.substs['OS_TARGET'],
     'readelf': '{}readelf'.format(
         buildconfig.substs.get('TOOLCHAIN_PREFIX', '')),
+    'nm': '{}nm'.format(buildconfig.substs.get('TOOLCHAIN_PREFIX', '')),
+    'readobj': '{}readobj'.format(buildconfig.substs.get('TOOLCHAIN_PREFIX', '')),
 }
 
-ADDR_RE = re.compile(r'[0-9a-f]{8,16}')
-
-if buildconfig.substs.get('HAVE_64BIT_BUILD'):
+if buildconfig.substs.get('MOZ_ASAN'):
+    GUESSED_NSMODULE_SIZE = 64
+elif buildconfig.substs.get('HAVE_64BIT_BUILD'):
     GUESSED_NSMODULE_SIZE = 8
 else:
     GUESSED_NSMODULE_SIZE = 4
@@ -76,35 +77,11 @@ def at_least_one(iter):
         raise Empty()
 
 
-# Iterates the symbol table on ELF and MACHO, and the export table on
-# COFF/PE.
-def iter_symbols(binary):
-    ty = get_type(binary)
-    # XXX: Static libraries on ELF, MACHO and COFF/PE systems are all
-    # ar archives. So technically speaking, the following is wrong
-    # but is enough for now. llvm-objdump -t can actually be used on all
-    # platforms for static libraries, but its format is different for
-    # Windows .obj files, so the following won't work for them, but
-    # it currently doesn't matter.
-    if ty == UNKNOWN and open(binary).read(8) == '!<arch>\n':
-        ty = ELF
-    if ty in (ELF, MACHO):
-        for line in get_output(buildconfig.substs['LLVM_OBJDUMP'], '-t',
-                               binary):
-            m = ADDR_RE.match(line)
-            if not m:
-                continue
-            addr = int(m.group(0), 16)
-            # The second "column" is 7 one-character items that can be
-            # whitespaces. We don't have use for their value, so just skip
-            # those.
-            rest = line[m.end() + 9:].split()
-            # The number of remaining colums will vary between ELF and MACHO.
-            # On ELF, we have:
-            #   Section Size .hidden? Name
-            # On Macho, the size is skipped.
-            # In every case, the symbol name is last.
-            name = rest[-1]
+def iter_readelf_symbols(target, binary):
+    for line in get_output(target['readelf'], '-sW', binary):
+        data = line.split()
+        if len(data) >= 8 and data[0].endswith(':') and data[0][:-1].isdigit():
+            n, addr, size, type, bind, vis, index, name = data[:8]
             if '@' in name:
                 name, ver = name.rsplit('@', 1)
                 while name.endswith('@'):
@@ -112,37 +89,16 @@ def iter_symbols(binary):
             else:
                 ver = None
             yield {
-                'addr': addr,
-                'size': int(rest[1], 16) if ty == ELF else 0,
+                'addr': int(addr, 16),
+                # readelf output may contain decimal values or hexadecimal
+                # values prefixed with 0x for the size. Let python autodetect.
+                'size': int(size, 0),
+                'type': type,
+                'binding': bind,
+                'visibility': vis,
+                'index': index,
                 'name': name,
-                'version': ver or None,
-            }
-    else:
-        export_table = False
-        for line in get_output(buildconfig.substs['LLVM_OBJDUMP'], '-p',
-                               binary):
-            if line.strip() == 'Export Table:':
-                export_table = True
-                continue
-            elif not export_table:
-                continue
-
-            cols = line.split()
-            # The data we're interested in comes in 3 columns, and the first
-            # column is a number.
-            if len(cols) != 3 or not cols[0].isdigit():
-                continue
-            _, rva, name = cols
-            # - The MSVC mangling has some type info following `@@`
-            # - Any namespacing that can happen on the symbol appears as a
-            #   suffix, after a `@`.
-            # - Mangled symbols are prefixed with `?`.
-            name = name.split('@@')[0].split('@')[0].lstrip('?')
-            yield {
-                'addr': int(rva, 16),
-                'size': 0,
-                'name': name,
-                'version': None,
+                'version': ver,
             }
 
 
@@ -159,14 +115,14 @@ def check_dep_versions(target, binary, lib, prefix, max_version):
     unwanted = []
     prefix = prefix + '_'
     try:
-        for sym in at_least_one(iter_symbols(binary)):
-            if sym['addr'] == 0 and sym['version'] and \
+        for sym in at_least_one(iter_readelf_symbols(target, binary)):
+            if sym['index'] == 'UND' and sym['version'] and \
                     sym['version'].startswith(prefix):
                 version = Version(sym['version'][len(prefix):])
                 if version > max_version:
                     unwanted.append(sym)
     except Empty:
-        raise RuntimeError('Could not parse llvm-objdump output?')
+        raise RuntimeError('Could not parse readelf output?')
     if unwanted:
         raise RuntimeError('\n'.join([
             'We do not want these {} symbol versions to be used:'.format(lib)
@@ -214,6 +170,96 @@ def is_libxul(binary):
     return 'xul' in basename
 
 
+def check_nsmodules(target, binary):
+    if target is HOST or not is_libxul(binary):
+        raise Skip()
+    symbols = []
+
+    test_msvc = (buildconfig.substs.get('_MSC_VER') and \
+        buildconfig.substs.get('DEVELOPER_OPTIONS'))
+    test_clang_win = (buildconfig.substs.get('CC_TYPE') == 'clang' and \
+        buildconfig.substs.get('OS_ARCH') == 'WINNT')
+    test_gcc_win = (buildconfig.substs.get('CC_TYPE') == 'gcc' and \
+        buildconfig.substs.get('OS_ARCH') == 'WINNT')
+
+    if buildconfig.substs.get('_MSC_VER'):
+        for line in get_output('dumpbin.exe', '-exports', binary):
+            data = line.split(None, 3)
+            if data and len(data) == 4 and data[0].isdigit() and \
+                    ishex(data[1]) and ishex(data[2]):
+                # - Some symbols in the table can be aliases, and appear as
+                #   `foo = bar`.
+                # - The MSVC mangling has some type info following `@@`
+                # - Any namespacing that can happen on the symbol appears as a
+                #   suffix, after a `@`.
+                name = data[3].split(' = ')[0].split('@@')[0].split('@')[0]
+                if name.endswith('_NSModule'):
+                    symbols.append((int(data[2], 16), 0, name.lstrip('?')))
+    else:
+        # MinGW-Clang, when building pdbs, doesn't include the symbol table into
+        # the final module. To get the NSModule info, we can look at the exported
+        # symbols. (#1475562)
+        if test_clang_win:
+            readobj_output = get_output(target['readobj'], '-coff-exports', binary)
+            # Transform the output of readobj into nm-like output
+            output = []
+            for line in readobj_output:
+                if "Name" in line:
+                    name = line.replace("Name:", "").strip()
+                elif "RVA" in line:
+                    rva = line.replace("RVA:", "").strip()
+                    output.append("%s r %s" % (name, rva))
+        else:
+            output = get_output(target['nm'], '-P', binary)
+
+        for line in output:
+            data = line.split()
+            # Some symbols may not have a size listed at all.
+            if len(data) == 3:
+                data.append('0')
+            # NSModules symbols end with _NSModule or _NSModuleE when
+            # C++-mangled.
+            if len(data) == 4 and data[0].endswith(('_NSModule', '_NSModuleE')):
+                if test_gcc_win and any(x in data[0] for x in [".refptr", "_GLOBAL"]):
+                    continue
+                sym, _, addr, size = data
+                symbols.append((int(addr, 16), int(size, 16), sym))
+    if not symbols:
+        raise RuntimeError('Could not find NSModules')
+
+    def print_symbols(symbols):
+        for addr, size, sym in symbols:
+            print('%x %d %s' % (addr, size, sym))
+
+    symbols = sorted(symbols)
+    next_addr = None
+    # MSVC linker, when doing incremental linking, adds padding when
+    # merging sections. Allow there to be more space between the NSModule
+    # symbols, as long as they are in the right order.
+    if test_msvc or test_clang_win:
+        sym_cmp = lambda guessed, actual: guessed <= actual
+    else:
+        sym_cmp = lambda guessed, actual: guessed == actual
+
+    for addr, size, sym in symbols:
+        if next_addr is not None and not sym_cmp(next_addr, addr):
+            print_symbols(symbols)
+            raise RuntimeError('NSModules are not adjacent')
+        # On mac, nm doesn't actually print anything other than 0 for the
+        # size. So take our best guess. On Windows, dumpbin doesn't give us
+        # any size at all.
+        if size == 0:
+            size = GUESSED_NSMODULE_SIZE
+        next_addr = addr + size
+    first = symbols[0][2]
+    last = symbols[-1][2]
+    # On some platforms, there are extra underscores on symbol names.
+    if first.lstrip('_') != 'start_kPStaticModules_NSModule' or \
+            last.lstrip('_') != 'end_kPStaticModules_NSModule':
+        print_symbols(symbols)
+        raise RuntimeError('NSModules are not ordered appropriately')
+
+
 def check_pt_load(target, binary):
     if target is HOST or get_type(binary) != ELF or not is_libxul(binary):
         raise Skip()
@@ -250,43 +296,6 @@ def check_mozglue_order(target, binary):
         raise RuntimeError('Could not parse readelf output?')
 
 
-def check_networking(binary):
-    retcode = 0
-    networking_functions = set([
-        # socketpair is not concerning; it is restricted to AF_UNIX
-        "socket", "connect", "accept", "bind", "listen",
-        "getsockname", "getsockopt", "setsockopt",
-        "recv", "recvfrom",
-        "send", "sendto",
-        # We would be concerned by recvmsg and sendmsg; but we believe
-        # they are okay as documented in 1376621#c23
-        "gethostbyname", "gethostbyaddr", "gethostent", "sethostent", "endhostent",
-        "gethostent_r", "gethostbyname2", "gethostbyaddr_r", "gethostbyname_r",
-        "gethostbyname2_r",
-        "getaddrinfo", "getservent", "getservbyname", "getservbyport", "setservent",
-        "getprotoent", "getprotobyname", "getprotobynumber", "setprotoent",
-        "endprotoent"])
-    bad_occurences_names = set()
-
-    try:
-        for sym in at_least_one(iter_symbols(binary)):
-            if sym['addr'] == 0 and sym['name'] in networking_functions:
-                bad_occurences_names.add(sym['name'])
-    except Empty:
-        raise RuntimeError('Could not parse llvm-objdump output?')
-
-    basename = os.path.basename(binary)
-    if bad_occurences_names:
-        s = 'TEST-UNEXPECTED-FAIL | check_networking | {} | Identified {} ' + \
-            'networking function(s) being imported in the rust static library ({})'
-        print(s.format(basename, len(bad_occurences_names),
-            ",".join(sorted(bad_occurences_names))),
-            file=sys.stderr)
-        retcode = 1
-    elif buildconfig.substs.get('MOZ_AUTOMATION'):
-        print('TEST-PASS | check_networking | {}'.format(basename))
-    return retcode
-
 def checks(target, binary):
     # The clang-plugin is built as target but is really a host binary.
     # Cheat and pretend we were passed the right argument.
@@ -303,6 +312,8 @@ def checks(target, binary):
         checks.append(check_textrel)
         checks.append(check_pt_load)
         checks.append(check_mozglue_order)
+
+    checks.append(check_nsmodules)
 
     retcode = 0
     basename = os.path.basename(binary)
@@ -330,8 +341,6 @@ def main(args):
                         help='Perform checks for a host binary')
     parser.add_argument('--target', action='store_true',
                         help='Perform checks for a target binary')
-    parser.add_argument('--networking', action='store_true',
-                        help='Perform checks for networking functions')
 
     parser.add_argument('binary', metavar='PATH',
                         help='Location of the binary to check')
@@ -343,14 +352,7 @@ def main(args):
               file=sys.stderr)
         return 1
 
-    if options.networking and options.host:
-        print('--networking is only valid with --target',
-               file=sys.stderr)
-        return 1
-
-    if options.networking:
-        return check_networking(options.binary)
-    elif options.host:
+    if options.host:
         return checks(HOST, options.binary)
     elif options.target:
         return checks(TARGET, options.binary)

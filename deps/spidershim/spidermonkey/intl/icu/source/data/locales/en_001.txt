@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html#License
 en_001{
-    Version{"2.1.47.69"}
+    Version{"2.1.35.71"}
     calendar{
         chinese{
             DateTimePatterns{
@@ -98,18 +98,11 @@ en_001{
                 "{1}, {0}",
             }
             availableFormats{
-                Bhms{"h:mm.ss B"}
-                EBhm{"E, h:mm B"}
-                EBhms{"E, h:mm:ss B"}
-                EHm{"E, HH:mm"}
-                EHms{"E, HH:mm:ss"}
                 Ed{"E d"}
-                Ehm{"E, h:mm a"}
-                Ehms{"E, h:mm:ss a"}
                 GyMMMEd{"E, d MMM y G"}
                 GyMMMd{"d MMM y G"}
                 M{"LL"}
-                MEd{"E, d/M"}
+                MEd{"E, dd/MM"}
                 MMMEd{"E, d MMM"}
                 MMMMd{"d MMMM"}
                 MMMd{"d MMM"}
@@ -164,14 +157,6 @@ en_001{
             }
         }
         gregorian{
-            AmPmMarkers{
-                "am",
-                "pm",
-            }
-            AmPmMarkersAbbr{
-                "am",
-                "pm",
-            }
             DateTimePatterns{
                 "h:mm:ss a zzzz",
                 "h:mm:ss a z",
@@ -188,8 +173,6 @@ en_001{
                 "{1}, {0}",
             }
             availableFormats{
-                EBhm{"E, h:mm B"}
-                EBhms{"E, h:mm:ss B"}
                 Ed{"E d"}
                 GyMMMEd{"E, d MMM y G"}
                 GyMMMd{"d MMM y G"}
@@ -204,32 +187,6 @@ en_001{
                 yMMMEd{"E, d MMM y"}
                 yMMMd{"d MMM y"}
                 yMd{"dd/MM/y"}
-            }
-            dayPeriod{
-                format{
-                    abbreviated{
-                        noon{"noon"}
-                    }
-                    narrow{
-                        noon{"n"}
-                    }
-                    wide{
-                        noon{"noon"}
-                    }
-                }
-                stand-alone{
-                    abbreviated{
-                        am{"am"}
-                        pm{"pm"}
-                    }
-                    narrow{
-                        pm{"pm"}
-                    }
-                    wide{
-                        am{"am"}
-                        pm{"pm"}
-                    }
-                }
             }
             intervalFormats{
                 MEd{
@@ -275,36 +232,34 @@ en_001{
             }
         }
     }
+    characterLabel{
+        math_symbols{"maths symbols"}
+    }
     fields{
-        dayOfYear-narrow{
-            dn{"day of yr"}
-        }
-        dayOfYear-short{
-            dn{"day of yr"}
-        }
         dayperiod{
             dn{"am/pm"}
         }
-        dayperiod-narrow{
-            dn{"am/pm"}
-        }
-        dayperiod-short{
-            dn{"am/pm"}
-        }
-        fri-short{
-            relative{
-                "-1"{"last Fri"}
-                "0"{"this Fri"}
-                "1"{"next Fri"}
-            }
+        fri-narrow{
             relativeTime{
                 future{
-                    one{"in {0} Fri"}
-                    other{"in {0} Fri"}
+                    one{"in {0} Friday"}
+                    other{"in {0} Fridays"}
                 }
                 past{
-                    one{"{0} Fri ago"}
-                    other{"{0} Fri ago"}
+                    one{"{0} Friday ago"}
+                    other{"{0} Fridays ago"}
+                }
+            }
+        }
+        fri-short{
+            relativeTime{
+                future{
+                    one{"in {0} Friday"}
+                    other{"in {0} Fridays"}
+                }
+                past{
+                    one{"{0} Friday ago"}
+                    other{"{0} Fridays ago"}
                 }
             }
         }
@@ -359,20 +314,27 @@ en_001{
                 }
             }
         }
-        mon-short{
-            relative{
-                "-1"{"last Mon"}
-                "0"{"this Mon"}
-                "1"{"next Mon"}
-            }
+        mon-narrow{
             relativeTime{
                 future{
-                    one{"in {0} Mon"}
-                    other{"in {0} Mon"}
+                    one{"in {0} Monday"}
+                    other{"in {0} Mondays"}
                 }
                 past{
-                    one{"{0} Mon ago"}
-                    other{"{0} Mon ago"}
+                    one{"{0} Monday ago"}
+                    other{"{0} Mondays ago"}
+                }
+            }
+        }
+        mon-short{
+            relativeTime{
+                future{
+                    one{"in {0} Monday"}
+                    other{"in {0} Mondays"}
+                }
+                past{
+                    one{"{0} Monday ago"}
+                    other{"{0} Mondays ago"}
                 }
             }
         }
@@ -428,20 +390,27 @@ en_001{
                 }
             }
         }
-        sat-short{
-            relative{
-                "-1"{"last Sat"}
-                "0"{"this Sat"}
-                "1"{"next Sat"}
-            }
+        sat-narrow{
             relativeTime{
                 future{
-                    one{"in {0} Sat"}
-                    other{"in {0} Sat"}
+                    one{"in {0} Saturday"}
+                    other{"in {0} Saturdays"}
                 }
                 past{
-                    one{"{0} Sat ago"}
-                    other{"{0} Sat ago"}
+                    one{"{0} Saturday ago"}
+                    other{"{0} Saturdays ago"}
+                }
+            }
+        }
+        sat-short{
+            relativeTime{
+                future{
+                    one{"in {0} Saturday"}
+                    other{"in {0} Saturdays"}
+                }
+                past{
+                    one{"{0} Saturday ago"}
+                    other{"{0} Saturdays ago"}
                 }
             }
         }
@@ -470,71 +439,99 @@ en_001{
                 }
             }
         }
-        sun-short{
-            relative{
-                "-1"{"last Sun"}
-                "0"{"this Sun"}
-                "1"{"next Sun"}
-            }
+        sun-narrow{
             relativeTime{
                 future{
-                    one{"in {0} Sun"}
-                    other{"in {0} Sun"}
+                    one{"in {0} Sunday"}
+                    other{"in {0} Sundays"}
                 }
                 past{
-                    one{"{0} Sun ago"}
-                    other{"{0} Sun ago"}
+                    one{"{0} Sunday ago"}
+                    other{"{0} Sundays ago"}
+                }
+            }
+        }
+        sun-short{
+            relativeTime{
+                future{
+                    one{"in {0} Sunday"}
+                    other{"in {0} Sundays"}
+                }
+                past{
+                    one{"{0} Sunday ago"}
+                    other{"{0} Sundays ago"}
+                }
+            }
+        }
+        thu-narrow{
+            relativeTime{
+                future{
+                    one{"in {0} Thursday"}
+                    other{"in {0} Thursdays"}
+                }
+                past{
+                    one{"{0} Thursday ago"}
+                    other{"{0} Thursdays ago"}
                 }
             }
         }
         thu-short{
-            relative{
-                "-1"{"last Thu"}
-                "0"{"this Thu"}
-                "1"{"next Thu"}
-            }
             relativeTime{
                 future{
-                    one{"in {0} Thu"}
-                    other{"in {0} Thu"}
+                    one{"in {0} Thursday"}
+                    other{"in {0} Thursdays"}
                 }
                 past{
-                    one{"{0} Thu ago"}
-                    other{"{0} Thu ago"}
+                    one{"{0} Thursday ago"}
+                    other{"{0} Thursdays ago"}
+                }
+            }
+        }
+        tue-narrow{
+            relativeTime{
+                future{
+                    one{"in {0} Tuesday"}
+                    other{"in {0} Tuesdays"}
+                }
+                past{
+                    one{"{0} Tuesday ago"}
+                    other{"{0} Tuesdays ago"}
                 }
             }
         }
         tue-short{
-            relative{
-                "-1"{"last Tue"}
-                "0"{"this Tue"}
-                "1"{"next Tue"}
-            }
             relativeTime{
                 future{
-                    one{"in {0} Tue"}
-                    other{"in {0} Tue"}
+                    one{"in {0} Tuesday"}
+                    other{"in {0} Tuesdays"}
                 }
                 past{
-                    one{"{0} Tue ago"}
-                    other{"{0} Tue ago"}
+                    one{"{0} Tuesday ago"}
+                    other{"{0} Tuesdays ago"}
+                }
+            }
+        }
+        wed-narrow{
+            relativeTime{
+                future{
+                    one{"in {0} Wednesday"}
+                    other{"in {0} Wednesdays"}
+                }
+                past{
+                    one{"{0} Wednesday ago"}
+                    other{"{0} Wednesdays ago"}
                 }
             }
         }
         wed-short{
-            relative{
-                "-1"{"last Wed"}
-                "0"{"this Wed"}
-                "1"{"next Wed"}
-            }
             relativeTime{
                 future{
-                    one{"in {0} Wed"}
-                    other{"in {0} Wed"}
+                    one{"in {0} Wednesday"}
+                    other{"in {0} Wednesdays"}
                 }
                 past{
-                    one{"{0} Wed ago"}
-                    other{"{0} Wed ago"}
+                    one{"{0} Wednesday ago"}
+                    other{"{0} Wednesdays ago"}
                 }
             }
         }
@@ -563,24 +560,6 @@ en_001{
                     other{"{0} wk ago"}
                 }
             }
-        }
-        weekOfMonth-narrow{
-            dn{"wk of mo"}
-        }
-        weekOfMonth-short{
-            dn{"wk of mo"}
-        }
-        weekday-narrow{
-            dn{"day of wk"}
-        }
-        weekday-short{
-            dn{"day of wk"}
-        }
-        weekdayOfMonth-narrow{
-            dn{"wkday of mo"}
-        }
-        weekdayOfMonth-short{
-            dn{"wkday of mo"}
         }
         year-narrow{
             relativeTime{

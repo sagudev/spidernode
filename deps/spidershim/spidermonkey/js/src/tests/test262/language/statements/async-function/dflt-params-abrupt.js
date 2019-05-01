@@ -4,7 +4,7 @@
 /*---
 description: Abrupt completion returned by evaluation of initializer (async function declaration)
 esid: sec-async-function-definitions
-features: [default-parameters, async-functions]
+features: [default-parameters]
 flags: [generated, async]
 info: |
     14.6 Async Function Definitions

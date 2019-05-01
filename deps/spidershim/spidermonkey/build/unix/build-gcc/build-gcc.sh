@@ -5,6 +5,8 @@ set -x
 
 make_flags="-j$(nproc)"
 
+. $data_dir/download-tools.sh
+
 prepare_mingw() {
   export prefix=/tools/mingw32
   export install_dir=$root_dir$prefix
@@ -36,13 +38,7 @@ build_binutils() {
   then
     # gold is disabled because we don't use it on automation, and also we ran into
     # some issues with it using this script in build-clang.py.
-    #
-    # --enable-targets builds extra target support in ld.
-    # Enabling aarch64 support brings in arm support, so we don't need to specify that too.
-    #
-    # It is important to have the binutils --target and the gcc --target match,
-    # so binutils will install binaries in a place that gcc will look for them.
-    binutils_configure_flags="--enable-targets=aarch64-unknown-linux-gnu --build=x86_64-unknown-linux-gnu --target=x86_64-unknown-linux-gnu --disable-gold --enable-plugins --disable-nls --with-sysroot=/"
+    binutils_configure_flags="--disable-gold --enable-plugins --disable-nls --with-sysroot=/"
   fi
 
   mkdir $root_dir/binutils-objdir
@@ -55,13 +51,9 @@ build_binutils() {
 }
 
 build_gcc() {
-  # Be explicit about --build and --target so header and library install
-  # directories are consistent.
-  local target="${1:-x86_64-unknown-linux-gnu}"
-
   mkdir $root_dir/gcc-objdir
   pushd $root_dir/gcc-objdir
-  ../gcc-$gcc_version/configure --prefix=${prefix-/tools/gcc} --build=x86_64-unknown-linux-gnu --target="${target}" --enable-languages=c,c++  --disable-nls --disable-gnu-unique-object --enable-__cxa_atexit --with-arch-32=pentiumpro --with-sysroot=/
+  ../gcc-$gcc_version/configure --prefix=${prefix-/tools/gcc} --enable-languages=c,c++  --disable-nls --disable-gnu-unique-object --enable-__cxa_atexit --with-arch-32=pentiumpro --with-sysroot=/
   make $make_flags
   make $make_flags install DESTDIR=$root_dir
 
@@ -75,27 +67,27 @@ build_gcc() {
 build_gcc_and_mingw() {
   mkdir gcc-objdir
   pushd gcc-objdir
-  ../gcc-$gcc_version/configure --prefix=$install_dir --target=i686-w64-mingw32 --with-gnu-ld --with-gnu-as --disable-multilib --enable-threads=posix
+  ../gcc-$gcc_version/configure --prefix=$install_dir --target=$gcc_target --with-gnu-ld --with-gnu-as --disable-multilib --enable-threads=posix
   make $make_flags all-gcc
   make $make_flags install-gcc
   popd
 
   mkdir mingw-w64-headers32
   pushd mingw-w64-headers32
-  ../mingw-w64/mingw-w64-headers/configure --host=i686-w64-mingw32 --prefix=$install_dir/i686-w64-mingw32/ --enable-sdk=all --enable-secure-api --enable-idl
+  ../mingw-w64/mingw-w64-headers/configure --host=$gcc_target --prefix=$install_dir/$gcc_target/ --enable-sdk=all --enable-secure-api --enable-idl
   make $make_flags install
   popd
 
   mkdir mingw-w64-crt32
   pushd mingw-w64-crt32
-  ../mingw-w64/mingw-w64-crt/configure --host=i686-w64-mingw32 --prefix=$install_dir/i686-w64-mingw32/
+  ../mingw-w64/mingw-w64-crt/configure --host=$gcc_target --prefix=$install_dir/$gcc_target/
   make
   make install
   popd
 
   mkdir mingw-w64-pthread
   pushd mingw-w64-pthread
-  ../mingw-w64/mingw-w64-libraries/winpthreads/configure --host=i686-w64-mingw32 --prefix=$install_dir/i686-w64-mingw32/
+  ../mingw-w64/mingw-w64-libraries/winpthreads/configure --host=$gcc_target --prefix=$install_dir/$gcc_target/
   make
   make install
   popd
@@ -107,7 +99,7 @@ build_gcc_and_mingw() {
 
   mkdir widl32
   pushd widl32
-  ../mingw-w64/mingw-w64-tools/widl/configure --prefix=$install_dir --target=i686-w64-mingw32
+  ../mingw-w64/mingw-w64-tools/widl/configure --prefix=$install_dir --target=$gcc_target
   make
   make install
   popd

@@ -1,4 +1,7 @@
-// |jit-test| allow-oom; skip-if: !('oomTest' in this)
+// |jit-test| allow-oom
+
+if (!('oomTest' in this))
+    quit();
 
 function f() {
     eval("(function() y)()");

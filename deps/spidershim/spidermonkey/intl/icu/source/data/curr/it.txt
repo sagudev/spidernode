@@ -609,10 +609,6 @@ it{
         }
         MRO{
             "MRO",
-            "ouguiya della Mauritania (1973–2017)",
-        }
-        MRU{
-            "MRU",
             "ouguiya della Mauritania",
         }
         MTL{
@@ -833,11 +829,7 @@ it{
         }
         STD{
             "STD",
-            "dobra di Sao Tomé e Principe (1977–2017)",
-        }
-        STN{
-            "STN",
-            "dobra di Sao Tomé e Príncipe",
+            "dobra di Sao Tomé e Principe",
         }
         SUR{
             "SUR",
@@ -957,10 +949,6 @@ it{
         }
         VEF{
             "VEF",
-            "bolívar venezuelano (2008–2018)",
-        }
-        VES{
-            "VES",
             "bolívar venezuelano",
         }
         VND{
@@ -1044,7 +1032,7 @@ it{
             "codice di verifica della valuta",
         }
         XXX{
-            "¤",
+            "XXX",
             "valuta sconosciuta",
         }
         YDD{
@@ -1162,6 +1150,7 @@ it{
         MXN{"$"}
         MYR{"RM"}
         NAD{"$"}
+        NGN{"₦"}
         NIO{"C$"}
         NOK{"NKr"}
         NPR{"Rs"}
@@ -1179,7 +1168,7 @@ it{
         SHP{"£"}
         SRD{"$"}
         SSP{"£"}
-        STN{"Db"}
+        STD{"Db"}
         SYP{"£"}
         THB{"฿"}
         TOP{"T$"}
@@ -1577,10 +1566,6 @@ it{
             other{"patacas di Macao"}
         }
         MRO{
-            one{"ouguiya della Mauritania (1973–2017)"}
-            other{"ouguiya della Mauritania (1973–2017)"}
-        }
-        MRU{
             one{"ouguiya della Mauritania"}
             other{"ouguiya della Mauritania"}
         }
@@ -1737,12 +1722,8 @@ it{
             other{"sterline sud-sudanesi"}
         }
         STD{
-            one{"dobra di Sao Tomé e Principe (1977–2017)"}
-            other{"dobra di Sao Tomé e Principe (1977–2017)"}
-        }
-        STN{
-            one{"dobra di Sao Tomé e Príncipe"}
-            other{"dobra di Sao Tomé e Príncipe"}
+            one{"dobra di Sao Tomé e Principe"}
+            other{"dobra di Sao Tomé e Principe"}
         }
         SYP{
             one{"lira siriana"}
@@ -1817,10 +1798,6 @@ it{
             other{"bolivares venezuelani (1871–2008)"}
         }
         VEF{
-            one{"bolívar venezuelano (2008–2018)"}
-            other{"bolívares venezuelani (2008–2018)"}
-        }
-        VES{
             one{"bolívar venezuelano"}
             other{"bolívares venezuelani"}
         }
@@ -1877,5 +1854,5 @@ it{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"2.1.48.42"}
+    Version{"2.1.37.1"}
 }

@@ -298,14 +298,15 @@ public:
     virtual int32_t next(int32_t n) = 0;
 
    /**
-     * For RuleBasedBreakIterators, return the status tag from the break rule
-     * that determined the boundary at the current iteration position.
+     * For RuleBasedBreakIterators, return the status tag from the
+     * break rule that determined the most recently
+     * returned break position.
      * <p>
      * For break iterator types that do not support a rule status,
      * a default value of 0 is returned.
      * <p>
-     * @return the status from the break rule that determined the boundary at
-     *         the current iteration position.
+     * @return the status from the break rule that determined the most recently
+     *         returned break position.
      * @see RuleBaseBreakIterator::getRuleStatus()
      * @see UWordBreak
      * @stable ICU 52
@@ -314,7 +315,7 @@ public:
 
    /**
     * For RuleBasedBreakIterators, get the status (tag) values from the break rule(s)
-    * that determined the boundary at the current iteration position.
+    * that determined the most recently returned break position.
     * <p>
     * For break iterator types that do not support rule status,
     * no values are returned.
@@ -333,7 +334,7 @@ public:
     *                  normal way, without attempting to store any values.
     * @param status    receives error codes.
     * @return          The number of rule status values from rules that determined
-    *                  the boundary at the current iteration position.
+    *                  the most recent boundary returned by the break iterator.
     *                  In the event of a U_BUFFER_OVERFLOW_ERROR, the return value
     *                  is the total number of status values that were available,
     *                  not the reduced number that were actually returned.
@@ -431,13 +432,12 @@ public:
     static BreakIterator* U_EXPORT2
     createSentenceInstance(const Locale& where, UErrorCode& status);
 
-#ifndef U_HIDE_DEPRECATED_API
     /**
      * Create BreakIterator for title-casing breaks using the specified locale
      * Returns an instance of a BreakIterator implementing title breaks.
      * The iterator returned locates title boundaries as described for
      * Unicode 3.2 only. For Unicode 4.0 and above title boundary iteration,
-     * please use a word boundary iterator. See {@link #createWordInstance }.
+     * please use Word Boundary iterator.{@link #createWordInstance }
      *
      * @param where the locale.
      * @param status The error code.
@@ -452,11 +452,10 @@ public:
      * used; neither the requested locale nor any of its fall back locales
      * could be found.
      * The caller owns the returned object and is responsible for deleting it.
-     * @deprecated ICU 64 Use createWordInstance instead.
+     * @stable ICU 2.1
      */
     static BreakIterator* U_EXPORT2
     createTitleInstance(const Locale& where, UErrorCode& status);
-#endif /* U_HIDE_DEPRECATED_API */
 
     /**
      * Get the set of Locales for which TextBoundaries are installed.
@@ -617,7 +616,7 @@ public:
     virtual BreakIterator &refreshInputText(UText *input, UErrorCode &status) = 0;
 
  private:
-    static BreakIterator* buildInstance(const Locale& loc, const char *type, UErrorCode& status);
+    static BreakIterator* buildInstance(const Locale& loc, const char *type, int32_t kind, UErrorCode& status);
     static BreakIterator* createInstance(const Locale& loc, int32_t kind, UErrorCode& status);
     static BreakIterator* makeInstance(const Locale& loc, int32_t kind, UErrorCode& status);
 
@@ -640,7 +639,7 @@ protected:
 
 private:
 
-    /** @internal (private) */
+    /** @internal */
     char actualLocale[ULOC_FULLNAME_CAPACITY];
     char validLocale[ULOC_FULLNAME_CAPACITY];
 };

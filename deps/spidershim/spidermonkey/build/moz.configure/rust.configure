@@ -5,61 +5,17 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
+@imports(_from='os.path', _import='expanduser')
+def add_rustup_path(what):
+    # rustup installs rustc/cargo into ~/.cargo/bin by default,
+    # so look there if the binaries aren't in $PATH.
+    return [what, os.path.join(expanduser('~/.cargo/bin'), what)]
+
+
 # Rust is required by `rust_compiler` below. We allow_missing here
 # to propagate failures to the better error message there.
-js_option(env='RUSTC', nargs=1, help='Path to the rust compiler')
-js_option(env='CARGO', nargs=1, help='Path to the Cargo package manager')
-
-rustc = check_prog('RUSTC', ['rustc'], paths=toolchain_search_path,
-                   input='RUSTC', allow_missing=True)
-cargo = check_prog('_CARGO', ['cargo'], what='cargo',
-                   paths=toolchain_search_path, input='CARGO',
-                   allow_missing=True)
-
-
-@depends(cargo, host)
-@imports('subprocess')
-@imports(_from='__builtin__', _import='open')
-@imports('os')
-def cargo(cargo, host):
-    # The cargo executable can be either a rustup wrapper, or a real,
-    # plain, cargo. In the former case, on OSX, rustup sets
-    # DYLD_LIBRARY_PATH (at least until
-    # https://github.com/rust-lang/rustup.rs/pull/1752 is merged and shipped)
-    # and that can wreck havoc (see bug 1536486).
-    #
-    # So if we're in that situation, find the corresponding real plain
-    # cargo.
-    #
-    # To achieve that, try to run `cargo +stable`. When it's the rustup
-    # wrapper, it either prints cargo's help and exits with status 0, or print
-    # an error message (error: toolchain 'stable' is not installed) and exits
-    # with status 1. When it's plain cargo, it exits with a different error
-    # message (error: no such subcommand: `+stable`), and exits with status
-    # 101.
-    if host.os == 'OSX':
-        with open(os.devnull, 'wb') as devnull:
-            retcode = subprocess.call(
-                [cargo, '+stable'], stdout=devnull, stderr=devnull)
-        if retcode != 101:
-            # We now proceed to find the real cargo. We're not sure `rustup`
-            # is in $PATH, but we know the cargo executable location, and that
-            # it /is/ rustup, so we can pass it `rustup` as argv[0], which
-            # will make it act as rustup.
-            # Note we could avoid the `cargo +stable` call above, but there's
-            # the possibility that there's a `cargo-which` command that would
-            # not fail with running `cargo which cargo` with a real cargo.
-            out = check_cmd_output('rustup', 'which', 'cargo',
-                                   executable=cargo).rstrip()
-            # If for some reason the above failed to return something, keep the
-            # cargo we found originally.
-            if out:
-                cargo = out
-                log.info('Actually using %s', cargo)
-    return cargo
-
-
-set_config('CARGO', cargo)
+rustc = check_prog('RUSTC', add_rustup_path('rustc'), allow_missing=True)
+cargo = check_prog('CARGO', add_rustup_path('cargo'), allow_missing=True)
 
 
 @depends_if(rustc)
@@ -73,7 +29,6 @@ def rustc_info(rustc):
         host=info['host'],
     )
 
-set_config('RUSTC_VERSION', depends(rustc_info)(lambda info: str(info.version)))
 
 @depends_if(cargo)
 @checking('cargo version', lambda info: info.version)
@@ -100,9 +55,9 @@ def cargo_info(cargo):
     )
 
 
-@depends(rustc_info, cargo_info, build_project)
+@depends(rustc_info, cargo_info)
 @imports(_from='textwrap', _import='dedent')
-def rust_compiler(rustc_info, cargo_info, build_project):
+def rust_compiler(rustc_info, cargo_info):
     if not rustc_info:
         die(dedent('''\
         Rust compiler not found.
@@ -112,12 +67,8 @@ def rust_compiler(rustc_info, cargo_info, build_project):
         You can install rust by running './mach bootstrap'
         or by directly running the installer from https://rustup.rs/
         '''))
-    if build_project == 'tools/crashreporter':
-        rustc_min_version = Version('1.22.0')
-        cargo_min_version = Version('0.23.0')
-    else:
-        rustc_min_version = Version('1.32.0')
-        cargo_min_version = rustc_min_version
+    rustc_min_version = Version('1.24.0')
+    cargo_min_version = Version('0.{}'.format(rustc_min_version.minor + 1))
 
     version = rustc_info.version
     if version < rustc_min_version:
@@ -169,10 +120,7 @@ def rust_supported_targets(rustc):
     per_raw_os = {}
     for t in out:
         t = split_triplet(t, allow_unknown=True)
-        endianness = t.endianness
-        if t.cpu.startswith('thumb') and endianness not in ('big', 'little'):
-            endianness = 'little'
-        key = (t.cpu, endianness, t.os)
+        key = (t.cpu, t.endianness, t.os)
         if key in per_os:
             previous = per_os[key]
             per_raw_os[(previous.cpu, previous.endianness,
@@ -187,7 +135,7 @@ def rust_supported_targets(rustc):
             # normalize.
             if raw_os == 'androideabi':
                 raw_os = 'linux-androideabi'
-            per_raw_os[(t.cpu, endianness, raw_os)] = t
+            per_raw_os[(t.cpu, t.endianness, raw_os)] = t
         else:
             per_os[key] = t
     return namespace(per_os=per_os, per_raw_os=per_raw_os)
@@ -199,13 +147,10 @@ def rust_triple_alias(host_or_target):
     `host_or_target` is either `host` or `target` (the @depends functions
     from init.configure).
     """
-    assert host_or_target in {host, target}
-
-    host_or_target_str = {host: 'host', target: 'target'}[host_or_target]
+    assert host_or_target in (host, target)
 
     @depends(rustc, host_or_target, c_compiler, rust_supported_targets,
-             arm_target, when=rust_compiler)
-    @checking('for rust %s triplet' % host_or_target_str)
+             when=rust_compiler)
     @imports('os')
     @imports('subprocess')
     @imports(_from='mozbuild.configure.util', _import='LineIO')
@@ -213,7 +158,7 @@ def rust_triple_alias(host_or_target):
     @imports(_from='tempfile', _import='mkstemp')
     @imports(_from='textwrap', _import='dedent')
     def rust_target(rustc, host_or_target, compiler_info,
-                    rust_supported_targets, arm_target):
+                    rust_supported_targets):
         # Rust's --target options are similar to, but not exactly the same
         # as, the autoconf-derived targets we use.  An example would be that
         # Rust uses distinct target triples for targetting the GNU C++ ABI
@@ -233,23 +178,13 @@ def rust_triple_alias(host_or_target):
             host_or_target_os = host_or_target.os
             host_or_target_raw_os = host_or_target.raw_os
 
-        if host_or_target.cpu == 'arm' and arm_target.arm_arch == 7 and \
-                arm_target.fpu == 'neon' and arm_target.thumb2:
-            host_or_target_cpus = ('thumbv7neon', host_or_target.cpu)
-        else:
-            host_or_target_cpus = (host_or_target.cpu,)
+        rustc_target = rust_supported_targets.per_os.get(
+            (host_or_target.cpu, host_or_target.endianness, host_or_target_os))
 
-        for host_or_target_cpu in host_or_target_cpus:
-            rustc_target = rust_supported_targets.per_os.get(
-                (host_or_target_cpu, host_or_target.endianness, host_or_target_os))
-            if rustc_target:
-                break
-
+        if rustc_target is None:
             rustc_target = rust_supported_targets.per_raw_os.get(
-                (host_or_target_cpu, host_or_target.endianness,
+                (host_or_target.cpu, host_or_target.endianness,
                  host_or_target_raw_os))
-            if rustc_target:
-                break
 
         if rustc_target is None:
             die("Don't know how to translate {} for rustc".format(
@@ -302,58 +237,66 @@ def rust_triple_alias(host_or_target):
 rust_target_triple = rust_triple_alias(target)
 rust_host_triple = rust_triple_alias(host)
 
-
-@depends(host, rust_host_triple, rustc_info.host)
-def validate_rust_host_triple(host, rust_host, rustc_host):
-    if rust_host != rustc_host:
-        if host.alias == rust_host:
-            configure_host = host.alias
-        else:
-            configure_host = '{}/{}'.format(host.alias, rust_host)
-        die("The rust compiler host ({}) is not suitable for the configure host ({})."
-            .format(rustc_host, configure_host))
-
-
 set_config('RUST_TARGET', rust_target_triple)
 set_config('RUST_HOST_TARGET', rust_host_triple)
 
 
+@depends(rust_target_triple)
+def rust_target_env_name(triple):
+    return triple.upper().replace('-', '_')
+
+
+# We need this to form various Cargo environment variables, as there is no
+# uppercase function in make, and we don't want to shell out just for
+# converting a string to uppercase.
+set_config('RUST_TARGET_ENV_NAME', rust_target_env_name)
+
 # This is used for putting source info into symbol files.
 set_config('RUSTC_COMMIT', depends(rustc_info)(lambda i: i.commit))
 
-# Rustdoc is required by Rust tests below.
-js_option(env='RUSTDOC', nargs=1, help='Path to the rustdoc program')
-
-rustdoc = check_prog('RUSTDOC', ['rustdoc'], paths=toolchain_search_path,
-                     input='RUSTDOC', allow_missing=True)
+# Until we remove all the other Rust checks in old-configure.
+add_old_configure_assignment('RUSTC', rustc)
+add_old_configure_assignment('RUST_TARGET', rust_target_triple)
 
 # This option is separate from --enable-tests because Rust tests are particularly
 # expensive in terms of compile time (especially for code in libxul).
 option('--enable-rust-tests',
-       help='Enable building and running of Rust tests during `make check`')
+       help='Enable building of Rust tests, and build-time execution of them')
+
+set_config('MOZ_RUST_TESTS', depends('--enable-rust-tests')(lambda v: bool(v)))
+
+option(env='WIN64_LINK', nargs=1, help='Path to link.exe that targets win64')
+option(env='WIN64_LIB', nargs=1, help='Paths to libraries for the win64 linker')
+
+set_config('WIN64_LINK', depends('WIN64_LINK')(lambda x: x))
+set_config('WIN64_LIB', depends('WIN64_LIB')(lambda x: x))
 
 
-@depends('--enable-rust-tests', rustdoc)
-def rust_tests(enable_rust_tests, rustdoc):
-    if enable_rust_tests and not rustdoc:
-        die('--enable-rust-tests requires rustdoc')
-    return bool(enable_rust_tests)
+@depends(target, rustc_info, c_compiler, 'WIN64_LINK', 'WIN64_LIB')
+def win64_cargo_linker(target, rustc_info, compiler_info, link, lib):
+    # When we're building a 32-bit Windows build with a 64-bit rustc, we
+    # need to configure the linker it will use for host binaries (build scripts)
+    # specially because the compiler configuration we use for the build is for
+    # MSVC targeting 32-bit binaries.
+    if target.kernel == 'WINNT' and target.cpu == 'x86' and \
+       compiler_info.type in ('msvc', 'clang-cl') and \
+       rustc_info.host == 'x86_64-pc-windows-msvc' and link and lib:
+        return True
 
 
-set_config('MOZ_RUST_TESTS', rust_tests)
+set_config('WIN64_CARGO_LINKER', win64_cargo_linker)
 
 
-@depends(target, c_compiler, rustc)
-@imports('os')
-def rustc_natvis_ldflags(target, compiler_info, rustc):
-    if target.kernel == 'WINNT' and compiler_info.type == 'clang-cl':
-        sysroot = check_cmd_output(rustc, '--print', 'sysroot').strip()
-        etc = os.path.join(sysroot, 'lib/rustlib/etc')
-        ldflags = []
-        for f in os.listdir(etc):
-            if f.endswith('.natvis'):
-                ldflags.append('-NATVIS:' + normsep(os.path.join(etc, f)))
-        return ldflags
+@depends(win64_cargo_linker, check_build_environment)
+@imports(_from='textwrap', _import='dedent')
+def win64_cargo_linker_config(linker, env):
+    if linker:
+        return dedent('''\
+        [target.x86_64-pc-windows-msvc]
+        linker = "{objdir}/build/win64/cargo-linker.bat"
+        '''.format(objdir=env.topobjdir))
+    # We want an empty string here so we don't leave the @ variable in the config file.
+    return ''
 
 
-set_config('RUSTC_NATVIS_LDFLAGS', rustc_natvis_ldflags)
+set_config('WIN64_CARGO_LINKER_CONFIG', win64_cargo_linker_config)

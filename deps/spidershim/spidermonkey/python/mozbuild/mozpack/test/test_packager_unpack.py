@@ -44,8 +44,7 @@ class TestUnpack(TestWithTmpDir):
         # Unpack that package. Its content is expected to match that of a Flat
         # formatted package.
         registry = FileRegistry()
-        unpack_to_registry(self.tmpdir, registry,
-                           getattr(cls, 'OMNIJAR_NAME', None))
+        unpack_to_registry(self.tmpdir, registry)
         self.assertEqual(get_contents(registry, read_all=True), self.contents)
 
     def test_flat_unpack(self):
@@ -54,20 +53,12 @@ class TestUnpack(TestWithTmpDir):
     def test_jar_unpack(self):
         self._unpack_test(JarFormatter)
 
-    @staticmethod
-    def _omni_foo_formatter(name):
-        class OmniFooFormatter(OmniJarFormatter):
-            OMNIJAR_NAME = name
-
-            def __init__(self, registry):
-                super(OmniFooFormatter, self).__init__(registry, name)
-        return OmniFooFormatter
-
     def test_omnijar_unpack(self):
-        self._unpack_test(self._omni_foo_formatter('omni.foo'))
+        class OmniFooFormatter(OmniJarFormatter):
+            def __init__(self, registry):
+                super(OmniFooFormatter, self).__init__(registry, 'omni.foo')
 
-    def test_omnijar_subpath_unpack(self):
-        self._unpack_test(self._omni_foo_formatter('bar/omni.foo'))
+        self._unpack_test(OmniFooFormatter)
 
 
 if __name__ == '__main__':

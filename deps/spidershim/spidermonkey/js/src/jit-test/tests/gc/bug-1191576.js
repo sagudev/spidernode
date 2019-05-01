@@ -1,4 +1,7 @@
-// |jit-test| allow-oom; skip-if: !('gczeal' in this && 'oomAfterAllocations' in this)
+// |jit-test| allow-oom
+
+if (!('gczeal' in this && 'oomAfterAllocations' in this))
+    quit();
 
 var lfcode = new Array();
 gczeal(14);

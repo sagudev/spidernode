@@ -1,4 +1,7 @@
-// |jit-test| allow-oom; skip-if: !('oomAtAllocation' in this)
+// |jit-test| allow-oom
+
+if (!('oomAtAllocation' in this))
+    quit();
 
 for (let a of [
         null, function() {}, function() {}, null, function() {}, function() {},

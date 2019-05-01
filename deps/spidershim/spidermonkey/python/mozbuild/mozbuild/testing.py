@@ -56,6 +56,7 @@ TEST_MANIFESTS = dict(
     MARIONETTE_UNIT=('marionette', 'marionette', '.', False),
     MARIONETTE_WEBAPI=('marionette', 'marionette', '.', False),
 
+    METRO_CHROME=('metro-chrome', 'testing/mochitest', 'metro', True),
     MOCHITEST=('mochitest', 'testing/mochitest', 'tests', True),
     MOCHITEST_CHROME=('chrome', 'testing/mochitest', 'chrome', True),
     WEBRTC_SIGNALLING_TEST=('steeplechase', 'steeplechase', '.', True),
@@ -203,15 +204,17 @@ def _resolve_installs(paths, topobjdir, manifest):
                 # multiple directories at once, and harmless.
                 pass
 
-
-def _make_install_manifest(topsrcdir, topobjdir, test_objs):
-
+def install_test_files(topsrcdir, topobjdir, tests_root, test_objs):
+    """Installs the requested test files to the objdir. This is invoked by
+    test runners to avoid installing tens of thousands of test files when
+    only a few tests need to be run.
+    """
     flavor_info = {flavor: (root, prefix, install)
                    for (flavor, root, prefix, install) in TEST_MANIFESTS.values()}
+    objdir_dest = mozpath.join(topobjdir, tests_root)
 
     converter = SupportFilesConverter()
     install_info = TestInstallInfo()
-
     for o in test_objs:
         flavor = o['flavor']
         if flavor not in flavor_info:
@@ -250,35 +253,14 @@ def _make_install_manifest(topsrcdir, topobjdir, test_objs):
 
     _resolve_installs(install_info.deferred_installs, topobjdir, manifest)
 
-    return manifest
-
-
-def install_test_files(topsrcdir, topobjdir, tests_root, test_objs):
-    """Installs the requested test files to the objdir. This is invoked by
-    test runners to avoid installing tens of thousands of test files when
-    only a few tests need to be run.
-    """
-
-    if test_objs:
-        manifest = _make_install_manifest(topsrcdir, topobjdir, test_objs)
-    else:
-        # If we don't actually have a list of tests to install we install
-        # test and support files wholesale.
-        manifest = InstallManifest(mozpath.join(topobjdir, '_build_manifests',
-                                                'install', '_test_files'))
-
-    harness_files_manifest = mozpath.join(topobjdir, '_build_manifests',
-                                          'install', tests_root)
-
-    if os.path.isfile(harness_files_manifest):
-        # If the backend has generated an install manifest for test harness
-        # files they are treated as a monolith and installed each time we
-        # run tests. Fortunately there are not very many.
-        manifest |= InstallManifest(harness_files_manifest)
-
+    # Harness files are treated as a monolith and installed each time we run tests.
+    # Fortunately there are not very many.
+    manifest |= InstallManifest(mozpath.join(topobjdir,
+                                             '_build_manifests',
+                                             'install', tests_root))
     copier = FileCopier()
     manifest.populate_registry(copier)
-    copier.copy(mozpath.join(topobjdir, tests_root),
+    copier.copy(objdir_dest,
                 remove_unaccounted=False)
 
 
@@ -315,10 +297,4 @@ def read_wpt_manifest(context, paths):
     finally:
         sys.path = old_path
         f = context._finder.get(full_path)
-        try:
-            rv = wptmanifest.manifest.load(tests_root, f)
-        except wptmanifest.manifest.ManifestVersionMismatch:
-            # If we accidentially end up with a committed manifest that's the wrong
-            # version, then return an empty manifest here just to not break the build
-            rv = wptmanifest.manifest.Manifest()
-        return rv
+        return wptmanifest.manifest.load(tests_root, f)

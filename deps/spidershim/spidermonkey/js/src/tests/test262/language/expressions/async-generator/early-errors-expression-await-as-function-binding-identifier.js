@@ -4,7 +4,7 @@
 
 /*---
 author: Caitlin Potter <caitp@igalia.com>
-esid: sec-identifiers-static-semantics-early-errors
+esid: pending
 description: >
   `await` is not a valid BindingIdentifier for AsyncGeneratorExpressions.
 negative:
@@ -13,6 +13,6 @@ negative:
 features: [async-iteration]
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 (async function* await() { });

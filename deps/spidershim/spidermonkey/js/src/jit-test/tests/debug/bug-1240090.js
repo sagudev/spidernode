@@ -1,5 +1,5 @@
 gczeal(2);
-g = newGlobal({newCompartment: true});
+g = newGlobal();
 dbg = Debugger(g);
 dbg.onNewScript = function() { return function() { return this; } };
 schedulegc(10);

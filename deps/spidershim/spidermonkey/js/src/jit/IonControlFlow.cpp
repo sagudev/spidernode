@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +16,6 @@ ControlFlowGenerator::ControlFlowGenerator(TempAllocator& temp,
                                            JSScript* script)
     : script(script),
       current(nullptr),
-      pc(nullptr),
       alloc_(temp),
       blocks_(temp),
       cfgStack_(temp),
@@ -56,9 +55,7 @@ void ControlFlowGraph::dump(GenericPrinter& print, JSScript* script) {
       print.printf("  %s [", blocks_[i].stopIns()->Name());
     }
     for (size_t j = 0; j < blocks_[i].stopIns()->numSuccessors(); j++) {
-      if (j != 0) {
-        print.printf(", ");
-      }
+      if (j != 0) print.printf(", ");
       print.printf("%zu", blocks_[i].stopIns()->getSuccessor(j)->id());
     }
     print.printf("]\n\n");
@@ -67,9 +64,7 @@ void ControlFlowGraph::dump(GenericPrinter& print, JSScript* script) {
 
 bool ControlFlowGraph::init(TempAllocator& alloc,
                             const CFGBlockVector& blocks) {
-  if (!blocks_.reserve(blocks.length())) {
-    return false;
-  }
+  if (!blocks_.reserve(blocks.length())) return false;
 
   for (size_t i = 0; i < blocks.length(); i++) {
     MOZ_ASSERT(blocks[i]->id() == i);
@@ -77,13 +72,11 @@ bool ControlFlowGraph::init(TempAllocator& alloc,
 
     block.setStopPc(blocks[i]->stopPc());
     block.setId(i);
-    blocks_.infallibleAppend(std::move(block));
+    blocks_.infallibleAppend(mozilla::Move(block));
   }
 
   for (size_t i = 0; i < blocks.length(); i++) {
-    if (!alloc.ensureBallast()) {
-      return false;
-    }
+    if (!alloc.ensureBallast()) return false;
 
     CFGControlInstruction* copy = nullptr;
     CFGControlInstruction* ins = blocks[i]->stopIns();
@@ -116,12 +109,12 @@ bool ControlFlowGraph::init(TempAllocator& alloc,
         copy = CFGTest::CopyWithNewTargets(alloc, old, trueBranch, falseBranch);
         break;
       }
-      case CFGControlInstruction::Type_CondSwitchCase: {
-        CFGCondSwitchCase* old = ins->toCondSwitchCase();
+      case CFGControlInstruction::Type_Compare: {
+        CFGCompare* old = ins->toCompare();
         CFGBlock* trueBranch = &blocks_[old->trueBranch()->id()];
         CFGBlock* falseBranch = &blocks_[old->falseBranch()->id()];
-        copy = CFGCondSwitchCase::CopyWithNewTargets(alloc, old, trueBranch,
-                                                     falseBranch);
+        copy =
+            CFGCompare::CopyWithNewTargets(alloc, old, trueBranch, falseBranch);
         break;
       }
       case CFGControlInstruction::Type_Return: {
@@ -136,9 +129,8 @@ bool ControlFlowGraph::init(TempAllocator& alloc,
         CFGTry* old = ins->toTry();
         CFGBlock* tryBlock = &blocks_[old->tryBlock()->id()];
         CFGBlock* merge = nullptr;
-        if (old->numSuccessors() == 2) {
+        if (old->numSuccessors() == 2)
           merge = &blocks_[old->afterTryCatchBlock()->id()];
-        }
         copy = CFGTry::CopyWithNewTargets(alloc, old, tryBlock, merge);
         break;
       }
@@ -146,13 +138,11 @@ bool ControlFlowGraph::init(TempAllocator& alloc,
         CFGTableSwitch* old = ins->toTableSwitch();
         CFGTableSwitch* tableSwitch =
             CFGTableSwitch::New(alloc, old->low(), old->high());
-        if (!tableSwitch->addDefault(&blocks_[old->defaultCase()->id()])) {
+        if (!tableSwitch->addDefault(&blocks_[old->defaultCase()->id()]))
           return false;
-        }
         for (size_t i = 0; i < ins->numSuccessors() - 1; i++) {
-          if (!tableSwitch->addCase(&blocks_[old->getCase(i)->id()])) {
+          if (!tableSwitch->addCase(&blocks_[old->getCase(i)->id()]))
             return false;
-          }
         }
         copy = tableSwitch;
         break;
@@ -193,17 +183,13 @@ bool ControlFlowGenerator::traverseBytecode() {
   current = CFGBlock::New(alloc(), script->code());
   pc = current->startPc();
 
-  if (!addBlock(current)) {
-    return false;
-  }
+  if (!addBlock(current)) return false;
 
   for (;;) {
     MOZ_ASSERT(pc < script->codeEnd());
 
     for (;;) {
-      if (!alloc().ensureBallast()) {
-        return false;
-      }
+      if (!alloc().ensureBallast()) return false;
 
       // Check if we've hit an expected join point or edge in the bytecode.
       // Leaving one control structure could place us at the edge of another,
@@ -211,16 +197,12 @@ bool ControlFlowGenerator::traverseBytecode() {
       MOZ_ASSERT_IF(!cfgStack_.empty(), cfgStack_.back().stopAt >= pc);
       if (!cfgStack_.empty() && cfgStack_.back().stopAt == pc) {
         ControlStatus status = processCfgStack();
-        if (status == ControlStatus::Error) {
-          return false;
-        }
+        if (status == ControlStatus::Error) return false;
         if (status == ControlStatus::Abort) {
           aborted_ = true;
           return false;
         }
-        if (!current) {
-          return true;
-        }
+        if (!current) return true;
         continue;
       }
 
@@ -241,19 +223,13 @@ bool ControlFlowGenerator::traverseBytecode() {
       // control flow point, so we iterate until it's time to inspect a real
       // opcode.
       ControlStatus status;
-      if ((status = snoopControlFlow(JSOp(*pc))) == ControlStatus::None) {
-        break;
-      }
-      if (status == ControlStatus::Error) {
-        return false;
-      }
+      if ((status = snoopControlFlow(JSOp(*pc))) == ControlStatus::None) break;
+      if (status == ControlStatus::Error) return false;
       if (status == ControlStatus::Abort) {
         aborted_ = true;
         return false;
       }
-      if (!current) {
-        return true;
-      }
+      if (!current) return true;
     }
 
     JSOp op = JSOp(*pc);
@@ -264,12 +240,10 @@ bool ControlFlowGenerator::traverseBytecode() {
 ControlFlowGenerator::ControlStatus ControlFlowGenerator::snoopControlFlow(
     JSOp op) {
   switch (op) {
+    case JSOP_POP:
     case JSOP_NOP: {
       jssrcnote* sn = GetSrcNote(gsn, script, pc);
-      if (sn && SN_TYPE(sn) == SRC_FOR) {
-        return processForLoop(op, sn);
-      }
-      break;
+      return maybeLoop(op, sn);
     }
 
     case JSOP_RETURN:
@@ -296,19 +270,11 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::snoopControlFlow(
         case SRC_FOR_IN:
         case SRC_FOR_OF:
           // while (cond) { }
-          return processWhileOrForInOrForOfLoop(sn);
+          return processWhileOrForInLoop(sn);
 
         default:
           // Hard assert for now - make an error later.
           MOZ_CRASH("unknown goto case");
-      }
-      break;
-    }
-
-    case JSOP_LOOPHEAD: {
-      jssrcnote* sn = GetSrcNote(gsn, script, pc);
-      if (sn && SN_TYPE(sn) == SRC_DO_WHILE) {
-        return processDoWhileLoop(sn);
       }
       break;
     }
@@ -354,11 +320,10 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processReturn(
   MOZ_ASSERT(op == JSOP_RETURN || op == JSOP_RETRVAL);
 
   CFGControlInstruction* ins;
-  if (op == JSOP_RETURN) {
+  if (op == JSOP_RETURN)
     ins = CFGReturn::New(alloc());
-  } else {
+  else
     ins = CFGRetRVal::New(alloc());
-  }
   endCurrentBlock(ins);
 
   return processControlEnd();
@@ -392,16 +357,12 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processCfgStack() {
   // keep propagating upward.
   while (status == ControlStatus::Ended) {
     popCfgStack();
-    if (cfgStack_.empty()) {
-      return status;
-    }
+    if (cfgStack_.empty()) return status;
     status = processCfgEntry(cfgStack_.back());
   }
 
   // If some join took place, the current structure is finished.
-  if (status == ControlStatus::Joined) {
-    popCfgStack();
-  }
+  if (status == ControlStatus::Joined) popCfgStack();
 
   return status;
 }
@@ -489,12 +450,8 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processCfgEntry(
 }
 
 void ControlFlowGenerator::popCfgStack() {
-  if (cfgStack_.back().isLoop()) {
-    loops_.popBack();
-  }
-  if (cfgStack_.back().state == CFGState::LABEL) {
-    labels_.popBack();
-  }
+  if (cfgStack_.back().isLoop()) loops_.popBack();
+  if (cfgStack_.back().state == CFGState::LABEL) labels_.popBack();
   cfgStack_.popBack();
 }
 
@@ -503,19 +460,13 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processLabelEnd(
   MOZ_ASSERT(state.state == CFGState::LABEL);
 
   // If there are no breaks and no current, controlflow is terminated.
-  if (!state.label.breaks && !current) {
-    return ControlStatus::Ended;
-  }
+  if (!state.label.breaks && !current) return ControlStatus::Ended;
 
   // If there are no breaks to this label, there's nothing to do.
-  if (!state.label.breaks) {
-    return ControlStatus::Joined;
-  }
+  if (!state.label.breaks) return ControlStatus::Joined;
 
   CFGBlock* successor = createBreakCatchBlock(state.label.breaks, state.stopAt);
-  if (!successor) {
-    return ControlStatus::Error;
-  }
+  if (!successor) return ControlStatus::Error;
 
   if (current) {
     current->setStopIns(CFGGoto::New(alloc(), successor));
@@ -525,9 +476,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processLabelEnd(
   current = successor;
   pc = successor->startPc();
 
-  if (!addBlock(successor)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(successor)) return ControlStatus::Error;
 
   return ControlStatus::Joined;
 }
@@ -537,10 +486,10 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processTry() {
 
   // Try-finally is not yet supported.
   if (!checkedTryFinally_) {
-    for (const JSTryNote& tn : script->trynotes()) {
-      if (tn.kind == JSTRY_FINALLY) {
-        return ControlStatus::Abort;
-      }
+    JSTryNote* tn = script->trynotes()->vector;
+    JSTryNote* tnlimit = tn + script->trynotes()->length;
+    for (; tn < tnlimit; tn++) {
+      if (tn->kind == JSTRY_FINALLY) return ControlStatus::Abort;
     }
     checkedTryFinally_ = true;
   }
@@ -550,8 +499,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processTry() {
 
   // Get the pc of the last instruction in the try block. It's a JSOP_GOTO to
   // jump over the catch block.
-  jsbytecode* endpc =
-      pc + GetSrcNoteOffset(sn, SrcNote::Try::EndOfTryJumpOffset);
+  jsbytecode* endpc = pc + GetSrcNoteOffset(sn, 0);
   MOZ_ASSERT(JSOp(*endpc) == JSOP_GOTO);
   MOZ_ASSERT(GetJumpOffset(endpc) > 0);
 
@@ -577,16 +525,13 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processTry() {
   current->setStopIns(CFGTry::New(alloc(), tryBlock, endpc, successor));
   current->setStopPc(pc);
 
-  if (!cfgStack_.append(CFGState::Try(endpc, successor))) {
+  if (!cfgStack_.append(CFGState::Try(endpc, successor)))
     return ControlStatus::Error;
-  }
 
   current = tryBlock;
   pc = current->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Jumped;
 }
@@ -605,9 +550,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processTryEnd(
   current = state.try_.successor;
   pc = current->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Joined;
 }
@@ -625,9 +568,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processIfEnd(
   current = state.branch.ifFalse;
   pc = current->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Joined;
 }
@@ -640,16 +581,12 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processIfElseTrueEnd(
   state.branch.ifTrue = current;
   state.stopAt = state.branch.falseEnd;
 
-  if (current) {
-    current->setStopPc(pc);
-  }
+  if (current) current->setStopPc(pc);
 
   current = state.branch.ifFalse;
   pc = current->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Jumped;
 }
@@ -658,9 +595,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processIfElseFalseEnd(
     CFGState& state) {
   // Update the state to have the latest block from the false path.
   state.branch.ifFalse = current;
-  if (current) {
-    current->setStopPc(pc);
-  }
+  if (current) current->setStopPc(pc);
 
   // To create the join node, we need an incoming edge that has not been
   // terminated yet.
@@ -669,9 +604,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processIfElseFalseEnd(
   CFGBlock* other = (pred == state.branch.ifTrue) ? state.branch.ifFalse
                                                   : state.branch.ifTrue;
 
-  if (!pred) {
-    return ControlStatus::Ended;
-  }
+  if (!pred) return ControlStatus::Ended;
 
   // Create a new block to represent the join.
   CFGBlock* join = CFGBlock::New(alloc(), state.branch.falseEnd);
@@ -679,17 +612,13 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processIfElseFalseEnd(
   // Create edges from the true and false blocks as needed.
   pred->setStopIns(CFGGoto::New(alloc(), join));
 
-  if (other) {
-    other->setStopIns(CFGGoto::New(alloc(), join));
-  }
+  if (other) other->setStopIns(CFGGoto::New(alloc(), join));
 
   // Ignore unreachable remainder of false block if existent.
   current = join;
   pc = current->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Joined;
 }
@@ -701,9 +630,7 @@ CFGBlock* ControlFlowGenerator::createBreakCatchBlock(DeferredEdge* edge,
 
   // Finish up remaining breaks.
   while (edge) {
-    if (!alloc().ensureBallast()) {
-      return nullptr;
-    }
+    if (!alloc().ensureBallast()) return nullptr;
 
     CFGGoto* brk = CFGGoto::New(alloc(), successor);
     edge->block->setStopIns(brk);
@@ -715,15 +642,11 @@ CFGBlock* ControlFlowGenerator::createBreakCatchBlock(DeferredEdge* edge,
 
 ControlFlowGenerator::ControlStatus ControlFlowGenerator::processDoWhileBodyEnd(
     CFGState& state) {
-  if (!processDeferredContinues(state)) {
-    return ControlStatus::Error;
-  }
+  if (!processDeferredContinues(state)) return ControlStatus::Error;
 
   // No current means control flow cannot reach the condition, so this will
   // never loop.
-  if (!current) {
-    return processBrokenLoop(state);
-  }
+  if (!current) return processBrokenLoop(state);
 
   CFGBlock* header = CFGBlock::New(alloc(), state.loop.updatepc);
   current->setStopIns(CFGGoto::New(alloc(), header));
@@ -735,9 +658,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processDoWhileBodyEnd(
   current = header;
   pc = header->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Jumped;
 }
@@ -762,9 +683,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processDoWhileCondEnd(
   backEdge->setStopIns(CFGBackEdge::New(alloc(), entry->successor()));
   backEdge->setStopPc(entry->successor()->startPc());
 
-  if (!addBlock(backEdge)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(backEdge)) return ControlStatus::Error;
 
   // Create the test instruction and end the current block.
   CFGTest* test = CFGTest::New(alloc(), backEdge, successor);
@@ -780,16 +699,13 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processWhileCondEnd(
   // Create the body and successor blocks.
   CFGBlock* body = CFGBlock::New(alloc(), state.loop.bodyStart);
   state.loop.successor = CFGBlock::New(alloc(), state.loop.exitpc);
-  if (!body || !state.loop.successor) {
-    return ControlStatus::Error;
-  }
+  if (!body || !state.loop.successor) return ControlStatus::Error;
 
   CFGTest* test;
-  if (JSOp(*pc) == JSOP_IFNE) {
+  if (JSOp(*pc) == JSOP_IFNE)
     test = CFGTest::New(alloc(), body, state.loop.successor);
-  } else {
+  else
     test = CFGTest::New(alloc(), state.loop.successor, body);
-  }
   current->setStopIns(test);
   current->setStopPc(pc);
 
@@ -799,22 +715,16 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processWhileCondEnd(
   current = body;
   pc = body->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Jumped;
 }
 
 ControlFlowGenerator::ControlStatus ControlFlowGenerator::processWhileBodyEnd(
     CFGState& state) {
-  if (!processDeferredContinues(state)) {
-    return ControlStatus::Error;
-  }
+  if (!processDeferredContinues(state)) return ControlStatus::Error;
 
-  if (!current) {
-    return processBrokenLoop(state);
-  }
+  if (!current) return processBrokenLoop(state);
 
   CFGLoopEntry* entry = state.loop.entry->stopIns()->toLoopEntry();
   entry->setLoopStopPc(pc);
@@ -849,25 +759,19 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processForCondEnd(
   current = body;
   pc = body->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Jumped;
 }
 
 ControlFlowGenerator::ControlStatus ControlFlowGenerator::processForBodyEnd(
     CFGState& state) {
-  if (!processDeferredContinues(state)) {
-    return ControlStatus::Error;
-  }
+  if (!processDeferredContinues(state)) return ControlStatus::Error;
 
   // If there is no updatepc, just go right to processing what would be the
   // end of the update clause. Otherwise, |current| might be nullptr; if this is
   // the case, the update is unreachable anyway.
-  if (!state.loop.updatepc || !current) {
-    return processForUpdateEnd(state);
-  }
+  if (!state.loop.updatepc || !current) return processForUpdateEnd(state);
 
   // MOZ_ASSERT(pc == state.loop.updatepc);
 
@@ -877,9 +781,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processForBodyEnd(
     current->setStopPc(pc);
     current = next;
 
-    if (!addBlock(current)) {
-      return ControlStatus::Error;
-    }
+    if (!addBlock(current)) return ControlStatus::Error;
   }
 
   pc = state.loop.updatepc;
@@ -893,9 +795,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processForUpdateEnd(
     CFGState& state) {
   // If there is no current, we couldn't reach the loop edge and there was no
   // update clause.
-  if (!current) {
-    return processBrokenLoop(state);
-  }
+  if (!current) return processBrokenLoop(state);
 
   CFGLoopEntry* entry = state.loop.entry->stopIns()->toLoopEntry();
   entry->setLoopStopPc(pc);
@@ -913,7 +813,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processForUpdateEnd(
 }
 
 ControlFlowGenerator::ControlStatus
-ControlFlowGenerator::processWhileOrForInOrForOfLoop(jssrcnote* sn) {
+ControlFlowGenerator::processWhileOrForInLoop(jssrcnote* sn) {
   // while (cond) { } loops have the following structure:
   //    GOTO cond   ; SRC_WHILE (offset to IFNE)
   //    LOOPHEAD
@@ -922,58 +822,46 @@ ControlFlowGenerator::processWhileOrForInOrForOfLoop(jssrcnote* sn) {
   //    LOOPENTRY
   //    ...
   //    IFNE        ; goes to LOOPHEAD
-  // for-in/for-of loops are similar; for-in/for-of have IFEQ as the back
-  // jump, and the cond of for-in will be a MOREITER.
+  // for (x in y) { } loops are similar; the cond will be a MOREITER.
   MOZ_ASSERT(SN_TYPE(sn) == SRC_FOR_OF || SN_TYPE(sn) == SRC_FOR_IN ||
              SN_TYPE(sn) == SRC_WHILE);
-  static_assert(unsigned(SrcNote::While::BackJumpOffset) ==
-                    unsigned(SrcNote::ForIn::BackJumpOffset),
-                "SrcNote::{While,ForIn,ForOf}::BackJumpOffset should be same");
-  static_assert(unsigned(SrcNote::While::BackJumpOffset) ==
-                    unsigned(SrcNote::ForOf::BackJumpOffset),
-                "SrcNote::{While,ForIn,ForOf}::BackJumpOffset should be same");
-  int backjumppcOffset = GetSrcNoteOffset(sn, SrcNote::While::BackJumpOffset);
-  jsbytecode* backjumppc = pc + backjumppcOffset;
-  MOZ_ASSERT(backjumppc > pc);
+  int ifneOffset = GetSrcNoteOffset(sn, 0);
+  jsbytecode* ifne = pc + ifneOffset;
+  MOZ_ASSERT(ifne > pc);
 
-  // Verify that the back jump goes back to a loophead op.
+  // Verify that the IFNE goes back to a loophead op.
   MOZ_ASSERT(JSOp(*GetNextPc(pc)) == JSOP_LOOPHEAD);
-  MOZ_ASSERT(GetNextPc(pc) == backjumppc + GetJumpOffset(backjumppc));
+  MOZ_ASSERT(GetNextPc(pc) == ifne + GetJumpOffset(ifne));
 
   jsbytecode* loopEntry = pc + GetJumpOffset(pc);
 
   size_t stackPhiCount;
-  if (SN_TYPE(sn) == SRC_FOR_OF) {
+  if (SN_TYPE(sn) == SRC_FOR_OF)
     stackPhiCount = 3;
-  } else if (SN_TYPE(sn) == SRC_FOR_IN) {
+  else if (SN_TYPE(sn) == SRC_FOR_IN)
     stackPhiCount = 1;
-  } else {
+  else
     stackPhiCount = 0;
-  }
 
   // Skip past the JSOP_LOOPHEAD for the body start.
   jsbytecode* loopHead = GetNextPc(pc);
   jsbytecode* bodyStart = GetNextPc(loopHead);
   jsbytecode* bodyEnd = pc + GetJumpOffset(pc);
-  jsbytecode* exitpc = GetNextPc(backjumppc);
+  jsbytecode* exitpc = GetNextPc(ifne);
   jsbytecode* continuepc = pc;
 
-  CFGBlock* header = CFGBlock::New(alloc(), loopEntry);
+  CFGBlock* header = CFGBlock::New(alloc(), GetNextPc(loopEntry));
 
   CFGLoopEntry* ins = CFGLoopEntry::New(alloc(), header, stackPhiCount);
-  if (LoopEntryCanIonOsr(loopEntry)) {
-    ins->setCanOsr();
-  }
+  if (LoopEntryCanIonOsr(loopEntry)) ins->setCanOsr();
 
-  if (SN_TYPE(sn) == SRC_FOR_IN) {
-    ins->setIsForIn();
-  }
+  if (SN_TYPE(sn) == SRC_FOR_IN) ins->setIsForIn();
 
   current->setStopIns(ins);
   current->setStopPc(pc);
 
-  if (!pushLoop(CFGState::WHILE_LOOP_COND, backjumppc, current, loopHead,
-                bodyEnd, bodyStart, bodyEnd, exitpc, continuepc)) {
+  if (!pushLoop(CFGState::WHILE_LOOP_COND, ifne, current, loopHead, bodyEnd,
+                bodyStart, bodyEnd, exitpc, continuepc)) {
     return ControlStatus::Error;
   }
 
@@ -981,9 +869,7 @@ ControlFlowGenerator::processWhileOrForInOrForOfLoop(jssrcnote* sn) {
   current = header;
   pc = header->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Jumped;
 }
@@ -992,25 +878,24 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processBrokenLoop(
     CFGState& state) {
   MOZ_ASSERT(!current);
 
-  state.loop.entry->stopIns()->toLoopEntry()->setIsBrokenLoop();
+  {
+    state.loop.entry->setStopIns(CFGGoto::New(
+        alloc(), state.loop.entry->stopIns()->toLoopEntry()->successor()));
+  }
 
   // If the loop started with a condition (while/for) then even if the
   // structure never actually loops, the condition itself can still fail and
   // thus we must resume at the successor, if one exists.
   current = state.loop.successor;
   if (current) {
-    if (!addBlock(current)) {
-      return ControlStatus::Error;
-    }
+    if (!addBlock(current)) return ControlStatus::Error;
   }
 
   // Join the breaks together and continue parsing.
   if (state.loop.breaks) {
     CFGBlock* block =
         createBreakCatchBlock(state.loop.breaks, state.loop.exitpc);
-    if (!block) {
-      return ControlStatus::Error;
-    }
+    if (!block) return ControlStatus::Error;
 
     if (current) {
       current->setStopIns(CFGGoto::New(alloc(), block));
@@ -1019,17 +904,13 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processBrokenLoop(
 
     current = block;
 
-    if (!addBlock(current)) {
-      return ControlStatus::Error;
-    }
+    if (!addBlock(current)) return ControlStatus::Error;
   }
 
   // If the loop is not gated on a condition, and has only returns, we'll
   // reach this case. For example:
   // do { ... return; } while ();
-  if (!current) {
-    return ControlStatus::Ended;
-  }
+  if (!current) return ControlStatus::Ended;
 
   // Otherwise, the loop is gated on a condition and/or has breaks so keep
   // parsing at the successor.
@@ -1043,17 +924,13 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::finishLoop(
 
   if (state.loop.breaks) {
     if (successor) {
-      if (!addBlock(successor)) {
-        return ControlStatus::Error;
-      }
+      if (!addBlock(successor)) return ControlStatus::Error;
     }
 
     // Create a catch block to join all break exits.
     CFGBlock* block =
         createBreakCatchBlock(state.loop.breaks, state.loop.exitpc);
-    if (!block) {
-      return ControlStatus::Error;
-    }
+    if (!block) return ControlStatus::Error;
 
     if (successor) {
       // Finally, create an unconditional edge from the successor to the
@@ -1073,9 +950,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::finishLoop(
   current = successor;
   pc = current->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Joined;
 }
@@ -1095,18 +970,14 @@ bool ControlFlowGenerator::processDeferredContinues(CFGState& state) {
 
     // Remaining edges
     while (edge) {
-      if (!alloc().ensureBallast()) {
-        return false;
-      }
+      if (!alloc().ensureBallast()) return false;
       edge->block->setStopIns(CFGGoto::New(alloc(), update));
       edge = edge->next;
     }
     state.loop.continues = nullptr;
 
     current = update;
-    if (!addBlock(current)) {
-      return false;
-    }
+    if (!addBlock(current)) return false;
   }
 
   return true;
@@ -1146,10 +1017,8 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processCondSwitch() {
   MOZ_ASSERT(SN_TYPE(sn) == SRC_CONDSWITCH);
 
   // Get the exit pc
-  jsbytecode* exitpc =
-      pc + GetSrcNoteOffset(sn, SrcNote::CondSwitch::EndOffset);
-  jsbytecode* firstCase =
-      pc + GetSrcNoteOffset(sn, SrcNote::CondSwitch::FirstCaseOffset);
+  jsbytecode* exitpc = pc + GetSrcNoteOffset(sn, 0);
+  jsbytecode* firstCase = pc + GetSrcNoteOffset(sn, 1);
 
   // Iterate all cases in the conditional switch.
   // - Stop at the default case. (always emitted after the last case)
@@ -1164,16 +1033,14 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processCondSwitch() {
     // Fetch the next case.
     jssrcnote* caseSn = GetSrcNote(gsn, script, curCase);
     MOZ_ASSERT(caseSn && SN_TYPE(caseSn) == SRC_NEXTCASE);
-    ptrdiff_t off = GetSrcNoteOffset(caseSn, SrcNote::NextCase::NextCaseOffset);
+    ptrdiff_t off = GetSrcNoteOffset(caseSn, 0);
     MOZ_ASSERT_IF(off == 0, JSOp(*GetNextPc(curCase)) == JSOP_JUMPTARGET);
     curCase = off ? curCase + off : GetNextPc(GetNextPc(curCase));
     MOZ_ASSERT(pc < curCase && curCase <= exitpc);
 
     // Count non-aliased cases.
     jsbytecode* curTarget = GetJumpOffset(curCase) + curCase;
-    if (lastTarget < curTarget) {
-      nbBodies++;
-    }
+    if (lastTarget < curTarget) nbBodies++;
     lastTarget = curTarget;
   }
 
@@ -1190,26 +1057,21 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processCondSwitch() {
   while (JSOp(*curCase) == JSOP_CASE) {
     jsbytecode* curTarget = GetJumpOffset(curCase) + curCase;
     if (lastTarget < defaultTarget && defaultTarget <= curTarget) {
-      if (defaultTarget < curTarget) {
-        nbBodies++;
-      }
+      if (defaultTarget < curTarget) nbBodies++;
       break;
     }
-    if (lastTarget < curTarget) {
-      defaultIdx++;
-    }
+    if (lastTarget < curTarget) defaultIdx++;
 
     jssrcnote* caseSn = GetSrcNote(gsn, script, curCase);
-    ptrdiff_t off = GetSrcNoteOffset(caseSn, SrcNote::NextCase::NextCaseOffset);
+    ptrdiff_t off = GetSrcNoteOffset(caseSn, 0);
     curCase = off ? curCase + off : GetNextPc(GetNextPc(curCase));
     lastTarget = curTarget;
   }
 
   // Allocate the current graph state.
   CFGState state = CFGState::CondSwitch(alloc(), exitpc, defaultTarget);
-  if (!state.switch_.bodies || !state.switch_.bodies->init(alloc(), nbBodies)) {
+  if (!state.switch_.bodies || !state.switch_.bodies->init(alloc(), nbBodies))
     return ControlStatus::Error;
-  }
   state.switch_.defaultIdx = defaultIdx;
 
   // Create the default case already.
@@ -1217,18 +1079,14 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processCondSwitch() {
   bodies[state.switch_.defaultIdx] = CFGBlock::New(alloc(), defaultTarget);
 
   // Skip default case.
-  if (state.switch_.defaultIdx == 0) {
-    state.switch_.currentIdx++;
-  }
+  if (state.switch_.defaultIdx == 0) state.switch_.currentIdx++;
 
   // We loop on case conditions with processCondSwitchCase.
   MOZ_ASSERT(JSOp(*firstCase) == JSOP_CASE);
   state.stopAt = firstCase;
   state.state = CFGState::COND_SWITCH_CASE;
 
-  if (!cfgStack_.append(state)) {
-    return ControlStatus::Error;
-  }
+  if (!cfgStack_.append(state)) return ControlStatus::Error;
 
   jsbytecode* nextPc = GetNextPc(pc);
   CFGBlock* next = CFGBlock::New(alloc(), nextPc);
@@ -1239,9 +1097,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processCondSwitch() {
   current = next;
   pc = current->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Jumped;
 }
@@ -1260,7 +1116,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processCondSwitchCase(
 
   // Fetch the following case in which we will continue.
   jssrcnote* sn = GetSrcNote(gsn, script, pc);
-  ptrdiff_t off = GetSrcNoteOffset(sn, SrcNote::NextCase::NextCaseOffset);
+  ptrdiff_t off = GetSrcNoteOffset(sn, 0);
   MOZ_ASSERT_IF(off == 0, JSOp(*GetNextPc(pc)) == JSOP_JUMPTARGET);
   jsbytecode* casePc = off ? pc + off : GetNextPc(GetNextPc(pc));
   bool nextIsDefault = JSOp(*casePc) == JSOP_DEFAULT;
@@ -1298,9 +1154,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processCondSwitchCase(
   CFGBlock* emptyBlock = CFGBlock::New(alloc(), bodyBlock->startPc());
   emptyBlock->setStopIns(CFGGoto::New(alloc(), bodyBlock));
   emptyBlock->setStopPc(bodyBlock->startPc());
-  if (!addBlock(emptyBlock)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(emptyBlock)) return ControlStatus::Error;
 
   if (nextIsDefault) {
     CFGBlock* defaultBlock = bodies[state.switch_.defaultIdx];
@@ -1308,20 +1162,18 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processCondSwitchCase(
     CFGBlock* emptyBlock2 = CFGBlock::New(alloc(), defaultBlock->startPc());
     emptyBlock2->setStopIns(CFGGoto::New(alloc(), defaultBlock));
     emptyBlock2->setStopPc(defaultBlock->startPc());
-    if (!addBlock(emptyBlock2)) {
-      return ControlStatus::Error;
-    }
+    if (!addBlock(emptyBlock2)) return ControlStatus::Error;
 
-    current->setStopIns(CFGCondSwitchCase::NewFalseBranchIsDefault(
-        alloc(), emptyBlock, emptyBlock2));
+    current->setStopIns(
+        CFGCompare::NewFalseBranchIsDefault(alloc(), emptyBlock, emptyBlock2));
     current->setStopPc(pc);
 
     return processCondSwitchDefault(state);
   }
 
   CFGBlock* nextBlock = CFGBlock::New(alloc(), GetNextPc(pc));
-  current->setStopIns(CFGCondSwitchCase::NewFalseBranchIsNextCase(
-      alloc(), emptyBlock, nextBlock));
+  current->setStopIns(
+      CFGCompare::NewFalseBranchIsNextCompare(alloc(), emptyBlock, nextBlock));
   current->setStopPc(pc);
 
   // Continue until the case condition.
@@ -1329,9 +1181,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processCondSwitchCase(
   pc = current->startPc();
   state.stopAt = casePc;
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Jumped;
 }
@@ -1353,9 +1203,7 @@ ControlFlowGenerator::processCondSwitchDefault(CFGState& state) {
   // Handle break statements in processSwitchBreak while processing
   // bodies.
   ControlFlowInfo breakInfo(cfgStack_.length() - 1, state.switch_.exitpc);
-  if (!switches_.append(breakInfo)) {
-    return ControlStatus::Error;
-  }
+  if (!switches_.append(breakInfo)) return ControlStatus::Error;
 
   // Jump into the first body.
   currentIdx = 0;
@@ -1392,15 +1240,12 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processCondSwitchBody(
   current = nextBody;
   pc = current->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
-  if (currentIdx < bodies.length()) {
+  if (currentIdx < bodies.length())
     state.stopAt = bodies[currentIdx]->startPc();
-  } else {
+  else
     state.stopAt = state.switch_.exitpc;
-  }
   return ControlStatus::Jumped;
 }
 
@@ -1424,11 +1269,44 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processAndOrEnd(
   current = join;
   pc = current->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Joined;
+}
+
+ControlFlowGenerator::ControlStatus ControlFlowGenerator::maybeLoop(
+    JSOp op, jssrcnote* sn) {
+  // This function looks at the opcode and source note and tries to
+  // determine the structure of the loop. For some opcodes, like
+  // POP/NOP which are not explicitly control flow, this source note is
+  // optional. For opcodes with control flow, like GOTO, an unrecognized
+  // or not-present source note is a compilation failure.
+  switch (op) {
+    case JSOP_POP:
+      // for (init; ; update?) ...
+      if (sn && SN_TYPE(sn) == SRC_FOR) {
+        MOZ_CRASH("Not supported anymore?");
+        return processForLoop(op, sn);
+      }
+      break;
+
+    case JSOP_NOP:
+      if (sn) {
+        // do { } while (cond)
+        if (SN_TYPE(sn) == SRC_WHILE) return processDoWhileLoop(sn);
+        // Build a mapping such that given a basic block, whose successor
+        // has a phi
+
+        // for (; ; update?)
+        if (SN_TYPE(sn) == SRC_FOR) return processForLoop(op, sn);
+      }
+      break;
+
+    default:
+      MOZ_CRASH("unexpected opcode");
+  }
+
+  return ControlStatus::None;
 }
 
 ControlFlowGenerator::ControlStatus ControlFlowGenerator::processForLoop(
@@ -1437,29 +1315,27 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processForLoop(
   MOZ_ASSERT(op == JSOP_NOP);
   pc = GetNextPc(pc);
 
-  jsbytecode* condpc = pc + GetSrcNoteOffset(sn, SrcNote::For::CondOffset);
-  jsbytecode* updatepc = pc + GetSrcNoteOffset(sn, SrcNote::For::UpdateOffset);
-  jsbytecode* backjumppc =
-      pc + GetSrcNoteOffset(sn, SrcNote::For::BackJumpOffset);
-  jsbytecode* exitpc = GetNextPc(backjumppc);
+  jsbytecode* condpc = pc + GetSrcNoteOffset(sn, 0);
+  jsbytecode* updatepc = pc + GetSrcNoteOffset(sn, 1);
+  jsbytecode* ifne = pc + GetSrcNoteOffset(sn, 2);
+  jsbytecode* exitpc = GetNextPc(ifne);
 
   // for loops have the following structures:
   //
-  //   NOP
-  //   [GOTO cond]
+  //   NOP or POP
+  //   [GOTO cond | NOP]
   //   LOOPHEAD
   // body:
   //    ; [body]
-  // [update:]
+  // [increment:]
   //   [FRESHENBLOCKSCOPE, if needed by a cloned block]
-  //    ; [update]
+  //    ; [increment]
   // [cond:]
   //   LOOPENTRY
-  //    ; [cond]
-  //   [GOTO body | IFNE body]
+  //   GOTO body
   //
-  // If there is a condition (condpc != backjumppc), this acts similar to a
-  // while loop otherwise, it acts like a do-while loop.
+  // If there is a condition (condpc != ifne), this acts similar to a while
+  // loop otherwise, it acts like a do-while loop.
   //
   // Note that currently Ion does not compile pushblockscope/popblockscope as
   // necessary prerequisites to freshenblockscope.  So the code below doesn't
@@ -1467,7 +1343,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processForLoop(
   jsbytecode* bodyStart = pc;
   jsbytecode* bodyEnd = updatepc;
   jsbytecode* loopEntry = condpc;
-  if (condpc != backjumppc) {
+  if (condpc != ifne) {
     MOZ_ASSERT(JSOp(*bodyStart) == JSOP_GOTO);
     MOZ_ASSERT(bodyStart + GetJumpOffset(bodyStart) == condpc);
     bodyStart = GetNextPc(bodyStart);
@@ -1482,17 +1358,15 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processForLoop(
   }
   jsbytecode* loopHead = bodyStart;
   MOZ_ASSERT(JSOp(*bodyStart) == JSOP_LOOPHEAD);
-  MOZ_ASSERT(backjumppc + GetJumpOffset(backjumppc) == bodyStart);
+  MOZ_ASSERT(ifne + GetJumpOffset(ifne) == bodyStart);
   bodyStart = GetNextPc(bodyStart);
 
   MOZ_ASSERT(JSOp(*loopEntry) == JSOP_LOOPENTRY);
 
-  CFGBlock* header = CFGBlock::New(alloc(), loopEntry);
+  CFGBlock* header = CFGBlock::New(alloc(), GetNextPc(loopEntry));
 
   CFGLoopEntry* ins = CFGLoopEntry::New(alloc(), header, 0);
-  if (LoopEntryCanIonOsr(loopEntry)) {
-    ins->setCanOsr();
-  }
+  if (LoopEntryCanIonOsr(loopEntry)) ins->setCanOsr();
 
   current->setStopIns(ins);
   current->setStopPc(pc);
@@ -1501,9 +1375,9 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processForLoop(
   // parse the condition.
   jsbytecode* stopAt;
   CFGState::State initial;
-  if (condpc != backjumppc) {
+  if (condpc != ifne) {
     pc = condpc;
-    stopAt = backjumppc;
+    stopAt = ifne;
     initial = CFGState::FOR_LOOP_COND;
   } else {
     pc = bodyStart;
@@ -1517,49 +1391,45 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processForLoop(
   }
 
   CFGState& state = cfgStack_.back();
-  state.loop.condpc = (condpc != backjumppc) ? condpc : nullptr;
+  state.loop.condpc = (condpc != ifne) ? condpc : nullptr;
   state.loop.updatepc = (updatepc != condpc) ? updatepc : nullptr;
-  if (state.loop.updatepc) {
-    state.loop.updateEnd = condpc;
-  }
+  if (state.loop.updatepc) state.loop.updateEnd = condpc;
 
   current = header;
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
   return ControlStatus::Jumped;
 }
 
 ControlFlowGenerator::ControlStatus ControlFlowGenerator::processDoWhileLoop(
     jssrcnote* sn) {
   // do { } while() loops have the following structure:
-  //    NOP
-  //    LOOPHEAD    ; SRC_DO_WHILE (offsets to COND and IFNE)
+  //    NOP         ; SRC_WHILE (offset to COND)
+  //    LOOPHEAD    ; SRC_WHILE (offset to IFNE)
   //    LOOPENTRY
   //    ...         ; body
   //    ...
   //    COND        ; start of condition
   //    ...
   //    IFNE ->     ; goes to LOOPHEAD
-  int condition_offset = GetSrcNoteOffset(sn, SrcNote::DoWhile::CondOffset);
+  int condition_offset = GetSrcNoteOffset(sn, 0);
   jsbytecode* conditionpc = pc + condition_offset;
-  int offset = GetSrcNoteOffset(sn, SrcNote::DoWhile::BackJumpOffset);
-  jsbytecode* ifne = pc + offset;
+
+  jssrcnote* sn2 = GetSrcNote(gsn, script, pc + 1);
+  int offset = GetSrcNoteOffset(sn2, 0);
+  jsbytecode* ifne = pc + offset + 1;
   MOZ_ASSERT(ifne > pc);
 
   // Verify that the IFNE goes back to a loophead op.
-  jsbytecode* loopHead = pc;
+  jsbytecode* loopHead = GetNextPc(pc);
   MOZ_ASSERT(JSOp(*loopHead) == JSOP_LOOPHEAD);
   MOZ_ASSERT(loopHead == ifne + GetJumpOffset(ifne));
 
   jsbytecode* loopEntry = GetNextPc(loopHead);
 
-  CFGBlock* header = CFGBlock::New(alloc(), loopEntry);
+  CFGBlock* header = CFGBlock::New(alloc(), GetNextPc(loopEntry));
 
   CFGLoopEntry* ins = CFGLoopEntry::New(alloc(), header, 0);
-  if (LoopEntryCanIonOsr(loopEntry)) {
-    ins->setCanOsr();
-  }
+  if (LoopEntryCanIonOsr(loopEntry)) ins->setCanOsr();
 
   current->setStopIns(ins);
   current->setStopPc(pc);
@@ -1578,9 +1448,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processDoWhileLoop(
   current = header;
   pc = loopEntry;
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Jumped;
 }
@@ -1592,9 +1460,7 @@ bool ControlFlowGenerator::pushLoop(CFGState::State initial, jsbytecode* stopAt,
                                     jsbytecode* exitpc,
                                     jsbytecode* continuepc) {
   ControlFlowInfo loop(cfgStack_.length(), continuepc);
-  if (!loops_.append(loop)) {
-    return false;
-  }
+  if (!loops_.append(loop)) return false;
 
   CFGState state;
   state.state = initial;
@@ -1633,9 +1499,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processBreak(
         found = true;
         break;
       }
-      if (i == 0) {
-        break;
-      }
+      if (i == 0) break;
     }
   } else {
     for (size_t i = loops_.length() - 1;; i--) {
@@ -1646,9 +1510,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processBreak(
         found = true;
         break;
       }
-      if (i == 0) {
-        break;
-      }
+      if (i == 0) break;
     }
   }
 
@@ -1662,9 +1524,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processBreak(
 }
 
 static inline jsbytecode* EffectiveContinue(jsbytecode* pc) {
-  if (JSOp(*pc) == JSOP_GOTO) {
-    return pc + GetJumpOffset(pc);
-  }
+  if (JSOp(*pc) == JSOP_GOTO) return pc + GetJumpOffset(pc);
   return pc;
 }
 
@@ -1676,14 +1536,13 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processContinue(
   CFGState* found = nullptr;
   jsbytecode* target = pc + GetJumpOffset(pc);
   for (size_t i = loops_.length() - 1;; i--) {
-    if (loops_[i].continuepc == target + JSOP_JUMPTARGET_LENGTH ||
+    // +1 to skip JSOP_JUMPTARGET.
+    if (loops_[i].continuepc == target + 1 ||
         EffectiveContinue(loops_[i].continuepc) == target) {
       found = &cfgStack_[loops_[i].cfgEntry];
       break;
     }
-    if (i == 0) {
-      break;
-    }
+    if (i == 0) break;
   }
 
   // There must always be a valid target loop structure. If not, there's
@@ -1693,9 +1552,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processContinue(
 
   state.loop.continues =
       new (alloc()) DeferredEdge(current, state.loop.continues);
-  if (!state.loop.continues) {
-    return ControlStatus::Error;
-  }
+  if (!state.loop.continues) return ControlStatus::Error;
   current->setStopPc(pc);
 
   current = nullptr;
@@ -1715,9 +1572,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processSwitchBreak(
       found = &cfgStack_[switches_[i].cfgEntry];
       break;
     }
-    if (i == 0) {
-      break;
-    }
+    if (i == 0) break;
   }
 
   // There must always be a valid target loop structure. If not, there's
@@ -1755,9 +1610,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processIfStart(
 
   // We only handle cases that emit source notes.
   jssrcnote* sn = GetSrcNote(gsn, script, pc);
-  if (!sn) {
-    return ControlStatus::Error;
-  }
+  if (!sn) return ControlStatus::Error;
 
   // Create true and false branches.
   CFGBlock* ifTrue = CFGBlock::New(alloc(), trueStart);
@@ -1769,36 +1622,35 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processIfStart(
 
   // The bytecode for if/ternary gets emitted either like this:
   //
-  //    IFEQ X     ; src note (IF_ELSE, COND)
+  //    IFEQ X  ; src note (IF_ELSE, COND) points to the GOTO
   //    ...
   //    GOTO Z
-  // X: JUMPTARGET ; else/else if
+  // X: ...     ; else/else if
   //    ...
-  // Z: JUMPTARGET ; join
+  // Z:         ; join
   //
   // Or like this:
   //
-  //    IFEQ X     ; src note (IF)
+  //    IFEQ X  ; src note (IF) has no offset
   //    ...
-  // X: JUMPTARGET ; join
+  // Z: ...     ; join
   //
   // We want to parse the bytecode as if we were parsing the AST, so for the
-  // IF_ELSE/COND cases, we use the IFEQ/GOTO bytecode offsets to follow the
-  // branch. For the IF case, the IFEQ offset is the join point.
+  // IF_ELSE/COND cases, we use the source note and follow the GOTO. For the
+  // IF case, the IFEQ offset is the join point.
   switch (SN_TYPE(sn)) {
     case SRC_IF:
-      if (!cfgStack_.append(CFGState::If(falseStart, test))) {
+      if (!cfgStack_.append(CFGState::If(falseStart, test)))
         return ControlStatus::Error;
-      }
       break;
 
     case SRC_IF_ELSE:
     case SRC_COND: {
       // Infer the join point from the JSOP_GOTO[X] sitting here, then
       // assert as we much we can that this is the right GOTO.
-      MOZ_ASSERT(JSOp(*falseStart) == JSOP_JUMPTARGET);
-      jsbytecode* trueEnd = falseStart - JSOP_GOTO_LENGTH;
+      jsbytecode* trueEnd = pc + GetSrcNoteOffset(sn, 0);
       MOZ_ASSERT(trueEnd > pc);
+      MOZ_ASSERT(trueEnd < falseStart);
       MOZ_ASSERT(JSOp(*trueEnd) == JSOP_GOTO);
       MOZ_ASSERT(!GetSrcNote(gsn, script, trueEnd));
 
@@ -1806,9 +1658,8 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processIfStart(
       MOZ_ASSERT(falseEnd > trueEnd);
       MOZ_ASSERT(falseEnd >= falseStart);
 
-      if (!cfgStack_.append(CFGState::IfElse(trueEnd, falseEnd, test))) {
+      if (!cfgStack_.append(CFGState::IfElse(trueEnd, falseEnd, test)))
         return ControlStatus::Error;
-      }
       break;
     }
 
@@ -1821,9 +1672,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processIfStart(
   current = ifTrue;
   pc = ifTrue->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Jumped;
 }
@@ -1831,9 +1680,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processIfStart(
 int ControlFlowGenerator::CmpSuccessors(const void* a, const void* b) {
   const CFGBlock* a0 = *(CFGBlock* const*)a;
   const CFGBlock* b0 = *(CFGBlock* const*)b;
-  if (a0->startPc() == b0->startPc()) {
-    return 0;
-  }
+  if (a0->startPc() == b0->startPc()) return 0;
 
   return (a0->startPc() > b0->startPc()) ? 1 : -1;
 }
@@ -1855,8 +1702,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processTableSwitch(
   MOZ_ASSERT(SN_TYPE(sn) == SRC_TABLESWITCH);
 
   // Get the default and exit pc
-  jsbytecode* exitpc =
-      pc + GetSrcNoteOffset(sn, SrcNote::TableSwitch::EndOffset);
+  jsbytecode* exitpc = pc + GetSrcNoteOffset(sn, 0);
   jsbytecode* defaultpc = pc + GET_JUMP_OFFSET(pc);
 
   MOZ_ASSERT(defaultpc > pc && defaultpc <= exitpc);
@@ -1875,23 +1721,22 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processTableSwitch(
   // Create default case
   CFGBlock* defaultcase = CFGBlock::New(alloc(), defaultpc);
 
-  if (!tableswitch->addDefault(defaultcase)) {
-    return ControlStatus::Error;
-  }
+  if (!tableswitch->addDefault(defaultcase)) return ControlStatus::Error;
 
   // Create cases
+  jsbytecode* casepc = nullptr;
   for (int i = 0; i < high - low + 1; i++) {
-    if (!alloc().ensureBallast()) {
-      return ControlStatus::Error;
-    }
+    if (!alloc().ensureBallast()) return ControlStatus::Error;
+    casepc = pc + GET_JUMP_OFFSET(pc2);
 
-    jsbytecode* casepc = script->tableSwitchCasePC(pc, i);
     MOZ_ASSERT(casepc >= pc && casepc <= exitpc);
-
     CFGBlock* caseBlock;
 
-    if (casepc == defaultpc) {
-      // This is a missing case. Jump to the 'default' target.
+    if (casepc == pc) {
+      // If the casepc equals the current pc, it is not a written case,
+      // but a filled gap. That way we can use a tableswitch instead of
+      // condswitch, even if not all numbers are consecutive.
+      // In that case this block goes to the default case
       caseBlock = CFGBlock::New(alloc(), defaultpc);
       caseBlock->setStopIns(CFGGoto::New(alloc(), defaultcase));
     } else {
@@ -1900,18 +1745,14 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processTableSwitch(
       caseBlock = CFGBlock::New(alloc(), casepc);
     }
 
-    if (!tableswitch->addCase(caseBlock)) {
-      return ControlStatus::Error;
-    }
+    if (!tableswitch->addCase(caseBlock)) return ControlStatus::Error;
 
     pc2 += JUMP_OFFSET_LEN;
   }
 
   // Create info
   ControlFlowInfo switchinfo(cfgStack_.length(), exitpc);
-  if (!switches_.append(switchinfo)) {
-    return ControlStatus::Error;
-  }
+  if (!switches_.append(switchinfo)) return ControlStatus::Error;
 
   // Use a state to retrieve some information
   CFGState state = CFGState::TableSwitch(alloc(), exitpc);
@@ -1921,9 +1762,8 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processTableSwitch(
   }
 
   FixedList<CFGBlock*>& bodies = *state.switch_.bodies;
-  for (size_t i = 0; i < tableswitch->numSuccessors(); i++) {
+  for (size_t i = 0; i < tableswitch->numSuccessors(); i++)
     bodies[i] = tableswitch->getSuccessor(i);
-  }
 
   qsort(bodies.begin(), state.switch_.bodies->length(), sizeof(CFGBlock*),
         CmpSuccessors);
@@ -1934,22 +1774,17 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processTableSwitch(
 
   // If there is only one successor the block should stop at the end of the
   // switch Else it should stop at the start of the next successor
-  if (bodies.length() > 1) {
+  if (bodies.length() > 1)
     state.stopAt = bodies[1]->startPc();
-  } else {
+  else
     state.stopAt = exitpc;
-  }
 
-  if (!cfgStack_.append(state)) {
-    return ControlStatus::Error;
-  }
+  if (!cfgStack_.append(state)) return ControlStatus::Error;
 
   current = bodies[0];
   pc = current->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Jumped;
 }
@@ -1962,9 +1797,8 @@ ControlFlowGenerator::processNextTableSwitchCase(CFGState& state) {
   state.switch_.currentIdx++;
 
   // Test if there are still unprocessed successors (cases/default)
-  if (state.switch_.currentIdx >= bodies.length()) {
+  if (state.switch_.currentIdx >= bodies.length())
     return processSwitchEnd(state.switch_.breaks, state.switch_.exitpc);
-  }
 
   // Get the next successor
   CFGBlock* successor = bodies[state.switch_.currentIdx];
@@ -1979,18 +1813,15 @@ ControlFlowGenerator::processNextTableSwitchCase(CFGState& state) {
 
   // If this is the last successor the block should stop at the end of the
   // tableswitch Else it should stop at the start of the next successor
-  if (state.switch_.currentIdx + 1 < bodies.length()) {
+  if (state.switch_.currentIdx + 1 < bodies.length())
     state.stopAt = bodies[state.switch_.currentIdx + 1]->startPc();
-  } else {
+  else
     state.stopAt = state.switch_.exitpc;
-  }
 
   current = bodies[state.switch_.currentIdx];
   pc = current->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Jumped;
 }
@@ -2000,9 +1831,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processSwitchEnd(
   // No break statements, no current.
   // This means that control flow is cut-off from this point
   // (e.g. all cases have return statements).
-  if (!breaks && !current) {
-    return ControlStatus::Ended;
-  }
+  if (!breaks && !current) return ControlStatus::Ended;
 
   // Create successor block.
   // If there are breaks, create block with breaks as predecessor
@@ -2010,9 +1839,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processSwitchEnd(
   CFGBlock* successor = nullptr;
   if (breaks) {
     successor = createBreakCatchBlock(breaks, exitpc);
-    if (!successor) {
-      return ControlStatus::Error;
-    }
+    if (!successor) return ControlStatus::Error;
   } else {
     successor = CFGBlock::New(alloc(), exitpc);
   }
@@ -2027,9 +1854,7 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processSwitchEnd(
   current = successor;
   pc = successor->startPc();
 
-  if (!addBlock(successor)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(successor)) return ControlStatus::Error;
 
   return ControlStatus::Joined;
 }
@@ -2136,20 +1961,15 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processAndOr(
   current->setStopPc(pc);
 
   // Create the rhs block.
-  if (!cfgStack_.append(CFGState::AndOr(joinStart, evalLhs))) {
+  if (!cfgStack_.append(CFGState::AndOr(joinStart, evalLhs)))
     return ControlStatus::Error;
-  }
 
-  if (!addBlock(evalLhs)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(evalLhs)) return ControlStatus::Error;
 
   current = evalRhs;
   pc = current->startPc();
 
-  if (!addBlock(current)) {
-    return ControlStatus::Error;
-  }
+  if (!addBlock(current)) return ControlStatus::Error;
 
   return ControlStatus::Jumped;
 }
@@ -2157,17 +1977,13 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::processAndOr(
 ControlFlowGenerator::ControlStatus ControlFlowGenerator::processLabel() {
   MOZ_ASSERT(JSOp(*pc) == JSOP_LABEL);
 
-  jsbytecode* endpc = pc + GET_CODE_OFFSET(pc);
+  jsbytecode* endpc = pc + GET_JUMP_OFFSET(pc);
   MOZ_ASSERT(endpc > pc);
 
   ControlFlowInfo label(cfgStack_.length(), endpc);
-  if (!labels_.append(label)) {
-    return ControlStatus::Error;
-  }
+  if (!labels_.append(label)) return ControlStatus::Error;
 
-  if (!cfgStack_.append(CFGState::Label(endpc))) {
-    return ControlStatus::Error;
-  }
+  if (!cfgStack_.append(CFGState::Label(endpc))) return ControlStatus::Error;
 
   return ControlStatus::None;
 }

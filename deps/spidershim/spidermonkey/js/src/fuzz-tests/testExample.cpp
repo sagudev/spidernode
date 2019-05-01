@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -33,11 +33,11 @@ static int testExampleFuzz(const uint8_t* buf, size_t size) {
      sense to attempt and collect that after every iteration. This should detect
      GC issues as soon as possible (right after your iteration), rather than
      later when your code happens to trigger GC coincidentially. You can of
-     course disable this code
-     if it is not required in your use case, which will speed up fuzzing. */
+     course disable this code if it is not required in your use case, which will
+     speed up fuzzing. */
   auto gcGuard = mozilla::MakeScopeExit([&] {
     JS::PrepareForFullGC(gCx);
-    JS::NonIncrementalGC(gCx, GC_NORMAL, JS::GCReason::API);
+    JS::GCForReason(gCx, GC_NORMAL, JS::gcreason::API);
   });
 
   /* Add code here that processes the given buffer.

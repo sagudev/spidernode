@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,11 +19,6 @@
 #include "builtin/intl/SharedIntlData.h"
 #include "builtin/intl/TimeZoneDataGenerated.h"
 #include "gc/FreeOp.h"
-#include "js/CharacterEncoding.h"
-#include "js/Date.h"
-#include "js/PropertySpec.h"
-#include "js/StableStringChars.h"
-#include "vm/DateTime.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 #include "vm/Runtime.h"
@@ -33,15 +28,14 @@
 
 using namespace js;
 
-using JS::AutoStableStringChars;
 using JS::ClippedTime;
 using JS::TimeClip;
 
 using js::intl::CallICU;
 using js::intl::DateTimeFormatOptions;
 using js::intl::GetAvailableLocales;
-using js::intl::IcuLocale;
 using js::intl::INITIAL_CHAR_BUFFER_SIZE;
+using js::intl::IcuLocale;
 using js::intl::SharedIntlData;
 using js::intl::StringsAreEqual;
 
@@ -93,22 +87,16 @@ static bool DateTimeFormat(JSContext* cx, const CallArgs& args, bool construct,
 
   // Step 2 (Inlined 9.1.14, OrdinaryCreateFromConstructor).
   RootedObject proto(cx);
-  if (!GetPrototypeFromBuiltinConstructor(cx, args, JSProto_Null, &proto)) {
-    return false;
-  }
+  if (!GetPrototypeFromBuiltinConstructor(cx, args, &proto)) return false;
 
   if (!proto) {
     proto = GlobalObject::getOrCreateDateTimeFormatPrototype(cx, cx->global());
-    if (!proto) {
-      return false;
-    }
+    if (!proto) return false;
   }
 
   Rooted<DateTimeFormatObject*> dateTimeFormat(cx);
   dateTimeFormat = NewObjectWithGivenProto<DateTimeFormatObject>(cx, proto);
-  if (!dateTimeFormat) {
-    return false;
-  }
+  if (!dateTimeFormat) return false;
 
   dateTimeFormat->setReservedSlot(DateTimeFormatObject::INTERNALS_SLOT,
                                   NullValue());
@@ -138,9 +126,7 @@ static bool MozDateTimeFormat(JSContext* cx, unsigned argc, Value* vp) {
   // Don't allow to call mozIntl.DateTimeFormat as a function. That way we
   // don't need to worry how to handle the legacy initialization semantics
   // when applied on mozIntl.DateTimeFormat.
-  if (!ThrowIfNotConstructing(cx, args, "mozIntl.DateTimeFormat")) {
-    return false;
-  }
+  if (!ThrowIfNotConstructing(cx, args, "mozIntl.DateTimeFormat")) return false;
 
   return DateTimeFormat(cx, args, true,
                         DateTimeFormatOptions::EnableMozExtensions);
@@ -157,13 +143,12 @@ bool js::intl_DateTimeFormat(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 void js::DateTimeFormatObject::finalize(FreeOp* fop, JSObject* obj) {
-  MOZ_ASSERT(fop->onMainThread());
+  MOZ_ASSERT(fop->onActiveCooperatingThread());
 
   const Value& slot = obj->as<DateTimeFormatObject>().getReservedSlot(
       DateTimeFormatObject::UDATE_FORMAT_SLOT);
-  if (UDateFormat* df = static_cast<UDateFormat*>(slot.toPrivate())) {
+  if (UDateFormat* df = static_cast<UDateFormat*>(slot.toPrivate()))
     udat_close(df);
-  }
 }
 
 JSObject* js::CreateDateTimeFormatPrototype(
@@ -176,40 +161,29 @@ JSObject* js::CreateDateTimeFormatPrototype(
                                                cx->names().DateTimeFormat, 0)
              : GlobalObject::createConstructor(cx, DateTimeFormat,
                                                cx->names().DateTimeFormat, 0);
-  if (!ctor) {
-    return nullptr;
-  }
+  if (!ctor) return nullptr;
 
   RootedObject proto(
       cx, GlobalObject::createBlankPrototype<PlainObject>(cx, global));
-  if (!proto) {
-    return nullptr;
-  }
+  if (!proto) return nullptr;
 
-  if (!LinkConstructorAndPrototype(cx, ctor, proto)) {
-    return nullptr;
-  }
+  if (!LinkConstructorAndPrototype(cx, ctor, proto)) return nullptr;
 
   // 12.3.2
-  if (!JS_DefineFunctions(cx, ctor, dateTimeFormat_static_methods)) {
+  if (!JS_DefineFunctions(cx, ctor, dateTimeFormat_static_methods))
     return nullptr;
-  }
 
   // 12.4.4 and 12.4.5
-  if (!JS_DefineFunctions(cx, proto, dateTimeFormat_methods)) {
-    return nullptr;
-  }
+  if (!JS_DefineFunctions(cx, proto, dateTimeFormat_methods)) return nullptr;
 
   // 12.4.2 and 12.4.3
-  if (!JS_DefineProperties(cx, proto, dateTimeFormat_properties)) {
+  if (!JS_DefineProperties(cx, proto, dateTimeFormat_properties))
     return nullptr;
-  }
 
   // 8.1
   RootedValue ctorValue(cx, ObjectValue(*ctor));
-  if (!DefineDataProperty(cx, Intl, cx->names().DateTimeFormat, ctorValue, 0)) {
+  if (!DefineDataProperty(cx, Intl, cx->names().DateTimeFormat, ctorValue, 0))
     return nullptr;
-  }
 
   constructor.set(ctor);
   return proto;
@@ -232,18 +206,16 @@ bool js::intl_DateTimeFormat_availableLocales(JSContext* cx, unsigned argc,
   MOZ_ASSERT(args.length() == 0);
 
   RootedValue result(cx);
-  if (!GetAvailableLocales(cx, udat_countAvailable, udat_getAvailable,
-                           &result)) {
+  if (!GetAvailableLocales(cx, udat_countAvailable, udat_getAvailable, &result))
     return false;
-  }
   args.rval().set(result);
   return true;
 }
 
-static bool DefaultCalendar(JSContext* cx, const UniqueChars& locale,
+static bool DefaultCalendar(JSContext* cx, const JSAutoByteString& locale,
                             MutableHandleValue rval) {
   UErrorCode status = U_ZERO_ERROR;
-  UCalendar* cal = ucal_open(nullptr, 0, locale.get(), UCAL_DEFAULT, &status);
+  UCalendar* cal = ucal_open(nullptr, 0, locale.ptr(), UCAL_DEFAULT, &status);
 
   // This correctly handles nullptr |cal| when opening failed.
   ScopedICUObject<UCalendar, ucal_close> closeCalendar(cal);
@@ -255,16 +227,9 @@ static bool DefaultCalendar(JSContext* cx, const UniqueChars& locale,
   }
 
   // ICU returns old-style keyword values; map them to BCP 47 equivalents
-  calendar = uloc_toUnicodeLocaleType("ca", calendar);
-  if (!calendar) {
-    intl::ReportInternalError(cx);
-    return false;
-  }
-
-  JSString* str = NewStringCopyZ<CanGC>(cx, calendar);
-  if (!str) {
-    return false;
-  }
+  JSString* str =
+      JS_NewStringCopyZ(cx, uloc_toUnicodeLocaleType("ca", calendar));
+  if (!str) return false;
 
   rval.setString(str);
   return true;
@@ -283,32 +248,24 @@ bool js::intl_availableCalendars(JSContext* cx, unsigned argc, Value* vp) {
   MOZ_ASSERT(args.length() == 1);
   MOZ_ASSERT(args[0].isString());
 
-  UniqueChars locale = intl::EncodeLocale(cx, args[0].toString());
-  if (!locale) {
-    return false;
-  }
+  JSAutoByteString locale(cx, args[0].toString());
+  if (!locale) return false;
 
   RootedObject calendars(cx, NewDenseEmptyArray(cx));
-  if (!calendars) {
-    return false;
-  }
+  if (!calendars) return false;
   uint32_t index = 0;
 
   // We need the default calendar for the locale as the first result.
   RootedValue element(cx);
-  if (!DefaultCalendar(cx, locale, &element)) {
-    return false;
-  }
+  if (!DefaultCalendar(cx, locale, &element)) return false;
 
-  if (!DefineDataElement(cx, calendars, index++, element)) {
-    return false;
-  }
+  if (!DefineDataElement(cx, calendars, index++, element)) return false;
 
   // Now get the calendars that "would make a difference", i.e., not the
   // default.
   UErrorCode status = U_ZERO_ERROR;
   UEnumeration* values =
-      ucal_getKeywordValuesForLocale("ca", locale.get(), false, &status);
+      ucal_getKeywordValuesForLocale("ca", locale.ptr(), false, &status);
   if (U_FAILURE(status)) {
     intl::ReportInternalError(cx);
     return false;
@@ -330,31 +287,19 @@ bool js::intl_availableCalendars(JSContext* cx, unsigned argc, Value* vp) {
 
     // ICU returns old-style keyword values; map them to BCP 47 equivalents
     calendar = uloc_toUnicodeLocaleType("ca", calendar);
-    if (!calendar) {
-      intl::ReportInternalError(cx);
-      return false;
-    }
 
-    JSString* jscalendar = NewStringCopyZ<CanGC>(cx, calendar);
-    if (!jscalendar) {
-      return false;
-    }
+    JSString* jscalendar = JS_NewStringCopyZ(cx, calendar);
+    if (!jscalendar) return false;
     element = StringValue(jscalendar);
-    if (!DefineDataElement(cx, calendars, index++, element)) {
-      return false;
-    }
+    if (!DefineDataElement(cx, calendars, index++, element)) return false;
 
     // ICU doesn't return calendar aliases, append them here.
     for (const auto& calendarAlias : calendarAliases) {
       if (StringsAreEqual(calendar, calendarAlias.calendar)) {
-        JSString* jscalendar = NewStringCopyZ<CanGC>(cx, calendarAlias.alias);
-        if (!jscalendar) {
-          return false;
-        }
+        JSString* jscalendar = JS_NewStringCopyZ(cx, calendarAlias.alias);
+        if (!jscalendar) return false;
         element = StringValue(jscalendar);
-        if (!DefineDataElement(cx, calendars, index++, element)) {
-          return false;
-        }
+        if (!DefineDataElement(cx, calendars, index++, element)) return false;
       }
     }
   }
@@ -368,10 +313,8 @@ bool js::intl_defaultCalendar(JSContext* cx, unsigned argc, Value* vp) {
   MOZ_ASSERT(args.length() == 1);
   MOZ_ASSERT(args[0].isString());
 
-  UniqueChars locale = intl::EncodeLocale(cx, args[0].toString());
-  if (!locale) {
-    return false;
-  }
+  JSAutoByteString locale(cx, args[0].toString());
+  if (!locale) return false;
 
   return DefaultCalendar(cx, locale, args.rval());
 }
@@ -385,9 +328,8 @@ bool js::intl_IsValidTimeZoneName(JSContext* cx, unsigned argc, Value* vp) {
 
   RootedString timeZone(cx, args[0].toString());
   RootedAtom validatedTimeZone(cx);
-  if (!sharedIntlData.validateTimeZoneName(cx, timeZone, &validatedTimeZone)) {
+  if (!sharedIntlData.validateTimeZoneName(cx, timeZone, &validatedTimeZone))
     return false;
-  }
 
   if (validatedTimeZone) {
     cx->markAtom(validatedTimeZone);
@@ -410,10 +352,9 @@ bool js::intl_canonicalizeTimeZone(JSContext* cx, unsigned argc, Value* vp) {
   // those first:
   RootedString timeZone(cx, args[0].toString());
   RootedAtom ianaTimeZone(cx);
-  if (!sharedIntlData.tryCanonicalizeTimeZoneConsistentWithIANA(
-          cx, timeZone, &ianaTimeZone)) {
+  if (!sharedIntlData.tryCanonicalizeTimeZoneConsistentWithIANA(cx, timeZone,
+                                                                &ianaTimeZone))
     return false;
-  }
 
   if (ianaTimeZone) {
     cx->markAtom(ianaTimeZone);
@@ -422,9 +363,7 @@ bool js::intl_canonicalizeTimeZone(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   AutoStableStringChars stableChars(cx);
-  if (!stableChars.initTwoByte(cx, timeZone)) {
-    return false;
-  }
+  if (!stableChars.initTwoByte(cx, timeZone)) return false;
 
   mozilla::Range<const char16_t> tzchars = stableChars.twoByteRange();
 
@@ -433,9 +372,7 @@ bool js::intl_canonicalizeTimeZone(JSContext* cx, unsigned argc, Value* vp) {
     return ucal_getCanonicalTimeZoneID(tzchars.begin().get(), tzchars.length(),
                                        chars, size, nullptr, status);
   });
-  if (!str) {
-    return false;
-  }
+  if (!str) return false;
 
   args.rval().setString(str);
   return true;
@@ -451,9 +388,7 @@ bool js::intl_defaultTimeZone(JSContext* cx, unsigned argc, Value* vp) {
   js::ResyncICUDefaultTimeZone();
 
   JSString* str = CallICU(cx, ucal_getDefaultTimeZone);
-  if (!str) {
-    return false;
-  }
+  if (!str) return false;
 
   args.rval().setString(str);
   return true;
@@ -503,17 +438,11 @@ bool js::intl_isDefaultTimeZone(JSContext* cx, unsigned argc, Value* vp) {
   js::ResyncICUDefaultTimeZone();
 
   Vector<char16_t, INITIAL_CHAR_BUFFER_SIZE> chars(cx);
-  MOZ_ALWAYS_TRUE(chars.resize(INITIAL_CHAR_BUFFER_SIZE));
-
   int32_t size = CallICU(cx, ucal_getDefaultTimeZone, chars);
-  if (size < 0) {
-    return false;
-  }
+  if (size < 0) return false;
 
   JSLinearString* str = args[0].toString()->ensureLinear(cx);
-  if (!str) {
-    return false;
-  }
+  if (!str) return false;
 
   bool equals;
   if (str->length() == size_t(size)) {
@@ -536,21 +465,17 @@ bool js::intl_patternForSkeleton(JSContext* cx, unsigned argc, Value* vp) {
   MOZ_ASSERT(args[0].isString());
   MOZ_ASSERT(args[1].isString());
 
-  UniqueChars locale = intl::EncodeLocale(cx, args[0].toString());
-  if (!locale) {
-    return false;
-  }
+  JSAutoByteString locale(cx, args[0].toString());
+  if (!locale) return false;
 
   AutoStableStringChars skeleton(cx);
-  if (!skeleton.initTwoByte(cx, args[1].toString())) {
-    return false;
-  }
+  if (!skeleton.initTwoByte(cx, args[1].toString())) return false;
 
   mozilla::Range<const char16_t> skelChars = skeleton.twoByteRange();
 
   UErrorCode status = U_ZERO_ERROR;
   UDateTimePatternGenerator* gen =
-      udatpg_open(IcuLocale(locale.get()), &status);
+      udatpg_open(IcuLocale(locale.ptr()), &status);
   if (U_FAILURE(status)) {
     intl::ReportInternalError(cx);
     return false;
@@ -562,9 +487,7 @@ bool js::intl_patternForSkeleton(JSContext* cx, unsigned argc, Value* vp) {
         return udatpg_getBestPattern(gen, skelChars.begin().get(),
                                      skelChars.length(), chars, size, status);
       });
-  if (!str) {
-    return false;
-  }
+  if (!str) return false;
 
   args.rval().setString(str);
   return true;
@@ -575,61 +498,51 @@ bool js::intl_patternForStyle(JSContext* cx, unsigned argc, Value* vp) {
   MOZ_ASSERT(args.length() == 4);
   MOZ_ASSERT(args[0].isString());
 
-  UniqueChars locale = intl::EncodeLocale(cx, args[0].toString());
-  if (!locale) {
-    return false;
-  }
+  JSAutoByteString locale(cx, args[0].toString());
+  if (!locale) return false;
 
   UDateFormatStyle dateStyle = UDAT_NONE;
   UDateFormatStyle timeStyle = UDAT_NONE;
 
   if (args[1].isString()) {
     JSLinearString* dateStyleStr = args[1].toString()->ensureLinear(cx);
-    if (!dateStyleStr) {
-      return false;
-    }
+    if (!dateStyleStr) return false;
 
-    if (StringEqualsAscii(dateStyleStr, "full")) {
+    if (StringEqualsAscii(dateStyleStr, "full"))
       dateStyle = UDAT_FULL;
-    } else if (StringEqualsAscii(dateStyleStr, "long")) {
+    else if (StringEqualsAscii(dateStyleStr, "long"))
       dateStyle = UDAT_LONG;
-    } else if (StringEqualsAscii(dateStyleStr, "medium")) {
+    else if (StringEqualsAscii(dateStyleStr, "medium"))
       dateStyle = UDAT_MEDIUM;
-    } else if (StringEqualsAscii(dateStyleStr, "short")) {
+    else if (StringEqualsAscii(dateStyleStr, "short"))
       dateStyle = UDAT_SHORT;
-    } else {
+    else
       MOZ_ASSERT_UNREACHABLE("unexpected dateStyle");
-    }
   }
 
   if (args[2].isString()) {
     JSLinearString* timeStyleStr = args[2].toString()->ensureLinear(cx);
-    if (!timeStyleStr) {
-      return false;
-    }
+    if (!timeStyleStr) return false;
 
-    if (StringEqualsAscii(timeStyleStr, "full")) {
+    if (StringEqualsAscii(timeStyleStr, "full"))
       timeStyle = UDAT_FULL;
-    } else if (StringEqualsAscii(timeStyleStr, "long")) {
+    else if (StringEqualsAscii(timeStyleStr, "long"))
       timeStyle = UDAT_LONG;
-    } else if (StringEqualsAscii(timeStyleStr, "medium")) {
+    else if (StringEqualsAscii(timeStyleStr, "medium"))
       timeStyle = UDAT_MEDIUM;
-    } else if (StringEqualsAscii(timeStyleStr, "short")) {
+    else if (StringEqualsAscii(timeStyleStr, "short"))
       timeStyle = UDAT_SHORT;
-    } else {
+    else
       MOZ_ASSERT_UNREACHABLE("unexpected timeStyle");
-    }
   }
 
   AutoStableStringChars timeZone(cx);
-  if (!timeZone.initTwoByte(cx, args[3].toString())) {
-    return false;
-  }
+  if (!timeZone.initTwoByte(cx, args[3].toString())) return false;
 
   mozilla::Range<const char16_t> timeZoneChars = timeZone.twoByteRange();
 
   UErrorCode status = U_ZERO_ERROR;
-  UDateFormat* df = udat_open(timeStyle, dateStyle, IcuLocale(locale.get()),
+  UDateFormat* df = udat_open(timeStyle, dateStyle, IcuLocale(locale.ptr()),
                               timeZoneChars.begin().get(),
                               timeZoneChars.length(), nullptr, -1, &status);
   if (U_FAILURE(status)) {
@@ -642,9 +555,7 @@ bool js::intl_patternForStyle(JSContext* cx, unsigned argc, Value* vp) {
       CallICU(cx, [df](UChar* chars, uint32_t size, UErrorCode* status) {
         return udat_toPattern(df, false, chars, size, status);
       });
-  if (!str) {
-    return false;
-  }
+  if (!str) return false;
   args.rval().setString(str);
   return true;
 }
@@ -658,47 +569,36 @@ static UDateFormat* NewUDateFormat(
   RootedValue value(cx);
 
   RootedObject internals(cx, intl::GetInternalsObject(cx, dateTimeFormat));
-  if (!internals) {
-    return nullptr;
-  }
+  if (!internals) return nullptr;
 
-  if (!GetProperty(cx, internals, internals, cx->names().locale, &value)) {
+  if (!GetProperty(cx, internals, internals, cx->names().locale, &value))
     return nullptr;
-  }
-  UniqueChars locale = intl::EncodeLocale(cx, value.toString());
-  if (!locale) {
-    return nullptr;
-  }
+  JSAutoByteString locale(cx, value.toString());
+  if (!locale) return nullptr;
 
   // We don't need to look at calendar and numberingSystem - they can only be
   // set via the Unicode locale extension and are therefore already set on
   // locale.
 
-  if (!GetProperty(cx, internals, internals, cx->names().timeZone, &value)) {
+  if (!GetProperty(cx, internals, internals, cx->names().timeZone, &value))
     return nullptr;
-  }
 
   AutoStableStringChars timeZone(cx);
-  if (!timeZone.initTwoByte(cx, value.toString())) {
-    return nullptr;
-  }
+  if (!timeZone.initTwoByte(cx, value.toString())) return nullptr;
 
   mozilla::Range<const char16_t> timeZoneChars = timeZone.twoByteRange();
 
-  if (!GetProperty(cx, internals, internals, cx->names().pattern, &value)) {
+  if (!GetProperty(cx, internals, internals, cx->names().pattern, &value))
     return nullptr;
-  }
 
   AutoStableStringChars pattern(cx);
-  if (!pattern.initTwoByte(cx, value.toString())) {
-    return nullptr;
-  }
+  if (!pattern.initTwoByte(cx, value.toString())) return nullptr;
 
   mozilla::Range<const char16_t> patternChars = pattern.twoByteRange();
 
   UErrorCode status = U_ZERO_ERROR;
   UDateFormat* df =
-      udat_open(UDAT_PATTERN, UDAT_PATTERN, IcuLocale(locale.get()),
+      udat_open(UDAT_PATTERN, UDAT_PATTERN, IcuLocale(locale.ptr()),
                 timeZoneChars.begin().get(), timeZoneChars.length(),
                 patternChars.begin().get(), patternChars.length(), &status);
   if (U_FAILURE(status)) {
@@ -724,9 +624,7 @@ static bool intl_FormatDateTime(JSContext* cx, UDateFormat* df, ClippedTime x,
       CallICU(cx, [df, x](UChar* chars, int32_t size, UErrorCode* status) {
         return udat_format(df, x.toDouble(), chars, size, nullptr, status);
       });
-  if (!str) {
-    return false;
-  }
+  if (!str) return false;
 
   result.setString(str);
   return true;
@@ -840,14 +738,10 @@ static bool intl_FormatToPartsDateTime(JSContext* cx, UDateFormat* df,
         return udat_formatForFields(df, x.toDouble(), chars, size, fpositer,
                                     status);
       });
-  if (!overallResult) {
-    return false;
-  }
+  if (!overallResult) return false;
 
   RootedArrayObject partsArray(cx, NewDenseEmptyArray(cx));
-  if (!partsArray) {
-    return false;
-  }
+  if (!partsArray) return false;
 
   if (overallResult->length() == 0) {
     // An empty string contains no parts, so avoid extra work below.
@@ -864,30 +758,22 @@ static bool intl_FormatToPartsDateTime(JSContext* cx, UDateFormat* df,
 
   auto AppendPart = [&](FieldType type, size_t beginIndex, size_t endIndex) {
     singlePart = NewBuiltinClassInstance<PlainObject>(cx);
-    if (!singlePart) {
-      return false;
-    }
+    if (!singlePart) return false;
 
     partType = StringValue(cx->names().*type);
-    if (!DefineDataProperty(cx, singlePart, cx->names().type, partType)) {
+    if (!DefineDataProperty(cx, singlePart, cx->names().type, partType))
       return false;
-    }
 
     JSLinearString* partSubstr = NewDependentString(
         cx, overallResult, beginIndex, endIndex - beginIndex);
-    if (!partSubstr) {
-      return false;
-    }
+    if (!partSubstr) return false;
 
     val = StringValue(partSubstr);
-    if (!DefineDataProperty(cx, singlePart, cx->names().value, val)) {
+    if (!DefineDataProperty(cx, singlePart, cx->names().value, val))
       return false;
-    }
 
     val = ObjectValue(*singlePart);
-    if (!DefineDataElement(cx, partsArray, partIndex, val)) {
-      return false;
-    }
+    if (!DefineDataElement(cx, partsArray, partIndex, val)) return false;
 
     lastEndIndex = endIndex;
     partIndex++;
@@ -915,23 +801,19 @@ static bool intl_FormatToPartsDateTime(JSContext* cx, UDateFormat* df,
     if (FieldType type = GetFieldTypeForFormatField(
             static_cast<UDateFormatField>(fieldInt))) {
       if (lastEndIndex < beginIndex) {
-        if (!AppendPart(&JSAtomState::literal, lastEndIndex, beginIndex)) {
+        if (!AppendPart(&JSAtomState::literal, lastEndIndex, beginIndex))
           return false;
-        }
       }
 
-      if (!AppendPart(type, beginIndex, endIndex)) {
-        return false;
-      }
+      if (!AppendPart(type, beginIndex, endIndex)) return false;
     }
   }
 
   // Append any final literal.
   if (lastEndIndex < overallResult->length()) {
     if (!AppendPart(&JSAtomState::literal, lastEndIndex,
-                    overallResult->length())) {
+                    overallResult->length()))
       return false;
-    }
   }
 
   result.setObject(*partsArray);
@@ -951,7 +833,7 @@ bool js::intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp) {
   ClippedTime x = TimeClip(args[1].toNumber());
   if (!x.isValid()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_DATE_NOT_FINITE, "DateTimeFormat");
+                              JSMSG_DATE_NOT_FINITE);
     return false;
   }
 
@@ -962,9 +844,7 @@ bool js::intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp) {
   UDateFormat* df = static_cast<UDateFormat*>(priv);
   if (!df) {
     df = NewUDateFormat(cx, dateTimeFormat);
-    if (!df) {
-      return false;
-    }
+    if (!df) return false;
     dateTimeFormat->setReservedSlot(DateTimeFormatObject::UDATE_FORMAT_SLOT,
                                     PrivateValue(df));
   }

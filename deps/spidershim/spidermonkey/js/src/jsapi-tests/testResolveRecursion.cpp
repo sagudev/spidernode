@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -137,7 +137,7 @@ END_TEST(testResolveRecursion)
  * called. Calling back into JS in the middle of resolving `undefined` is bad.)
  */
 BEGIN_TEST(testResolveRecursion_InitStandardClasses) {
-  CHECK(JS::InitRealmStandardClasses(cx));
+  CHECK(JS_InitStandardClasses(cx, global));
   return true;
 }
 

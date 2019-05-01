@@ -22,7 +22,6 @@ from mozbuild.base import MachCommandConditions
 from mozbuild.frontend.emitter import TreeMetadataEmitter
 from mozbuild.frontend.reader import BuildReader
 from mozbuild.mozinfo import write_mozinfo
-from mozbuild.util import FileAvoidWrite
 from itertools import chain
 
 from mozbuild.backend import (
@@ -115,8 +114,10 @@ def config_status(topobjdir='.', topsrcdir='.', defines=None,
             non_global_defines=non_global_defines, substs=substs,
             source=source, mozconfig=mozconfig)
 
-    with FileAvoidWrite(os.path.join(topobjdir, 'mozinfo.json')) as f:
-        write_mozinfo(f, env, os.environ)
+    # mozinfo.json only needs written if configure changes and configure always
+    # passes this environment variable.
+    if 'WRITE_MOZINFO' in os.environ:
+        write_mozinfo(os.path.join(topobjdir, 'mozinfo.json'), env, os.environ)
 
     cpu_start = time.clock()
     time_start = time.time()

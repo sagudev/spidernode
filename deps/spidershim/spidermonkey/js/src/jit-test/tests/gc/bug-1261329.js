@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !('oomTest' in this)
+if (!('oomTest' in this))
+    quit();
 
 print = function() {}
 function k() { return dissrc(print); }

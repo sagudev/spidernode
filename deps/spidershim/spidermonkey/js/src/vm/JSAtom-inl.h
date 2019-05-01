@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +9,6 @@
 
 #include "vm/JSAtom.h"
 
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/RangedPtr.h"
 
 #include "jsnum.h"
@@ -23,31 +22,14 @@ inline jsid AtomToId(JSAtom* atom) {
   JS_STATIC_ASSERT(JSID_INT_MIN == 0);
 
   uint32_t index;
-  if (atom->isIndex(&index) && index <= JSID_INT_MAX) {
+  if (atom->isIndex(&index) && index <= JSID_INT_MAX)
     return INT_TO_JSID(int32_t(index));
-  }
 
-  return JSID_FROM_BITS(size_t(atom) | JSID_TYPE_STRING);
+  return JSID_FROM_BITS(size_t(atom));
 }
 
 // Use the NameToId method instead!
 inline jsid AtomToId(PropertyName* name) = delete;
-
-MOZ_ALWAYS_INLINE bool ValueToIntId(const Value& v, jsid* id) {
-  int32_t i;
-  if (v.isInt32()) {
-    i = v.toInt32();
-  } else if (!v.isDouble() || !mozilla::NumberEqualsInt32(v.toDouble(), &i)) {
-    return false;
-  }
-
-  if (!INT_FITS_IN_JSID(i)) {
-    return false;
-  }
-
-  *id = INT_TO_JSID(i);
-  return true;
-}
 
 inline bool ValueToIdPure(const Value& v, jsid* id) {
   if (v.isString()) {
@@ -58,7 +40,9 @@ inline bool ValueToIdPure(const Value& v, jsid* id) {
     return false;
   }
 
-  if (ValueToIntId(v, id)) {
+  int32_t i;
+  if (ValueFitsInInt32(v, &i) && INT_FITS_IN_JSID(i)) {
+    *id = INT_TO_JSID(i);
     return true;
   }
 
@@ -80,7 +64,9 @@ inline bool ValueToId(
       return true;
     }
   } else {
-    if (ValueToIntId(v, idp.address())) {
+    int32_t i;
+    if (ValueFitsInInt32(v, &i) && INT_FITS_IN_JSID(i)) {
+      idp.set(INT_TO_JSID(i));
       return true;
     }
 
@@ -91,9 +77,7 @@ inline bool ValueToId(
   }
 
   JSAtom* atom = ToAtom<allowGC>(cx, v);
-  if (!atom) {
-    return false;
-  }
+  if (!atom) return false;
 
   idp.set(AtomToId(atom));
   return true;
@@ -139,19 +123,14 @@ inline bool IndexToId(JSContext* cx, uint32_t index, MutableHandleId idp) {
 }
 
 static MOZ_ALWAYS_INLINE JSFlatString* IdToString(JSContext* cx, jsid id) {
-  if (JSID_IS_STRING(id)) {
-    return JSID_TO_ATOM(id);
-  }
+  if (JSID_IS_STRING(id)) return JSID_TO_ATOM(id);
 
-  if (MOZ_LIKELY(JSID_IS_INT(id))) {
+  if (MOZ_LIKELY(JSID_IS_INT(id)))
     return Int32ToString<CanGC>(cx, JSID_TO_INT(id));
-  }
 
   RootedValue idv(cx, IdToValue(id));
   JSString* str = ToStringSlow<CanGC>(cx, idv);
-  if (!str) {
-    return nullptr;
-  }
+  if (!str) return nullptr;
 
   return str->ensureFlat(cx);
 }

@@ -1,6 +1,6 @@
 // |jit-test| error: InternalError
 enableGeckoProfiling();
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.parent = this;
 g.eval("new Debugger(parent).onExceptionUnwind = function () { hits++; };");
 function f() {

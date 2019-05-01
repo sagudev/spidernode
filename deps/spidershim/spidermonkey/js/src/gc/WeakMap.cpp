@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gc/WeakMap-inl.h"
+#include "gc/WeakMap.h"
 
 #include <string.h>
 
@@ -23,7 +23,7 @@ using namespace js;
 using namespace js::gc;
 
 WeakMapBase::WeakMapBase(JSObject* memOf, Zone* zone)
-    : memberOf(memOf), zone_(zone), marked(false), markColor(MarkColor::Black) {
+    : memberOf(memOf), zone_(zone), marked(false) {
   MOZ_ASSERT_IF(memberOf, memberOf->compartment()->zone() == zone);
 }
 
@@ -32,9 +32,7 @@ WeakMapBase::~WeakMapBase() {
 }
 
 void WeakMapBase::unmarkZone(JS::Zone* zone) {
-  for (WeakMapBase* m : zone->gcWeakMapList()) {
-    m->marked = false;
-  }
+  for (WeakMapBase* m : zone->gcWeakMapList()) m->marked = false;
 }
 
 void WeakMapBase::traceZone(JS::Zone* zone, JSTracer* tracer) {
@@ -45,37 +43,17 @@ void WeakMapBase::traceZone(JS::Zone* zone, JSTracer* tracer) {
   }
 }
 
-#if defined(JS_GC_ZEAL) || defined(DEBUG)
-bool WeakMapBase::checkMarkingForZone(JS::Zone* zone) {
-  // This is called at the end of marking.
-  MOZ_ASSERT(zone->isGCMarking());
-
-  bool ok = true;
-  for (WeakMapBase* m : zone->gcWeakMapList()) {
-    if (m->marked && !m->checkMarking()) {
-      ok = false;
-    }
-  }
-
-  return ok;
-}
-#endif
-
 bool WeakMapBase::markZoneIteratively(JS::Zone* zone, GCMarker* marker) {
   bool markedAny = false;
   for (WeakMapBase* m : zone->gcWeakMapList()) {
-    if (m->marked && m->markIteratively(marker)) {
-      markedAny = true;
-    }
+    if (m->marked && m->markIteratively(marker)) markedAny = true;
   }
   return markedAny;
 }
 
-bool WeakMapBase::findSweepGroupEdges(JS::Zone* zone) {
+bool WeakMapBase::findInterZoneEdges(JS::Zone* zone) {
   for (WeakMapBase* m : zone->gcWeakMapList()) {
-    if (!m->findZoneEdges()) {
-      return false;
-    }
+    if (!m->findZoneEdges()) return false;
   }
   return true;
 }
@@ -86,16 +64,16 @@ void WeakMapBase::sweepZone(JS::Zone* zone) {
     if (m->marked) {
       m->sweep();
     } else {
-      m->clearAndCompact();
+      /* Destroy the hash map now to catch any use after this point. */
+      m->finish();
       m->removeFrom(zone->gcWeakMapList());
     }
     m = next;
   }
 
 #ifdef DEBUG
-  for (WeakMapBase* m : zone->gcWeakMapList()) {
+  for (WeakMapBase* m : zone->gcWeakMapList())
     MOZ_ASSERT(m->isInList() && m->marked);
-  }
 #endif
 }
 
@@ -113,9 +91,7 @@ void WeakMapBase::traceAllMappings(WeakMapTracer* tracer) {
 bool WeakMapBase::saveZoneMarkedWeakMaps(JS::Zone* zone,
                                          WeakMapSet& markedWeakMaps) {
   for (WeakMapBase* m : zone->gcWeakMapList()) {
-    if (m->marked && !markedWeakMaps.put(m)) {
-      return false;
-    }
+    if (m->marked && !markedWeakMaps.put(m)) return false;
   }
   return true;
 }
@@ -129,10 +105,6 @@ void WeakMapBase::restoreMarkedWeakMaps(WeakMapSet& markedWeakMaps) {
   }
 }
 
-size_t ObjectValueMap::sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) {
-  return mallocSizeOf(this) + shallowSizeOfExcludingThis(mallocSizeOf);
-}
-
 bool ObjectValueMap::findZoneEdges() {
   /*
    * For unmarked weakmap keys with delegates in a different zone, add a zone
@@ -142,35 +114,30 @@ bool ObjectValueMap::findZoneEdges() {
   JS::AutoSuppressGCAnalysis nogc;
   for (Range r = all(); !r.empty(); r.popFront()) {
     JSObject* key = r.front().key();
-    if (key->asTenured().isMarkedBlack()) {
-      continue;
-    }
+    if (key->asTenured().isMarkedBlack()) continue;
     JSObject* delegate = getDelegate(key);
-    if (!delegate) {
-      continue;
-    }
+    if (!delegate) continue;
     Zone* delegateZone = delegate->zone();
-    if (delegateZone == zone() || !delegateZone->isGCMarking()) {
-      continue;
-    }
-    if (!delegateZone->addSweepGroupEdgeTo(key->zone())) {
-      return false;
-    }
+    if (delegateZone == zone() || !delegateZone->isGCMarking()) continue;
+    if (!delegateZone->gcSweepGroupEdges().put(key->zone())) return false;
   }
   return true;
 }
 
 ObjectWeakMap::ObjectWeakMap(JSContext* cx) : map(cx, nullptr) {}
 
+bool ObjectWeakMap::init() { return map.init(); }
+
 JSObject* ObjectWeakMap::lookup(const JSObject* obj) {
-  if (ObjectValueMap::Ptr p = map.lookup(const_cast<JSObject*>(obj))) {
+  MOZ_ASSERT(map.initialized());
+  if (ObjectValueMap::Ptr p = map.lookup(const_cast<JSObject*>(obj)))
     return &p->value().toObject();
-  }
   return nullptr;
 }
 
 bool ObjectWeakMap::add(JSContext* cx, JSObject* obj, JSObject* target) {
   MOZ_ASSERT(obj && target);
+  MOZ_ASSERT(map.initialized());
 
   MOZ_ASSERT(!map.has(obj));
   if (!map.put(obj, ObjectValue(*target))) {
@@ -181,16 +148,21 @@ bool ObjectWeakMap::add(JSContext* cx, JSObject* obj, JSObject* target) {
   return true;
 }
 
-void ObjectWeakMap::clear() { map.clear(); }
+void ObjectWeakMap::clear() {
+  MOZ_ASSERT(map.initialized());
+  map.clear();
+}
 
 void ObjectWeakMap::trace(JSTracer* trc) { map.trace(trc); }
 
 size_t ObjectWeakMap::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {
-  return map.shallowSizeOfExcludingThis(mallocSizeOf);
+  MOZ_ASSERT(map.initialized());
+  return map.sizeOfExcludingThis(mallocSizeOf);
 }
 
 #ifdef JSGC_HASH_TABLE_CHECKS
 void ObjectWeakMap::checkAfterMovingGC() {
+  MOZ_ASSERT(map.initialized());
   for (ObjectValueMap::Range r = map.all(); !r.empty(); r.popFront()) {
     CheckGCThingAfterMovingGC(r.front().key().get());
     CheckGCThingAfterMovingGC(&r.front().value().toObject());

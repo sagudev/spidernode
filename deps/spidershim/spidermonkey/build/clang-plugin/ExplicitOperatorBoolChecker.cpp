@@ -22,13 +22,13 @@ void ExplicitOperatorBoolChecker::check(
   const CXXRecordDecl *Clazz = Method->getParent();
 
   if (!Method->isExplicitSpecified() &&
-      !hasCustomAttribute<moz_implicit>(Method) &&
+      !hasCustomAnnotation(Method, "moz_implicit") &&
       !ASTIsInSystemHeader(Method->getASTContext(), *Method) &&
       isInterestingDeclForImplicitConversion(Method)) {
-    diag(Method->getBeginLoc(), "bad implicit conversion operator for %0",
+    diag(Method->getLocStart(), "bad implicit conversion operator for %0",
          DiagnosticIDs::Error)
         << Clazz;
-    diag(Method->getBeginLoc(), "consider adding the explicit keyword to %0",
+    diag(Method->getLocStart(), "consider adding the explicit keyword to %0",
          DiagnosticIDs::Note)
         << "'operator bool'";
   }

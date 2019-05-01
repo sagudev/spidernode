@@ -26,11 +26,8 @@ includes: [propertyHelper.js]
 
 assert.sameValue(Intl.NumberFormat.length, 0);
 
-verifyProperty(Intl.NumberFormat, 'length', {
-  value: 0,
-  writable: false,
-  enumerable: false,
-  configurable: true
-});
+verifyNotEnumerable(Intl.NumberFormat, "length");
+verifyNotWritable(Intl.NumberFormat, "length");
+verifyConfigurable(Intl.NumberFormat, "length");
 
 reportCompare(0, 0);

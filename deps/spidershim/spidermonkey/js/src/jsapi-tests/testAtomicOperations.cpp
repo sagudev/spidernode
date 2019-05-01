@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -10,7 +10,6 @@
 
 #include "jit/AtomicOperations.h"
 #include "jsapi-tests/tests.h"
-#include "vm/ArrayBufferObject.h"
 #include "vm/SharedMem.h"
 #include "wasm/WasmJS.h"
 
@@ -202,9 +201,7 @@ BEGIN_TEST(testAtomicOperationsI32) {
 END_TEST(testAtomicOperationsI32)
 
 BEGIN_TEST(testAtomicOperationsU64) {
-  if (!jit::AtomicOperations::hasAtomic8()) {
-    return true;
-  }
+  if (!jit::AtomicOperations::hasAtomic8()) return true;
 
   const uint64_t A(0x9aadf00ddeadbeef);
   const uint64_t B(0x4eedbead1337f001);
@@ -213,9 +210,7 @@ BEGIN_TEST(testAtomicOperationsU64) {
 END_TEST(testAtomicOperationsU64)
 
 BEGIN_TEST(testAtomicOperationsI64) {
-  if (!jit::AtomicOperations::hasAtomic8()) {
-    return true;
-  }
+  if (!jit::AtomicOperations::hasAtomic8()) return true;
 
   const int64_t A(0x2aadf00ddeadbeef);
   const int64_t B(0x4eedbead1337f001);

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +7,7 @@
 #ifndef ds_Bitmap_h
 #define ds_Bitmap_h
 
-#include "mozilla/Array.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/MemoryChecking.h"
-
 #include <algorithm>
-#include <stddef.h>
-#include <stdint.h>
 
 #include "js/AllocPolicy.h"
 #include "js/HashTable.h"
@@ -32,8 +25,7 @@
 namespace js {
 
 class DenseBitmap {
-  using Data = Vector<uintptr_t, 0, SystemAllocPolicy>;
-
+  typedef Vector<uintptr_t, 0, SystemAllocPolicy> Data;
   Data data;
 
  public:
@@ -52,16 +44,12 @@ class DenseBitmap {
 
   void copyBitsFrom(size_t wordStart, size_t numWords, uintptr_t* source) {
     MOZ_ASSERT(wordStart + numWords <= data.length());
-    // Use std::copy and not std::copy_n because the former requires no
-    // overlap and so provides extra opportunity to optimize.
-    std::copy(source, source + numWords, &data[wordStart]);
+    mozilla::PodCopy(&data[wordStart], source, numWords);
   }
 
   void bitwiseOrRangeInto(size_t wordStart, size_t numWords,
                           uintptr_t* target) const {
-    for (size_t i = 0; i < numWords; i++) {
-      target[i] |= data[wordStart + i];
-    }
+    for (size_t i = 0; i < numWords; i++) target[i] |= data[wordStart + i];
   }
 };
 
@@ -72,10 +60,9 @@ class SparseBitmap {
   // which are expected to be very sparse should have a small block size.
   static const size_t WordsInBlock = 4096 / sizeof(uintptr_t);
 
-  using BitBlock = mozilla::Array<uintptr_t, WordsInBlock>;
-  using Data =
-      HashMap<size_t, BitBlock*, DefaultHasher<size_t>, SystemAllocPolicy>;
-
+  typedef mozilla::Array<uintptr_t, WordsInBlock> BitBlock;
+  typedef HashMap<size_t, BitBlock*, DefaultHasher<size_t>, SystemAllocPolicy>
+      Data;
   Data data;
 
   static size_t blockStartWord(size_t word) {
@@ -91,7 +78,6 @@ class SparseBitmap {
 
   BitBlock& createBlock(Data::AddPtr p, size_t blockId,
                         AutoEnterOOMUnsafeRegion& oomUnsafe);
-
   BitBlock* createBlock(Data::AddPtr p, size_t blockId);
 
   MOZ_ALWAYS_INLINE BitBlock* getBlock(size_t blockId) const {
@@ -100,13 +86,9 @@ class SparseBitmap {
   }
 
   MOZ_ALWAYS_INLINE BitBlock& getOrCreateBlock(size_t blockId) {
-    // The lookupForAdd() needs protection against injected OOMs, as does
-    // the add() within createBlock().
     AutoEnterOOMUnsafeRegion oomUnsafe;
     Data::AddPtr p = data.lookupForAdd(blockId);
-    if (p) {
-      return *p->value();
-    }
+    if (p) return *p->value();
     return createBlock(p, blockId, oomUnsafe);
   }
 
@@ -119,6 +101,7 @@ class SparseBitmap {
   }
 
  public:
+  bool init() { return data.init(); }
   ~SparseBitmap();
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);

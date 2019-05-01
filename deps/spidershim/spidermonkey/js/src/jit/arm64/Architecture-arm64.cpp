@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,20 +15,12 @@ namespace jit {
 
 Registers::Code Registers::FromName(const char* name) {
   // Check for some register aliases first.
-  if (strcmp(name, "ip0") == 0) {
-    return ip0;
-  }
-  if (strcmp(name, "ip1") == 0) {
-    return ip1;
-  }
-  if (strcmp(name, "fp") == 0) {
-    return fp;
-  }
+  if (strcmp(name, "ip0") == 0) return ip0;
+  if (strcmp(name, "ip1") == 0) return ip1;
+  if (strcmp(name, "fp") == 0) return fp;
 
   for (uint32_t i = 0; i < Total; i++) {
-    if (strcmp(GetName(Code(i)), name) == 0) {
-      return Code(i);
-    }
+    if (strcmp(GetName(Code(i)), name) == 0) return Code(i);
   }
 
   return invalid_reg;
@@ -36,9 +28,7 @@ Registers::Code Registers::FromName(const char* name) {
 
 FloatRegisters::Code FloatRegisters::FromName(const char* name) {
   for (size_t i = 0; i < Total; i++) {
-    if (strcmp(GetName(Code(i)), name) == 0) {
-      return Code(i);
-    }
+    if (strcmp(GetName(Code(i)), name) == 0) return Code(i);
   }
 
   return invalid_fpreg;
@@ -46,9 +36,8 @@ FloatRegisters::Code FloatRegisters::FromName(const char* name) {
 
 FloatRegisterSet FloatRegister::ReduceSetForPush(const FloatRegisterSet& s) {
   LiveFloatRegisterSet ret;
-  for (FloatRegisterIterator iter(s); iter.more(); ++iter) {
+  for (FloatRegisterIterator iter(s); iter.more(); ++iter)
     ret.addUnchecked(FromCode((*iter).encoding()));
-  }
   return ret.set();
 }
 

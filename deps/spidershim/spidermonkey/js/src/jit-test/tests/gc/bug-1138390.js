@@ -1,4 +1,12 @@
-// |jit-test| skip-if: helperThreadCount() === 0
+if (!("startgc" in this &&
+      "offThreadCompileScript" in this &&
+      "runOffThreadScript" in this))
+{
+    quit();
+}
+
+if (helperThreadCount() == 0)
+    quit();
 
 gczeal(0);
 gc();

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * Copyright 2016 Mozilla Foundation
  *
@@ -21,6 +21,7 @@
 
 #include "mozilla/TypeTraits.h"
 
+#include "wasm/WasmCode.h"
 #include "wasm/WasmTypes.h"
 
 namespace js {
@@ -41,84 +42,8 @@ struct SectionRange {
 
 typedef Maybe<SectionRange> MaybeSectionRange;
 
-// CompilerEnvironment holds any values that will be needed to compute
-// compilation parameters once the module's feature opt-in sections have been
-// parsed.
-//
-// Subsequent to construction a computeParameters() call will compute the final
-// compilation parameters, and the object can then be queried for their values.
-
-struct CompileArgs;
-class Decoder;
-
-struct CompilerEnvironment {
-  // The object starts in one of two "initial" states; computeParameters moves
-  // it into the "computed" state.
-  enum State { InitialWithArgs, InitialWithModeTierDebug, Computed };
-
-  State state_;
-  union {
-    // Value if the state_ == InitialWithArgs.
-    const CompileArgs* args_;
-
-    // Value in the other two states.
-    struct {
-      CompileMode mode_;
-      Tier tier_;
-      OptimizedBackend optimizedBackend_;
-      DebugEnabled debug_;
-      bool gcTypes_;
-    };
-  };
-
- public:
-  // Retain a reference to the CompileArgs.  A subsequent computeParameters()
-  // will compute all parameters from the CompileArgs and additional values.
-  explicit CompilerEnvironment(const CompileArgs& args);
-
-  // Save the provided values for mode, tier, and debug, and the initial value
-  // for gcTypes.  A subsequent computeParameters() will compute the final
-  // value of gcTypes.
-  CompilerEnvironment(CompileMode mode, Tier tier,
-                      OptimizedBackend optimizedBackend,
-                      DebugEnabled debugEnabled, bool gcTypesConfigured);
-
-  // Compute any remaining compilation parameters.
-  void computeParameters(Decoder& d, bool gcFeatureOptIn);
-
-  // Compute any remaining compilation parameters.  Only use this method if
-  // the CompilerEnvironment was created with values for mode, tier, and
-  // debug.
-  void computeParameters(bool gcFeatureOptIn);
-
-  bool isComputed() const { return state_ == Computed; }
-  CompileMode mode() const {
-    MOZ_ASSERT(isComputed());
-    return mode_;
-  }
-  Tier tier() const {
-    MOZ_ASSERT(isComputed());
-    return tier_;
-  }
-  OptimizedBackend optimizedBackend() const {
-    MOZ_ASSERT(isComputed());
-    return optimizedBackend_;
-  }
-  DebugEnabled debug() const {
-    MOZ_ASSERT(isComputed());
-    return debug_;
-  }
-  bool gcTypes() const {
-    MOZ_ASSERT(isComputed());
-    return gcTypes_;
-  }
-};
-
-// ModuleEnvironment contains all the state necessary to process or render
-// functions, and all of the state necessary to validate all aspects of the
-// functions.
-//
-// A ModuleEnvironment is created by decoding all the sections before the wasm
+// ModuleEnvironment contains all the state necessary to validate, process or
+// render functions. It is created by decoding all the sections before the wasm
 // code section and then used immutably during. When compiling a module using a
 // ModuleGenerator, the ModuleEnvironment holds state shared between the
 // ModuleGenerator thread and background compile threads. All the threads
@@ -127,28 +52,19 @@ struct CompilerEnvironment {
 
 struct ModuleEnvironment {
   // Constant parameters for the entire compilation:
+  const DebugEnabled debug;
   const ModuleKind kind;
+  const CompileMode mode;
   const Shareable sharedMemoryEnabled;
-  CompilerEnvironment* const compilerEnv;
+  const Tier tier;
 
   // Module fields decoded from the module environment (or initialized while
   // validating an asm.js module) and immutable during compilation:
-#ifdef ENABLE_WASM_GC
-  // `gcFeatureOptIn` reflects the presence in a module of a GcFeatureOptIn
-  // section.  This variable will be removed eventually, allowing it to be
-  // replaced everywhere by the value true.
-  //
-  // The flag is used in the value of gcTypesEnabled(), which controls whether
-  // struct types and associated instructions are accepted during validation.
-  bool gcFeatureOptIn;
-#endif
-  Maybe<uint32_t> dataCount;
   MemoryUsage memoryUsage;
   uint32_t minMemoryLength;
   Maybe<uint32_t> maxMemoryLength;
-  uint32_t numStructTypes;
-  TypeDefVector types;
-  FuncTypeWithIdPtrVector funcTypes;
+  SigWithIdVector sigs;
+  SigWithIdPtrVector funcSigs;
   Uint32Vector funcImportGlobalDataOffsets;
   GlobalDescVector globals;
   TableDescVector tables;
@@ -156,74 +72,43 @@ struct ModuleEnvironment {
   ImportVector imports;
   ExportVector exports;
   Maybe<uint32_t> startFuncIndex;
-  ElemSegmentVector elemSegments;
   MaybeSectionRange codeSection;
 
   // Fields decoded as part of the wasm module tail:
-  DataSegmentEnvVector dataSegments;
-  CustomSectionEnvVector customSections;
-  Maybe<uint32_t> nameCustomSectionIndex;
-  Maybe<Name> moduleName;
-  NameVector funcNames;
+  ElemSegmentVector elemSegments;
+  DataSegmentVector dataSegments;
+  NameInBytecodeVector funcNames;
+  CustomSectionVector customSections;
 
-  explicit ModuleEnvironment(bool gcTypesConfigured,
-                             CompilerEnvironment* compilerEnv,
-                             Shareable sharedMemoryEnabled,
+  explicit ModuleEnvironment(CompileMode mode = CompileMode::Once,
+                             Tier tier = Tier::Ion,
+                             DebugEnabled debug = DebugEnabled::False,
+                             Shareable sharedMemoryEnabled = Shareable::False,
                              ModuleKind kind = ModuleKind::Wasm)
-      : kind(kind),
+      : debug(debug),
+        kind(kind),
+        mode(mode),
         sharedMemoryEnabled(sharedMemoryEnabled),
-        compilerEnv(compilerEnv),
-#ifdef ENABLE_WASM_GC
-        gcFeatureOptIn(false),
-#endif
+        tier(tier),
         memoryUsage(MemoryUsage::None),
-        minMemoryLength(0),
-        numStructTypes(0) {
-  }
+        minMemoryLength(0) {}
 
-  Tier tier() const { return compilerEnv->tier(); }
-  OptimizedBackend optimizedBackend() const {
-    return compilerEnv->optimizedBackend();
-  }
-  CompileMode mode() const { return compilerEnv->mode(); }
-  DebugEnabled debug() const { return compilerEnv->debug(); }
   size_t numTables() const { return tables.length(); }
-  size_t numTypes() const { return types.length(); }
-  size_t numFuncs() const { return funcTypes.length(); }
+  size_t numSigs() const { return sigs.length(); }
+  size_t numFuncs() const { return funcSigs.length(); }
   size_t numFuncImports() const { return funcImportGlobalDataOffsets.length(); }
   size_t numFuncDefs() const {
-    return funcTypes.length() - funcImportGlobalDataOffsets.length();
+    return funcSigs.length() - funcImportGlobalDataOffsets.length();
   }
-  bool gcTypesEnabled() const { return compilerEnv->gcTypes(); }
   bool usesMemory() const { return memoryUsage != MemoryUsage::None; }
   bool usesSharedMemory() const { return memoryUsage == MemoryUsage::Shared; }
   bool isAsmJS() const { return kind == ModuleKind::AsmJS; }
-  bool debugEnabled() const {
-    return compilerEnv->debug() == DebugEnabled::True;
-  }
+  bool debugEnabled() const { return debug == DebugEnabled::True; }
   bool funcIsImport(uint32_t funcIndex) const {
     return funcIndex < funcImportGlobalDataOffsets.length();
   }
-  bool isRefSubtypeOf(ValType one, ValType two) const {
-    MOZ_ASSERT(one.isReference());
-    MOZ_ASSERT(two.isReference());
-#if defined(ENABLE_WASM_REFTYPES)
-#  if defined(ENABLE_WASM_GC)
-    return one == two || two == ValType::AnyRef || one == ValType::NullRef ||
-           (one.isRef() && two.isRef() && gcTypesEnabled() &&
-            isStructPrefixOf(two, one));
-#  else
-    return one == two || two == ValType::AnyRef || one == ValType::NullRef;
-#  endif
-#else
-    return one == two;
-#endif
-  }
-
- private:
-  bool isStructPrefixOf(ValType a, ValType b) const {
-    const StructType& other = types[a.refTypeIndex()].structType();
-    return types[b.refTypeIndex()].structType().hasPrefix(other);
+  uint32_t funcIndexToSigIndex(uint32_t funcIndex) const {
+    return funcSigs[funcIndex] - sigs.begin();
   }
 };
 
@@ -244,12 +129,8 @@ class Encoder {
     do {
       uint8_t byte = i & 0x7f;
       i >>= 7;
-      if (i != 0) {
-        byte |= 0x80;
-      }
-      if (!bytes_.append(byte)) {
-        return false;
-      }
+      if (i != 0) byte |= 0x80;
+      if (!bytes_.append(byte)) return false;
     } while (i != 0);
     return true;
   }
@@ -261,12 +142,8 @@ class Encoder {
       uint8_t byte = i & 0x7f;
       i >>= 7;
       done = ((i == 0) && !(byte & 0x40)) || ((i == -1) && (byte & 0x40));
-      if (!done) {
-        byte |= 0x80;
-      }
-      if (!bytes_.append(byte)) {
-        return false;
-      }
+      if (!done) byte |= 0x80;
+      if (!bytes_.append(byte)) return false;
     } while (!done);
     return true;
   }
@@ -299,9 +176,7 @@ class Encoder {
 
   uint32_t varU32ByteLength(size_t offset) const {
     size_t start = offset;
-    while (bytes_[offset] & 0x80) {
-      offset++;
-    }
+    while (bytes_[offset] & 0x80) offset++;
     return offset - start + 1;
   }
 
@@ -322,6 +197,18 @@ class Encoder {
   MOZ_MUST_USE bool writeFixedU32(uint32_t i) { return write<uint32_t>(i); }
   MOZ_MUST_USE bool writeFixedF32(float f) { return write<float>(f); }
   MOZ_MUST_USE bool writeFixedF64(double d) { return write<double>(d); }
+  MOZ_MUST_USE bool writeFixedI8x16(const I8x16& i8x16) {
+    return write<I8x16>(i8x16);
+  }
+  MOZ_MUST_USE bool writeFixedI16x8(const I16x8& i16x8) {
+    return write<I16x8>(i16x8);
+  }
+  MOZ_MUST_USE bool writeFixedI32x4(const I32x4& i32x4) {
+    return write<I32x4>(i32x4);
+  }
+  MOZ_MUST_USE bool writeFixedF32x4(const F32x4& f32x4) {
+    return write<F32x4>(f32x4);
+  }
 
   // Variable-length encodings that all use LEB128.
 
@@ -331,38 +218,34 @@ class Encoder {
   MOZ_MUST_USE bool writeVarS64(int64_t i) { return writeVarS<int64_t>(i); }
   MOZ_MUST_USE bool writeValType(ValType type) {
     static_assert(size_t(TypeCode::Limit) <= UINT8_MAX, "fits");
-    MOZ_ASSERT(size_t(type.code()) < size_t(TypeCode::Limit));
-    if (type.isRef()) {
-      return writeFixedU8(uint8_t(TypeCode::Ref)) &&
-             writeVarU32(type.refTypeIndex());
-    }
-    return writeFixedU8(uint8_t(type.code()));
+    MOZ_ASSERT(size_t(type) < size_t(TypeCode::Limit));
+    return writeFixedU8(uint8_t(type));
   }
   MOZ_MUST_USE bool writeBlockType(ExprType type) {
     static_assert(size_t(TypeCode::Limit) <= UINT8_MAX, "fits");
-    MOZ_ASSERT(size_t(type.code()) < size_t(TypeCode::Limit));
-    if (type.isRef()) {
-      return writeFixedU8(uint8_t(ExprType::Ref)) &&
-             writeVarU32(type.refTypeIndex());
-    }
-    return writeFixedU8(uint8_t(type.code()));
+    MOZ_ASSERT(size_t(type) < size_t(TypeCode::Limit));
+    return writeFixedU8(uint8_t(type));
   }
   MOZ_MUST_USE bool writeOp(Op op) {
     static_assert(size_t(Op::Limit) == 256, "fits");
     MOZ_ASSERT(size_t(op) < size_t(Op::Limit));
     return writeFixedU8(uint8_t(op));
   }
-  MOZ_MUST_USE bool writeOp(MiscOp op) {
-    MOZ_ASSERT(size_t(op) < size_t(MiscOp::Limit));
-    return writeFixedU8(uint8_t(Op::MiscPrefix)) && writeVarU32(uint32_t(op));
+  MOZ_MUST_USE bool writeOp(MozOp op) {
+    static_assert(size_t(MozOp::Limit) <= 256, "fits");
+    MOZ_ASSERT(size_t(op) < size_t(MozOp::Limit));
+    return writeFixedU8(uint8_t(Op::MozPrefix)) && writeFixedU8(uint8_t(op));
+  }
+  MOZ_MUST_USE bool writeOp(NumericOp op) {
+    static_assert(size_t(NumericOp::Limit) <= 256, "fits");
+    MOZ_ASSERT(size_t(op) < size_t(NumericOp::Limit));
+    return writeFixedU8(uint8_t(Op::NumericPrefix)) &&
+           writeFixedU8(uint8_t(op));
   }
   MOZ_MUST_USE bool writeOp(ThreadOp op) {
+    static_assert(size_t(ThreadOp::Limit) <= 256, "fits");
     MOZ_ASSERT(size_t(op) < size_t(ThreadOp::Limit));
-    return writeFixedU8(uint8_t(Op::ThreadPrefix)) && writeVarU32(uint32_t(op));
-  }
-  MOZ_MUST_USE bool writeOp(MozOp op) {
-    MOZ_ASSERT(size_t(op) < size_t(MozOp::Limit));
-    return writeFixedU8(uint8_t(Op::MozPrefix)) && writeVarU32(uint32_t(op));
+    return writeFixedU8(uint8_t(Op::ThreadPrefix)) && writeFixedU8(uint8_t(op));
   }
 
   // Fixed-length encodings that allow back-patching.
@@ -394,13 +277,12 @@ class Encoder {
   }
 
   // A "section" is a contiguous range of bytes that stores its own size so
-  // that it may be trivially skipped without examining the payload. Sections
+  // that it may be trivially skipped without examining the contents. Sections
   // require backpatching since the size of the section is only known at the
   // end while the size's varU32 must be stored at the beginning. Immediately
   // after the section length is the string id of the section.
 
   MOZ_MUST_USE bool startSection(SectionId id, size_t* offset) {
-    MOZ_ASSERT(uint32_t(id) < 128);
     return writeVarU32(uint32_t(id)) && writePatchableVarU32(offset);
   }
   void finishSection(size_t offset) {
@@ -419,14 +301,11 @@ class Decoder {
   const uint8_t* cur_;
   const size_t offsetInModule_;
   UniqueChars* error_;
-  UniqueCharsVector* warnings_;
   bool resilientMode_;
 
   template <class T>
   MOZ_MUST_USE bool read(T* out) {
-    if (bytesRemain() < sizeof(T)) {
-      return false;
-    }
+    if (bytesRemain() < sizeof(T)) return false;
     memcpy((void*)out, cur_, sizeof(T));
     cur_ += sizeof(T);
     return true;
@@ -458,9 +337,7 @@ class Decoder {
     uint8_t byte;
     UInt shift = 0;
     do {
-      if (!readFixedU8(&byte)) {
-        return false;
-      }
+      if (!readFixedU8(&byte)) return false;
       if (!(byte & 0x80)) {
         *out = u | UInt(byte) << shift;
         return true;
@@ -468,9 +345,8 @@ class Decoder {
       u |= UInt(byte & 0x7F) << shift;
       shift += 7;
     } while (shift != numBitsInSevens);
-    if (!readFixedU8(&byte) || (byte & (unsigned(-1) << remainderBits))) {
+    if (!readFixedU8(&byte) || (byte & (unsigned(-1) << remainderBits)))
       return false;
-    }
     *out = u | (UInt(byte) << numBitsInSevens);
     MOZ_ASSERT_IF(sizeof(UInt) == 4,
                   unsigned(cur_ - before) <= MaxVarU32DecodedBytes);
@@ -487,68 +363,52 @@ class Decoder {
     uint8_t byte;
     unsigned shift = 0;
     do {
-      if (!readFixedU8(&byte)) {
-        return false;
-      }
+      if (!readFixedU8(&byte)) return false;
       s |= SInt(byte & 0x7f) << shift;
       shift += 7;
       if (!(byte & 0x80)) {
-        if (byte & 0x40) {
-          s |= UInt(-1) << shift;
-        }
+        if (byte & 0x40) s |= UInt(-1) << shift;
         *out = s;
         return true;
       }
     } while (shift < numBitsInSevens);
-    if (!remainderBits || !readFixedU8(&byte) || (byte & 0x80)) {
-      return false;
-    }
+    if (!remainderBits || !readFixedU8(&byte) || (byte & 0x80)) return false;
     uint8_t mask = 0x7f & (uint8_t(-1) << remainderBits);
-    if ((byte & mask) != ((byte & (1 << (remainderBits - 1))) ? mask : 0)) {
+    if ((byte & mask) != ((byte & (1 << (remainderBits - 1))) ? mask : 0))
       return false;
-    }
     *out = s | UInt(byte) << shift;
     return true;
   }
 
  public:
   Decoder(const uint8_t* begin, const uint8_t* end, size_t offsetInModule,
-          UniqueChars* error, UniqueCharsVector* warnings = nullptr,
-          bool resilientMode = false)
+          UniqueChars* error, bool resilientMode = false)
       : beg_(begin),
         end_(end),
         cur_(begin),
         offsetInModule_(offsetInModule),
         error_(error),
-        warnings_(warnings),
         resilientMode_(resilientMode) {
     MOZ_ASSERT(begin <= end);
   }
   explicit Decoder(const Bytes& bytes, size_t offsetInModule = 0,
-                   UniqueChars* error = nullptr,
-                   UniqueCharsVector* warnings = nullptr)
+                   UniqueChars* error = nullptr)
       : beg_(bytes.begin()),
         end_(bytes.end()),
         cur_(bytes.begin()),
         offsetInModule_(offsetInModule),
         error_(error),
-        warnings_(warnings),
         resilientMode_(false) {}
 
   // These convenience functions use currentOffset() as the errorOffset.
   bool fail(const char* msg) { return fail(currentOffset(), msg); }
   bool failf(const char* msg, ...) MOZ_FORMAT_PRINTF(2, 3);
-  void warnf(const char* msg, ...) MOZ_FORMAT_PRINTF(2, 3);
 
   // Report an error at the given offset (relative to the whole module).
   bool fail(size_t errorOffset, const char* msg);
 
-  UniqueChars* error() { return error_; }
-
   void clearError() {
-    if (error_) {
-      error_->reset();
-    }
+    if (error_) error_->reset();
   }
 
   bool done() const {
@@ -575,6 +435,10 @@ class Decoder {
   MOZ_MUST_USE bool readFixedU32(uint32_t* u) { return read<uint32_t>(u); }
   MOZ_MUST_USE bool readFixedF32(float* f) { return read<float>(f); }
   MOZ_MUST_USE bool readFixedF64(double* d) { return read<double>(d); }
+  MOZ_MUST_USE bool readFixedI8x16(I8x16* i8x16) { return read<I8x16>(i8x16); }
+  MOZ_MUST_USE bool readFixedI16x8(I16x8* i16x8) { return read<I16x8>(i16x8); }
+  MOZ_MUST_USE bool readFixedI32x4(I32x4* i32x4) { return read<I32x4>(i32x4); }
+  MOZ_MUST_USE bool readFixedF32x4(F32x4* f32x4) { return read<F32x4>(f32x4); }
 
   // Variable-length encodings that all use LEB128.
 
@@ -586,89 +450,20 @@ class Decoder {
     return readVarU<uint64_t>(out);
   }
   MOZ_MUST_USE bool readVarS64(int64_t* out) { return readVarS<int64_t>(out); }
-
-  MOZ_MUST_USE ValType uncheckedReadValType() {
-    uint8_t code = uncheckedReadFixedU8();
-    switch (code) {
-      case uint8_t(ValType::Ref):
-        return ValType(ValType::Code(code), uncheckedReadVarU32());
-      default:
-        return ValType::Code(code);
-    }
-  }
-  MOZ_MUST_USE bool readValType(uint32_t numTypes, bool gcTypesEnabled,
-                                ValType* type) {
+  MOZ_MUST_USE bool readValType(uint8_t* type) {
     static_assert(uint8_t(TypeCode::Limit) <= UINT8_MAX, "fits");
-    uint8_t code;
-    if (!readFixedU8(&code)) {
-      return false;
-    }
-    switch (code) {
-      case uint8_t(ValType::I32):
-      case uint8_t(ValType::F32):
-      case uint8_t(ValType::F64):
-      case uint8_t(ValType::I64):
-        *type = ValType::Code(code);
-        return true;
-#ifdef ENABLE_WASM_REFTYPES
-      case uint8_t(ValType::AnyRef):
-        *type = ValType::Code(code);
-        return true;
-#  ifdef ENABLE_WASM_GC
-      case uint8_t(ValType::Ref): {
-        if (!gcTypesEnabled) {
-          return fail("(ref T) types not enabled");
-        }
-        uint32_t typeIndex;
-        if (!readVarU32(&typeIndex)) {
-          return false;
-        }
-        if (typeIndex >= numTypes) {
-          return fail("ref index out of range");
-        }
-        *type = ValType(ValType::Code(code), typeIndex);
-        return true;
-      }
-#  endif
-#endif
-      default:
-        return fail("bad type");
-    }
+    return readFixedU8(type);
   }
-  MOZ_MUST_USE bool readValType(const TypeDefVector& types, bool gcTypesEnabled,
-                                ValType* type) {
-    if (!readValType(types.length(), gcTypesEnabled, type)) {
-      return false;
-    }
-    if (type->isRef() && !types[type->refTypeIndex()].isStructType()) {
-      return fail("ref does not reference a struct type");
-    }
-    return true;
-  }
-  MOZ_MUST_USE bool readBlockType(uint8_t* code, uint32_t* refTypeIndex) {
+  MOZ_MUST_USE bool readBlockType(uint8_t* type) {
     static_assert(size_t(TypeCode::Limit) <= UINT8_MAX, "fits");
-    if (!readFixedU8(code)) {
-      return false;
-    }
-    if (*code == uint8_t(TypeCode::Ref)) {
-      if (!readVarU32(refTypeIndex)) {
-        return false;
-      }
-    } else {
-      *refTypeIndex = NoRefTypeIndex;
-    }
-    return true;
+    return readFixedU8(type);
   }
   MOZ_MUST_USE bool readOp(OpBytes* op) {
     static_assert(size_t(Op::Limit) == 256, "fits");
     uint8_t u8;
-    if (!readFixedU8(&u8)) {
-      return false;
-    }
+    if (!readFixedU8(&u8)) return false;
     op->b0 = u8;
-    if (MOZ_LIKELY(!IsPrefixByte(u8))) {
-      return true;
-    }
+    if (MOZ_LIKELY(!IsPrefixByte(u8))) return true;
     if (!readFixedU8(&u8)) {
       op->b1 = 0;  // Make it sane
       return false;
@@ -681,12 +476,8 @@ class Decoder {
 
   MOZ_MUST_USE bool readBytes(uint32_t numBytes,
                               const uint8_t** bytes = nullptr) {
-    if (bytes) {
-      *bytes = cur_;
-    }
-    if (bytesRemain() < numBytes) {
-      return false;
-    }
+    if (bytes) *bytes = cur_;
+    if (bytesRemain() < numBytes) return false;
     cur_ += numBytes;
     return true;
   }
@@ -708,7 +499,6 @@ class Decoder {
                                        size_t expectedLength,
                                        ModuleEnvironment* env,
                                        MaybeSectionRange* range);
-
   template <size_t NameSizeWith0>
   MOZ_MUST_USE bool startCustomSection(const char (&name)[NameSizeWith0],
                                        ModuleEnvironment* env,
@@ -716,10 +506,7 @@ class Decoder {
     MOZ_ASSERT(name[NameSizeWith0 - 1] == '\0');
     return startCustomSection(name, NameSizeWith0 - 1, env, range);
   }
-
-  void finishCustomSection(const char* name, const SectionRange& range);
-  void skipAndFinishCustomSection(const SectionRange& range);
-
+  void finishCustomSection(const SectionRange& range);
   MOZ_MUST_USE bool skipCustomSection(ModuleEnvironment* env);
 
   // The Name section has its own optional subsections.
@@ -727,7 +514,6 @@ class Decoder {
   MOZ_MUST_USE bool startNameSubsection(NameType nameType,
                                         Maybe<uint32_t>* endOffset);
   MOZ_MUST_USE bool finishNameSubsection(uint32_t endOffset);
-  MOZ_MUST_USE bool skipNameSubsection();
 
   // The infallible "unchecked" decoding functions can be used when we are
   // sure that the bytes are well-formed (by construction or due to previous
@@ -746,9 +532,7 @@ class Decoder {
     uint32_t shift = 0;
     do {
       uint8_t byte = *cur_++;
-      if (!(byte & 0x80)) {
-        return decoded | (UInt(byte) << shift);
-      }
+      if (!(byte & 0x80)) return decoded | (UInt(byte) << shift);
       decoded |= UInt(byte & 0x7f) << shift;
       shift += 7;
     } while (shift != numBitsInSevens);
@@ -768,10 +552,39 @@ class Decoder {
     MOZ_ALWAYS_TRUE(readVarS64(&i64));
     return i64;
   }
+  ValType uncheckedReadValType() { return (ValType)uncheckedReadFixedU8(); }
   Op uncheckedReadOp() {
     static_assert(size_t(Op::Limit) == 256, "fits");
     uint8_t u8 = uncheckedReadFixedU8();
     return u8 != UINT8_MAX ? Op(u8) : Op(uncheckedReadFixedU8() + UINT8_MAX);
+  }
+  void uncheckedReadFixedI8x16(I8x16* i8x16) {
+    struct T {
+      I8x16 v;
+    };
+    T t = uncheckedRead<T>();
+    memcpy(i8x16, &t, sizeof(t));
+  }
+  void uncheckedReadFixedI16x8(I16x8* i16x8) {
+    struct T {
+      I16x8 v;
+    };
+    T t = uncheckedRead<T>();
+    memcpy(i16x8, &t, sizeof(t));
+  }
+  void uncheckedReadFixedI32x4(I32x4* i32x4) {
+    struct T {
+      I32x4 v;
+    };
+    T t = uncheckedRead<T>();
+    memcpy(i32x4, &t, sizeof(t));
+  }
+  void uncheckedReadFixedF32x4(F32x4* f32x4) {
+    struct T {
+      F32x4 v;
+    };
+    T t = uncheckedRead<T>();
+    memcpy(f32x4, &t, sizeof(t));
   }
 };
 
@@ -780,16 +593,7 @@ class Decoder {
 
 MOZ_MUST_USE bool EncodeLocalEntries(Encoder& d, const ValTypeVector& locals);
 
-// This performs no validation; the local entries must already have been
-// validated by an earlier pass.
-
-MOZ_MUST_USE bool DecodeValidatedLocalEntries(Decoder& d,
-                                              ValTypeVector* locals);
-
-// This validates the entries.
-
-MOZ_MUST_USE bool DecodeLocalEntries(Decoder& d, const TypeDefVector& types,
-                                     bool gcTypesEnabled,
+MOZ_MUST_USE bool DecodeLocalEntries(Decoder& d, ModuleKind kind,
                                      ValTypeVector* locals);
 
 // Returns whether the given [begin, end) prefix of a module's bytecode starts a
@@ -815,8 +619,6 @@ MOZ_MUST_USE bool ValidateFunctionBody(const ModuleEnvironment& env,
                                        Decoder& d);
 
 MOZ_MUST_USE bool DecodeModuleTail(Decoder& d, ModuleEnvironment* env);
-
-void ConvertMemoryPagesToBytes(Limits* memory);
 
 // Validate an entire module, returning true if the module was validated
 // successfully. If Validate returns false:

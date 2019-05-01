@@ -1,6 +1,6 @@
 // Lazy scripts should correctly report line offsets
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger();
 
 g.eval("// Header comment\n" +   // <- line 6 in this file

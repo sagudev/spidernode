@@ -12,7 +12,6 @@ info: |
 
   1. Let valid be RequireObjectCoercible(value).
   2. ReturnIfAbrupt(valid).
-features: [destructuring-binding]
 ---*/
 
 function fn({}) {}

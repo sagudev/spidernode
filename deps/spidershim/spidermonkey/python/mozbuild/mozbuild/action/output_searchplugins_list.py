@@ -16,10 +16,8 @@ with open(sys.argv[1]) as f:
 engines = set()
 if locale in searchinfo["locales"]:
   for region, table in searchinfo["locales"][locale].iteritems():
-    if "visibleDefaultEngines" in table:
-      engines.update(table["visibleDefaultEngines"])
-
-if not engines:
+    engines.update(table["visibleDefaultEngines"])
+else:
   engines.update(searchinfo["default"]["visibleDefaultEngines"])
 
 # Get additional engines from regionOverrides

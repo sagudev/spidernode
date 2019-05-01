@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,9 +13,10 @@
 #include "jstypes.h"
 
 #include "gc/Barrier.h"
-#include "gc/Memory.h"
 #include "vm/ArrayBufferObject.h"
 #include "vm/JSObject.h"
+
+typedef struct JSProperty JSProperty;
 
 namespace js {
 
@@ -26,7 +27,7 @@ class FutexWaiter;
  *
  * A bookkeeping object always stored immediately before the raw buffer.
  * The buffer itself is mmap()'d and refcounted.
- * SharedArrayBufferObjects and structured clone objects may hold references.
+ * SharedArrayBufferObjects and AsmJS code may hold references.
  *
  *           |<------ sizeof ------>|<- length ->|
  *
@@ -39,6 +40,8 @@ class FutexWaiter;
  * else would have to change throughout the engine, the SARB would point to
  * the data array using a constant pointer, instead of computing its
  * address.
+ *
+ * If preparedForAsmJS_ is true then length_ never changes.
  *
  * If preparedForWasm_ is true then length_ can change following initialization;
  * it may grow toward maxSize_.  See extensive comments above WasmArrayRawBuffer
@@ -53,6 +56,7 @@ class SharedArrayRawBuffer {
   uint32_t length_;
   uint32_t maxSize_;
   size_t mappedSize_;  // Does not include the page for the header
+  bool preparedForAsmJS_;
   bool preparedForWasm_;
 
   // A list of structures representing tasks waiting on some
@@ -67,12 +71,14 @@ class SharedArrayRawBuffer {
 
  protected:
   SharedArrayRawBuffer(uint8_t* buffer, uint32_t length, uint32_t maxSize,
-                       size_t mappedSize, bool preparedForWasm)
+                       size_t mappedSize, bool preparedForAsmJS,
+                       bool preparedForWasm)
       : refcount_(1),
         lock_(mutexid::SharedArrayGrow),
         length_(length),
         maxSize_(maxSize),
         mappedSize_(mappedSize),
+        preparedForAsmJS_(preparedForAsmJS),
         preparedForWasm_(preparedForWasm),
         waiters_(nullptr) {
     MOZ_ASSERT(buffer == dataPointerShared());
@@ -118,6 +124,8 @@ class SharedArrayRawBuffer {
   uint32_t boundsCheckLimit() const { return mappedSize_ - wasm::GuardSize; }
 #endif
 
+  bool isPreparedForAsmJS() const { return preparedForAsmJS_; }
+
   bool isWasm() const { return preparedForWasm_; }
 
 #ifndef WASM_HUGE_MEMORY
@@ -162,9 +170,9 @@ class SharedArrayBufferObject : public ArrayBufferObjectMaybeShared {
   static const uint8_t RAWBUF_SLOT = 0;
 
   // LENGTH_SLOT holds the length of the underlying buffer as it was when this
-  // object was created.  For JS use cases this is the same length as the
-  // buffer, but for Wasm the buffer can grow, and the buffer's length may be
-  // greater than the object's length.
+  // object was created.  For JS and AsmJS use cases this is the same length
+  // as the buffer, but for Wasm the buffer can grow, and the buffer's length
+  // may be greater than the object's length.
   static const uint8_t LENGTH_SLOT = 1;
 
   static const uint8_t RESERVED_SLOTS = 2;
@@ -214,6 +222,9 @@ class SharedArrayBufferObject : public ArrayBufferObjectMaybeShared {
     return getReservedSlot(LENGTH_SLOT).toPrivateUint32();
   }
 
+  bool isPreparedForAsmJS() const {
+    return rawBufferObject()->isPreparedForAsmJS();
+  }
   bool isWasm() const { return rawBufferObject()->isWasm(); }
   SharedMem<uint8_t*> dataPointerShared() const {
     return rawBufferObject()->dataPointerShared();

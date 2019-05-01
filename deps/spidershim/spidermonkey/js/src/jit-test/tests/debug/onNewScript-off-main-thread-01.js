@@ -1,8 +1,9 @@
-// |jit-test| skip-if: helperThreadCount() === 0
-
 // We still get onNewScript notifications for code compiled off the main thread.
 
-var g = newGlobal({newCompartment: true});
+if (helperThreadCount() === 0)
+  quit(0);
+
+var g = newGlobal();
 var dbg = new Debugger(g);
 
 var log;

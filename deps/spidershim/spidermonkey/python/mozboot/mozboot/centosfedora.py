@@ -7,11 +7,10 @@ from __future__ import absolute_import
 import platform
 
 from mozboot.base import BaseBootstrapper
-from mozboot.linux_common import NasmInstall, NodeInstall, StyloInstall, ClangStaticAnalysisInstall
+from mozboot.linux_common import StyloInstall
 
 
-class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
-                               ClangStaticAnalysisInstall, BaseBootstrapper):
+class CentOSFedoraBootstrapper(StyloInstall, BaseBootstrapper):
     def __init__(self, distro, version, dist_id, **kwargs):
         BaseBootstrapper.__init__(self, **kwargs)
 
@@ -23,6 +22,7 @@ class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
 
         self.packages = [
             'autoconf213',
+            'mercurial',
             'nodejs',
             'npm',
             'which',
@@ -41,7 +41,6 @@ class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
                            # Development group.
             'libstdc++-static',
             'libXt-devel',
-            'nasm',
             'pulseaudio-libs-devel',
             'wireless-tools-devel',
             'yasm',
@@ -109,11 +108,9 @@ class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
         self.dnf_install(*self.browser_packages)
 
         if self.distro in ('CentOS', 'CentOS Linux'):
-            yasm = ('http://dl.fedoraproject.org/pub/epel/6/i386/'
-                    'Packages/y/yasm-1.2.0-1.el6.i686.rpm')
+            yasm = 'http://pkgs.repoforge.org/yasm/yasm-1.1.0-1.el6.rf.i686.rpm'
             if platform.architecture()[0] == '64bit':
-                yasm = ('http://dl.fedoraproject.org/pub/epel/6/x86_64/'
-                        'Packages/y/yasm-1.2.0-1.el6.x86_64.rpm')
+                yasm = 'http://pkgs.repoforge.org/yasm/yasm-1.1.0-1.el6.rf.x86_64.rpm'
 
             self.run_as_root(['rpm', '-ivh', yasm])
 
@@ -121,7 +118,6 @@ class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
         # Install Android specific packages.
         self.dnf_install(*self.mobile_android_packages)
 
-        self.ensure_java()
         from mozboot import android
         android.ensure_android('linux', artifact_mode=artifact_mode,
                                no_interactive=self.no_interactive)

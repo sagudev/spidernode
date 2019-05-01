@@ -26,10 +26,8 @@
  */
 
 // Forward declaration.
-/// \cond
 struct UHashtable;
 typedef struct UHashtable UHashtable;
-/// \endcond
 
 /**
  * Build options for BytesTrieBuilder and CharsTrieBuilder.
@@ -66,7 +64,7 @@ class U_COMMON_API StringTrieBuilder : public UObject {
 public:
 #ifndef U_HIDE_INTERNAL_API
     /** @internal */
-    static int32_t hashNode(const void *node);
+    static UBool hashNode(const void *node);
     /** @internal */
     static UBool equalNodes(const void *left, const void *right);
 #endif  /* U_HIDE_INTERNAL_API */
@@ -190,10 +188,7 @@ protected:
 
     // Do not conditionalize the following with #ifndef U_HIDE_INTERNAL_API,
     // it is needed for layout of other objects.
-    /**
-     * @internal
-     * \cond
-     */
+    /** @internal */
     class Node : public UObject {
     public:
         Node(int32_t initialHash) : hash(initialHash), offset(0) {}
@@ -396,9 +391,7 @@ protected:
         int32_t length;
         Node *next;  // A branch sub-node.
     };
-
 #endif  /* U_HIDE_INTERNAL_API */
-    /// \endcond
 
     /** @internal */
     virtual Node *createLinearMatchNode(int32_t i, int32_t unitIndex, int32_t length,

@@ -16,7 +16,7 @@ esid: sec-for-statement
 es6id: 13.7.4
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 for (let x; false; ) {
   var x;

@@ -1,6 +1,6 @@
 // |jit-test| error: ReferenceError
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new g.Debugger(this);
 
 (function() {

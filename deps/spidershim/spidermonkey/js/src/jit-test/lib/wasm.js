@@ -30,30 +30,6 @@ function wasmFailValidateText(str, pattern) {
     assertErrorMessage(() => new WebAssembly.Module(binary), WebAssembly.CompileError, pattern);
 }
 
-// Expected compilation failure can happen in a couple of ways:
-//
-// - The compiler can be available but not capable of recognizing some opcodes:
-//   Compilation will start, but will fail with a CompileError.  This is what
-//   happens without --wasm-gc if opcodes enabled by --wasm-gc are used.
-//
-// - The compiler can be unavailable: Compilation will not start at all but will
-//   throw an Error.  This is what happens with "--wasm-gc --wasm-compiler=X" if
-//   X does not support the features enabled by --wasm-gc.
-
-function wasmCompilationShouldFail(bin, compile_error_regex) {
-    try {
-        new WebAssembly.Module(bin);
-    } catch (e) {
-        if (e instanceof WebAssembly.CompileError) {
-            assertEq(compile_error_regex.test(e), true);
-        } else if (e instanceof Error) {
-            assertEq(/can't use wasm debug\/gc without baseline/.test(e), true);
-        } else {
-            throw new Error("Unexpected exception value:\n" + e);
-        }
-    }
-}
-
 function mismatchError(actual, expect) {
     var str = `type mismatch: expression has type ${actual} but expected ${expect}`;
     return RegExp(str);
@@ -140,6 +116,14 @@ function wasmFullPass(text, expected, maybeImports, ...args) {
     let instance = new WebAssembly.Instance(module, maybeImports);
     assertEq(typeof instance.exports.run, 'function', "A 'run' function must be exported.");
     assertEq(instance.exports.run(...args), expected, "Initial module must return the expected result.");
+
+    let retext = wasmBinaryToText(binary);
+    let rebinary = wasmTextToBinary(retext);
+
+    assertEq(WebAssembly.validate(rebinary), true, "Recreated binary must validate.");
+    let remodule = new WebAssembly.Module(rebinary);
+    let reinstance = new WebAssembly.Instance(remodule, maybeImports);
+    assertEq(reinstance.exports.run(...args), expected, "Reformed module must return the expected result");
 }
 
 // Ditto, but expects a function named '$run' instead of exported with this name.
@@ -150,10 +134,13 @@ function wasmFullPassI64(text, expected, maybeImports, ...args) {
     let augmentedSrc = _augmentSrc(text, [ { type: 'i64', func: '$run', args, expected } ]);
     let augmentedBinary = wasmTextToBinary(augmentedSrc);
     new WebAssembly.Instance(new WebAssembly.Module(augmentedBinary), maybeImports).exports.assert_0();
+
+    let retext = wasmBinaryToText(augmentedBinary);
+    new WebAssembly.Instance(new WebAssembly.Module(wasmTextToBinary(retext)), maybeImports).exports.assert_0();
 }
 
 function wasmRunWithDebugger(wast, lib, init, done) {
-    let g = newGlobal({newCompartment: true});
+    let g = newGlobal('');
     let dbg = new Debugger(g);
 
     g.eval(`
@@ -171,6 +158,19 @@ var m = new WebAssembly.Instance(new WebAssembly.Module(wasm), lib);`);
         error = ex;
     }
     done({dbg, result, error, wasmScript, g,});
+}
+
+function wasmGetScriptBreakpoints(wasmScript) {
+    var result = [];
+    var sourceText = wasmScript.source.text;
+    sourceText.split('\n').forEach(function (line, i) {
+        var lineOffsets = wasmScript.getLineOffsets(i + 1);
+        if (lineOffsets.length === 0)
+            return;
+        assertEq(lineOffsets.length, 1);
+        result.push({str: line.trim(), line: i + 1, offset: lineOffsets[0]});
+    });
+    return result;
 }
 
 const WasmHelpers = {};
@@ -269,17 +269,8 @@ WasmHelpers.assertEqImpreciseStacks = (got, expect) => {
     }
 }
 
-WasmHelpers.extractStackFrameFunction = (frameString) => {
-    var [_, name, filename, line, column] = frameString.match(/^(.*)@(.*):(.*):(.*)$/);
-    if (name)
-        return name;
-    if (/wasm-function/.test(line))
-        return line;
-    return "";
-};
-
 WasmHelpers.assertStackTrace = (exception, expected) => {
-    let callsites = exception.stack.trim().split('\n').map(WasmHelpers.extractStackFrameFunction);
+    let callsites = exception.stack.trim().split('\n').map(line => line.split('@')[0]);
     assertEq(callsites.length, expected.length);
     for (let i = 0; i < callsites.length; i++) {
         assertEq(callsites[i], expected[i]);

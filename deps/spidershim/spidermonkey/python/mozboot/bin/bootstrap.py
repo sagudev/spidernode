@@ -58,14 +58,14 @@ def setup_proxy():
         os.environ['http_proxy'] = os.environ['ALL_PROXY']
 
 
-def fetch_files(repo_url, repo_rev, repo_type):
+def fetch_files(repo_url, repo_type):
     setup_proxy()
     repo_url = repo_url.rstrip('/')
 
     files = {}
 
     if repo_type == 'hgweb':
-        url = repo_url + '/archive/%s.zip/python/mozboot' % repo_rev
+        url = repo_url + '/archive/default.zip/python/mozboot'
         req = urlopen(url=url, timeout=30)
         data = StringIO(req.read())
         data.seek(0)
@@ -87,7 +87,7 @@ def fetch_files(repo_url, repo_rev, repo_type):
     return files
 
 
-def ensure_environment(repo_url=None, repo_rev=None, repo_type=None):
+def ensure_environment(repo_url=None, repo_type=None):
     """Ensure we can load the Python modules necessary to perform bootstrap."""
 
     try:
@@ -108,7 +108,7 @@ def ensure_environment(repo_url=None, repo_rev=None, repo_type=None):
 
             # The next fallback is to download the files from the source
             # repository.
-            files = fetch_files(repo_url, repo_rev, repo_type)
+            files = fetch_files(repo_url, repo_type)
 
             # Install them into a temporary location. They will be deleted
             # after this script has finished executing.
@@ -133,17 +133,10 @@ def ensure_environment(repo_url=None, repo_rev=None, repo_type=None):
 
 def main(args):
     parser = OptionParser()
-    parser.add_option('--vcs', dest='vcs',
-                      default='hg',
-                      help='VCS (hg or git) to use for downloading the source code. '
-                      'Uses hg if omitted.')
     parser.add_option('-r', '--repo-url', dest='repo_url',
                       default='https://hg.mozilla.org/mozilla-central/',
                       help='Base URL of source control repository where bootstrap files can '
                       'be downloaded.')
-    parser.add_option('--repo-rev', dest='repo_rev',
-                      default='default',
-                      help='Revision of files in repository to fetch')
     parser.add_option('--repo-type', dest='repo_type',
                       default='hgweb',
                       help='The type of the repository. This defines how we fetch file '
@@ -159,16 +152,14 @@ def main(args):
 
     try:
         try:
-            cls = ensure_environment(options.repo_url, options.repo_rev,
-                                     options.repo_type)
+            cls = ensure_environment(options.repo_url, options.repo_type)
         except Exception as e:
             print('Could not load the bootstrap Python environment.\n')
             print('This should never happen. Consider filing a bug.\n')
             print('\n')
             print(e)
             return 1
-        dasboot = cls(choice=options.application_choice, no_interactive=options.no_interactive,
-                      vcs=options.vcs)
+        dasboot = cls(choice=options.application_choice, no_interactive=options.no_interactive)
         dasboot.bootstrap()
 
         return 0

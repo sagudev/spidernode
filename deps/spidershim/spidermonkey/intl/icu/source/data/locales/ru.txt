@@ -25,14 +25,13 @@ ru{
         default{"latn"}
         latn{
             miscPatterns{
-                approximately{"≈{0}"}
-                atLeast{"≥{0}"}
-                atMost{"≤{0}"}
+                atLeast{"⩾{0}"}
                 range{"{0}–{1}"}
             }
             patterns{
                 accountingFormat{"#,##0.00 ¤"}
                 currencyFormat{"#,##0.00 ¤"}
+                decimalFormat{"#,##0.###"}
                 percentFormat{"#,##0 %"}
                 scientificFormat{"#E0"}
             }
@@ -291,7 +290,7 @@ ru{
         minimumGroupingDigits{"1"}
         native{"latn"}
     }
-    Version{"2.1.48.42"}
+    Version{"2.1.37.58"}
     calendar{
         buddhist{
             eras{
@@ -308,10 +307,10 @@ ru{
         }
         chinese{
             DateTimePatterns{
-                "HH:mm:ss zzzz",
-                "HH:mm:ss z",
-                "HH:mm:ss",
-                "HH:mm",
+                "H:mm:ss zzzz",
+                "H:mm:ss z",
+                "H:mm:ss",
+                "H:mm",
                 "EEEE, d MMMM U",
                 "d MMMM U",
                 "dd.MM U",
@@ -450,6 +449,21 @@ ru{
                         "мисра",
                         "наси",
                     }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                    }
                     wide{
                         "тот",
                         "бабэ",
@@ -481,6 +495,21 @@ ru{
                         "абиб",
                         "мисра",
                         "наси",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
                     }
                     wide{
                         "тот",
@@ -532,6 +561,21 @@ ru{
                         "нахасэ",
                         "эпагомен",
                     }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                    }
                     wide{
                         "мескерем",
                         "текемт",
@@ -564,6 +608,21 @@ ru{
                         "нахасэ",
                         "эпагомен",
                     }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                    }
                     wide{
                         "мескерем",
                         "текемт",
@@ -584,10 +643,10 @@ ru{
         }
         generic{
             DateTimePatterns{
-                "HH:mm:ss zzzz",
-                "HH:mm:ss z",
-                "HH:mm:ss",
-                "HH:mm",
+                "H:mm:ss zzzz",
+                "H:mm:ss z",
+                "H:mm:ss",
+                "H:mm",
                 "EEEE, d MMMM y 'г'. G",
                 "d MMMM y 'г'. G",
                 "d MMM y 'г'. G",
@@ -642,53 +701,6 @@ ru{
                 yyyyQQQQ{"QQQQ y 'г'. G"}
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h–h B"}
-                }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm – h:mm B"}
-                    m{"h:mm – h:mm B"}
-                }
-                Gy{
-                    G{"y 'г'. G – y 'г'. G"}
-                    y{"y–y 'гг'. G"}
-                }
-                GyM{
-                    G{"MM.y G – MM.y G"}
-                    M{"MM.y – MM.y G"}
-                    y{"MM.y – MM.y G"}
-                }
-                GyMEd{
-                    G{"ccc, dd.MM.y G – ccc, dd.MM.y G"}
-                    M{"ccc, dd.MM.y – ccc, dd.MM.y G"}
-                    d{"ccc, dd.MM.y – ccc, dd.MM.y G"}
-                    y{"ccc, dd.MM.y – ccc, dd.MM.y G"}
-                }
-                GyMMM{
-                    G{"LLL y 'г'. G – LLL y 'г'. G"}
-                    M{"LLL – LLL y 'г'. G"}
-                    y{"LLL y – LLL y 'гг'. G"}
-                }
-                GyMMMEd{
-                    G{"ccc, d MMM y 'г'. G – ccc, d MMM y 'г'. G"}
-                    M{"ccc, d MMM – ccc, d MMM y 'г'. G"}
-                    d{"ccc, d MMM – ccc, d MMM y 'г'. G"}
-                    y{"ccc, d MMM y – ccc, d MMM y 'гг'. G"}
-                }
-                GyMMMd{
-                    G{"d MMM y 'г'. G – d MMM y 'г'. G"}
-                    M{"d MMM – d MMM y 'г'. G"}
-                    d{"d–d MMM y 'г'. G"}
-                    y{"d MMM y – d MMM y 'гг'. G"}
-                }
-                GyMd{
-                    G{"dd.MM.y G – dd.MM.y G"}
-                    M{"dd.MM.y – dd.MM.y G"}
-                    d{"dd.MM.y – dd.MM.y G"}
-                    y{"dd.MM.y – dd.MM.y G"}
-                }
                 H{
                     H{"H–H"}
                 }
@@ -801,10 +813,10 @@ ru{
                 "PM",
             }
             DateTimePatterns{
-                "HH:mm:ss zzzz",
-                "HH:mm:ss z",
-                "HH:mm:ss",
-                "HH:mm",
+                "H:mm:ss zzzz",
+                "H:mm:ss z",
+                "H:mm:ss",
+                "H:mm",
                 "EEEE, d MMMM y 'г'.",
                 "d MMMM y 'г'.",
                 "d MMM y 'г'.",
@@ -834,11 +846,11 @@ ru{
                 GyMMM{"LLL y G"}
                 GyMMMEd{"E, d MMM y 'г'. G"}
                 GyMMMd{"d MMM y 'г'. G"}
-                H{"HH"}
-                Hm{"HH:mm"}
-                Hms{"HH:mm:ss"}
-                Hmsv{"HH:mm:ss v"}
-                Hmv{"HH:mm v"}
+                H{"H"}
+                Hm{"H:mm"}
+                Hms{"H:mm:ss"}
+                Hmsv{"H:mm:ss v"}
+                Hmv{"H:mm v"}
                 M{"L"}
                 MEd{"E, dd.MM"}
                 MMM{"LLL"}
@@ -1021,17 +1033,9 @@ ru{
                     "до н. э.",
                     "н. э.",
                 }
-                abbreviated%variant{
-                    "BCE",
-                    "н. э.",
-                }
                 narrow{
                     "до н.э.",
                     "н.э.",
-                }
-                narrow%variant{
-                    "BCE",
-                    "н. э.",
                 }
                 wide{
                     "до Рождества Христова",
@@ -1043,66 +1047,19 @@ ru{
                 }
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h–h B"}
-                }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm – h:mm B"}
-                    m{"h:mm – h:mm B"}
-                }
-                Gy{
-                    G{"y 'г'. G – y 'г'. G"}
-                    y{"y–y 'гг'. G"}
-                }
-                GyM{
-                    G{"MM.y G – MM.y G"}
-                    M{"MM.y – MM.y G"}
-                    y{"MM.y – MM.y G"}
-                }
-                GyMEd{
-                    G{"ccc, dd.MM.y G – ccc, dd.MM.y G"}
-                    M{"ccc, dd.MM.y – ccc, dd.MM.y G"}
-                    d{"ccc, dd.MM.y – ccc, dd.MM.y G"}
-                    y{"ccc, dd.MM.y – ccc, dd.MM.y G"}
-                }
-                GyMMM{
-                    G{"LLL y 'г'. G – LLL y 'г'. G"}
-                    M{"LLL – LLL y 'г'. G"}
-                    y{"LLL y – LLL y 'гг'. G"}
-                }
-                GyMMMEd{
-                    G{"ccc, d MMM y 'г'. G – ccc, d MMM y 'г'. G"}
-                    M{"ccc, d MMM – ccc, d MMM y 'г'. G"}
-                    d{"ccc, d MMM – ccc, d MMM y 'г'. G"}
-                    y{"ccc, d MMM y – ccc, d MMM y 'гг'. G"}
-                }
-                GyMMMd{
-                    G{"d MMM y 'г'. G – d MMM y 'г'. G"}
-                    M{"d MMM – d MMM y 'г'. G"}
-                    d{"d–d MMM y 'г'. G"}
-                    y{"d MMM y – d MMM y 'гг'. G"}
-                }
-                GyMd{
-                    G{"dd.MM.y G – dd.MM.y G"}
-                    M{"dd.MM.y – dd.MM.y G"}
-                    d{"dd.MM.y – dd.MM.y G"}
-                    y{"dd.MM.y – dd.MM.y G"}
-                }
                 H{
-                    H{"HH–HH"}
+                    H{"H–H"}
                 }
                 Hm{
-                    H{"HH:mm–HH:mm"}
-                    m{"HH:mm–HH:mm"}
+                    H{"H:mm–H:mm"}
+                    m{"H:mm–H:mm"}
                 }
                 Hmv{
-                    H{"HH:mm–HH:mm v"}
-                    m{"HH:mm–HH:mm v"}
+                    H{"H:mm–H:mm v"}
+                    m{"H:mm–H:mm v"}
                 }
                 Hv{
-                    H{"HH–HH v"}
+                    H{"H–H v"}
                 }
                 M{
                     M{"M–M"}
@@ -1322,6 +1279,12 @@ ru{
         }
         hebrew{
             eras{
+                abbreviated{
+                    "AM",
+                }
+                narrow{
+                    "AM",
+                }
                 wide{
                     "от сотворения мира",
                 }
@@ -1343,6 +1306,22 @@ ru{
                         "ав",
                         "элул",
                         "адар II",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                        "7",
                     }
                     wide{
                         "тишрей",
@@ -1377,6 +1356,22 @@ ru{
                         "ав",
                         "элул",
                         "адар II",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                        "7",
                     }
                     wide{
                         "тишрей",
@@ -1425,6 +1420,20 @@ ru{
                         "магха",
                         "пхалгуна",
                     }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                    }
                     wide{
                         "чайтра",
                         "ваисакха",
@@ -1455,6 +1464,20 @@ ru{
                         "магха",
                         "пхалгуна",
                     }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                    }
                     wide{
                         "чайтра",
                         "ваисакха",
@@ -1474,6 +1497,12 @@ ru{
         }
         islamic{
             eras{
+                abbreviated{
+                    "AH",
+                }
+                narrow{
+                    "AH",
+                }
                 wide{
                     "после хиджры",
                 }
@@ -1493,6 +1522,20 @@ ru{
                         "шав.",
                         "зуль-к.",
                         "зуль-х.",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
                     }
                     wide{
                         "мухаррам",
@@ -1523,6 +1566,20 @@ ru{
                         "шав.",
                         "зуль-к.",
                         "зуль-х.",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
                     }
                     wide{
                         "мухаррам",
@@ -1780,7 +1837,7 @@ ru{
                     "Эпоха Тайсьо",
                     "Сьова",
                     "Эпоха Хэйсэй",
-                    "Qqqq",
+                    "Рэйва",
                 }
             }
         }
@@ -1812,6 +1869,20 @@ ru{
                         "бахман",
                         "эсфанд",
                     }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                    }
                     wide{
                         "фарвардин",
                         "ордибехешт",
@@ -1841,6 +1912,20 @@ ru{
                         "дей",
                         "бахман",
                         "эсфанд",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
                     }
                     wide{
                         "фарвардин",
@@ -1878,8 +1963,8 @@ ru{
     }
     characterLabel{
         activities{"занятия"}
-        african_scripts{"письменности Африки"}
-        american_scripts{"письменности Америки"}
+        african_scripts{"африканская письменность"}
+        american_scripts{"американская письменность"}
         animal{"животные"}
         animals_nature{"животные и природа"}
         arrows{"стрелки"}
@@ -1888,7 +1973,7 @@ ru{
         braille{"шрифт Брайля"}
         building{"здания"}
         bullets_stars{"маркеры списка/звезды"}
-        consonantal_jamo{"согласные чамо"}
+        consonantal_jamo{"согласные джамо"}
         currency_symbols{"символы валюты"}
         dash_connector{"тире/связка"}
         digits{"цифры"}
@@ -1896,11 +1981,11 @@ ru{
         divination_symbols{"оккультные символы"}
         downwards_arrows{"стрелки вниз"}
         downwards_upwards_arrows{"стрелки вверх и вниз"}
-        east_asian_scripts{"письменности Восточной Азии"}
+        east_asian_scripts{"восточноазиатская письменность"}
         emoji{"эмодзи"}
-        european_scripts{"письменности Европы"}
+        european_scripts{"европейская письменность"}
         female{"женщины"}
-        flag{"флаг"}
+        flag{"флаги"}
         flags{"флаги"}
         food_drink{"еда и напитки"}
         format{"форматирование"}
@@ -1926,10 +2011,10 @@ ru{
         limited_use{"ограниченное использование"}
         male{"мужчины"}
         math_symbols{"математические символы"}
-        middle_eastern_scripts{"письменности Среднего Востока"}
+        middle_eastern_scripts{"центрально-восточная письменность"}
         miscellaneous{"разное"}
         modern_scripts{"современная письменность"}
-        modifier{"модификаторы"}
+        modifier{"модификатор"}
         musical_symbols{"музыкальные символы"}
         nature{"природа"}
         nonspacing{"непротяженные символы"}
@@ -1948,9 +2033,9 @@ ru{
         small_form_variant{"маленькие варианты формы"}
         smiley{"смайлики"}
         smileys_people{"смайлики и люди"}
-        south_asian_scripts{"письменности Южной Азии"}
-        southeast_asian_scripts{"письменности Юго-Восточной Азии"}
-        spacing{"промежутки"}
+        south_asian_scripts{"южноазиатская письменность"}
+        southeast_asian_scripts{"письменность Юго-Восточной Азии"}
+        spacing{"пробелы"}
         sport{"спорт"}
         symbols{"символы"}
         technical_symbols{"технические символы"}
@@ -1959,9 +2044,9 @@ ru{
         travel_places{"путешествия и места"}
         upwards_arrows{"стрелки вверх"}
         variant_forms{"вариативные формы"}
-        vocalic_jamo{"гласные чамо"}
+        vocalic_jamo{"гласные джамо"}
         weather{"погода"}
-        western_asian_scripts{"письменности Западной Азии"}
+        western_asian_scripts{"западноазиатская письменность"}
         whitespace{"пробелы"}
     }
     contextTransforms{
@@ -2006,10 +2091,6 @@ ru{
             1,
         }
         script:intvector{
-            1,
-            1,
-        }
-        typographicNames:intvector{
             1,
             1,
         }
@@ -3037,12 +3118,6 @@ ru{
             middle{"{0}, {1}"}
             start{"{0}, {1}"}
         }
-        standard-narrow{
-            2{"{0}, {1}"}
-            end{"{0}, {1}"}
-            middle{"{0}, {1}"}
-            start{"{0}, {1}"}
-        }
         standard-short{
             2{"{0} и {1}"}
             end{"{0} и {1}"}
@@ -3083,13 +3158,8 @@ ru{
         general{
             lenient{
                 "[.․。︒﹒．｡]",
-                "['ʼ՚᾽᾿’＇]",
-                "[%٪﹪％]",
-                "[؉‰]",
                 "[\$﹩＄$]",
                 "[£₤]",
-                "[¥￥]",
-                "[₩￦]",
                 "[₨₹{Rp}{Rs}]",
             }
         }

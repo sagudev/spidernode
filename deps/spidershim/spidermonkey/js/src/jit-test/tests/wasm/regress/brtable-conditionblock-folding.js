@@ -9,7 +9,7 @@ assertEq(wasmEvalText(`
         br_table $out $out
       end
     end
-    local.get $p
+    get_local $p
     br_if 0
   )
   (export "f" $f)

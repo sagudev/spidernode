@@ -19,11 +19,10 @@ info: |
 includes: [propertyHelper.js]
 ---*/
 
-verifyProperty(Intl.NumberFormat, 'name', {
-  value: 'NumberFormat',
-  writable: false,
-  enumerable: false,
-  configurable: true
-});
+assert.sameValue(Intl.NumberFormat.name, "NumberFormat");
+
+verifyNotEnumerable(Intl.NumberFormat, "name");
+verifyNotWritable(Intl.NumberFormat, "name");
+verifyConfigurable(Intl.NumberFormat, "name");
 
 reportCompare(0, 0);

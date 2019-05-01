@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -171,9 +171,7 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   // operations, as it will not create new SSA names for copies.
   void initSlot(uint32_t slot, MDefinition* ins) {
     slots_[slot] = ins;
-    if (entryResumePoint()) {
-      entryResumePoint()->initOperand(slot, ins);
-    }
+    if (entryResumePoint()) entryResumePoint()->initOperand(slot, ins);
   }
 
   // Discard the slot at the given depth, lowering all slots above.
@@ -382,9 +380,7 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
     MOZ_ASSERT(!block->successorWithPhis());
 
     for (size_t i = 0; i < predecessors_.length(); i++) {
-      if (predecessors_[i] == block) {
-        return i;
-      }
+      if (predecessors_[i] == block) return i;
     }
     MOZ_CRASH();
   }
@@ -425,12 +421,9 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
   bool hasUniqueBackedge() const {
     MOZ_ASSERT(isLoopHeader());
     MOZ_ASSERT(numPredecessors() >= 2);
-    if (numPredecessors() == 2) {
-      return true;
-    }
-    if (numPredecessors() == 3) {  // fixup block added by ValueNumbering phase.
+    if (numPredecessors() == 2) return true;
+    if (numPredecessors() == 3)  // fixup block added by ValueNumbering phase.
       return getPredecessor(1)->numPredecessors() == 0;
-    }
     return false;
   }
   MBasicBlock* backedge() const {
@@ -446,9 +439,7 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock> {
     return getPredecessor(0);
   }
   bool isLoopBackedge() const {
-    if (!numSuccessors()) {
-      return false;
-    }
+    if (!numSuccessors()) return false;
     MBasicBlock* lastSuccessor = getSuccessor(numSuccessors() - 1);
     return lastSuccessor->isLoopHeader() &&
            lastSuccessor->hasUniqueBackedge() &&
@@ -747,6 +738,8 @@ class MIRGraph {
   void insertBlockAfter(MBasicBlock* at, MBasicBlock* block);
   void insertBlockBefore(MBasicBlock* at, MBasicBlock* block);
 
+  void renumberBlocksAfter(MBasicBlock* at);
+
   void unmarkBlocks();
 
   void setReturnAccumulator(MIRGraphReturns* accum) {
@@ -755,9 +748,7 @@ class MIRGraph {
   MIRGraphReturns* returnAccumulator() const { return returnAccumulator_; }
 
   MOZ_MUST_USE bool addReturn(MBasicBlock* returnBlock) {
-    if (!returnAccumulator_) {
-      return true;
-    }
+    if (!returnAccumulator_) return true;
 
     return returnAccumulator_->append(returnBlock);
   }
@@ -797,6 +788,12 @@ class MIRGraph {
   uint32_t getNumInstructionIds() { return idGen_; }
   MResumePoint* entryResumePoint() { return entryBlock()->entryResumePoint(); }
 
+  void copyIds(const MIRGraph& other) {
+    idGen_ = other.idGen_;
+    blockIdGen_ = other.blockIdGen_;
+    numBlocks_ = other.numBlocks_;
+  }
+
   void setOsrBlock(MBasicBlock* osrBlock) {
     MOZ_ASSERT(!osrBlock_);
     osrBlock_ = osrBlock;
@@ -833,9 +830,7 @@ class MDefinitionIterator {
   bool atPhi() const { return phiIter_ != block_->phisEnd(); }
 
   MDefinition* getIns() {
-    if (atPhi()) {
-      return *phiIter_;
-    }
+    if (atPhi()) return *phiIter_;
     return *iter_;
   }
 
@@ -847,11 +842,10 @@ class MDefinitionIterator {
 
   MDefinitionIterator operator++() {
     MOZ_ASSERT(more());
-    if (atPhi()) {
+    if (atPhi())
       ++phiIter_;
-    } else {
+    else
       ++iter_;
-    }
     return *this;
   }
 
@@ -888,17 +882,13 @@ class MNodeIterator {
   bool atResumePoint() const { return last_ && !last_->isDiscarded(); }
 
   MNode* getNode() {
-    if (!atResumePoint()) {
-      return *defIter_;
-    }
+    if (!atResumePoint()) return *defIter_;
 
     // We use the last instruction as a sentinelle to iterate over the entry
     // resume point of the basic block, before even starting to iterate on
     // the instruction list.  Otherwise, the last_ corresponds to the
     // previous instruction.
-    if (last_ != block()->lastIns()) {
-      return last_->resumePoint();
-    }
+    if (last_ != block()->lastIns()) return last_->resumePoint();
     return block()->entryResumePoint();
   }
 
@@ -933,9 +923,7 @@ class MNodeIterator {
 
   MNodeIterator operator++(int) {
     MNodeIterator old(*this);
-    if (more()) {
-      next();
-    }
+    if (more()) next();
     return old;
   }
 

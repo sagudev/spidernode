@@ -3,7 +3,7 @@
 // Any copyright is dedicated to the Public Domain.
 // http://creativecommons.org/licenses/publicdomain/
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new g.Debugger(this);
 
 if (typeof evalInFrame === 'function') {

@@ -1,6 +1,6 @@
 // Debug.Object.prototype.defineProperties.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger;
 var gw = dbg.addDebuggee(g);
 

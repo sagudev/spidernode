@@ -3,7 +3,7 @@
  * should be the same string for each child script sharing that
  * Debugger.Source.
  */
-let g = newGlobal({newCompartment: true});
+let g = newGlobal();
 let dbg = new Debugger(g);
 
 var count = 0;

@@ -16,18 +16,9 @@ info: |
 
     Trailing comma in the arguments list
 
-    Left-Hand-Side Expressions
+    12.3 Left-Hand-Side Expressions
 
-    Arguments :
-        ( )
-        ( ArgumentList )
-        ( ArgumentList , )
-
-    ArgumentList :
-        AssignmentExpression
-        ... AssignmentExpression
-        ArgumentList , AssignmentExpression
-        ArgumentList , ... AssignmentExpression
+    Arguments[Yield, Await] : ( ArgumentList[?Yield, ?Await] , )
 ---*/
 
 

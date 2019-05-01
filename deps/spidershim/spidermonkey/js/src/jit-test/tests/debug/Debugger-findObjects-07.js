@@ -1,6 +1,6 @@
 // findObjects can filter objects by class name.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 
 var dbg = new Debugger();
 var gw = dbg.addDebuggee(g);

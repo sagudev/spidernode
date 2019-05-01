@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -83,9 +83,7 @@ class InlineForwardList : protected InlineForwardListNode<T> {
 #ifdef DEBUG
     modifyCount_++;
 #endif
-    if (at == tail_) {
-      tail_ = item;
-    }
+    if (at == tail_) tail_ = item;
     item->next = at->next;
     at->next = item;
   }
@@ -93,9 +91,7 @@ class InlineForwardList : protected InlineForwardListNode<T> {
 #ifdef DEBUG
     modifyCount_++;
 #endif
-    if (item == tail_) {
-      tail_ = at;
-    }
+    if (item == tail_) tail_ = at;
     MOZ_ASSERT(at->next == item);
     at->next = item->next;
     item->next = nullptr;
@@ -106,21 +102,15 @@ class InlineForwardList : protected InlineForwardListNode<T> {
     // the list.
     Node* item = where.iter;
     where.iter = item->next;
-    if (item == tail_) {
-      tail_ = where.prev;
-    }
+    if (item == tail_) tail_ = where.prev;
     MOZ_ASSERT(where.prev->next == item);
     where.prev->next = where.iter;
     item->next = nullptr;
   }
   void splitAfter(Node* at, InlineForwardList<T>* to) {
     MOZ_ASSERT(to->empty());
-    if (!at) {
-      at = this;
-    }
-    if (at == tail_) {
-      return;
-    }
+    if (!at) at = this;
+    if (at == tail_) return;
 #ifdef DEBUG
     modifyCount_++;
 #endif
@@ -430,9 +420,10 @@ class InlineListReverseIterator {
   Node* iter;
 };
 
-// This list type is more or less exactly an InlineForwardList without a
-// sentinel node. It is useful in cases where you are doing algorithms that deal
-// with many merging singleton lists, rather than often empty ones.
+/* This list type is more or less exactly an InlineForwardList without a
+ * sentinel node. It is useful in cases where you are doing algorithms that deal
+ * with many merging singleton lists, rather than often empty ones.
+ */
 template <typename T>
 class InlineConcatListIterator;
 template <typename T>

@@ -1,6 +1,9 @@
-// |jit-test| skip-if: !wasmStreamingIsSupported()
-
-load(libdir + "wasm-binary.js");
+try {
+    WebAssembly.compileStreaming();
+} catch (err) {
+    assertEq(String(err).indexOf("not supported with --no-threads") !== -1, true);
+    quit();
+}
 
 function testInstantiate(source, importObj, exportName, expectedValue) {
     var result;
@@ -91,6 +94,3 @@ var mem = new WebAssembly.Memory({initial:1});
 WebAssembly.instantiateStreaming(code, {js:{mem}});
 drainJobQueue();
 assertEq(new Uint8Array(mem.buffer)[0], 97);
-
-// Junk section before code section.
-testFailBoth(moduleWithSections([{name: 100, body: [1, 2, 3]}, bodySection([])]), WebAssembly.CompileError);

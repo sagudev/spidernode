@@ -1,19 +1,19 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "jit/Bailouts.h"
-#include "jit/JitRealm.h"
+#include "jit/JitCompartment.h"
+#include "vm/JSCompartment.h"
 #include "vm/JSContext.h"
-#include "vm/Realm.h"
 
 using namespace js;
 using namespace js::jit;
 
 #if defined(_WIN32)
-#  pragma pack(push, 1)
+#pragma pack(push, 1)
 #endif
 
 namespace js {
@@ -38,9 +38,7 @@ class BailoutStack {
     return tableOffset_;
   }
   uint32_t frameSize() const {
-    if (frameClass() == FrameSizeClass::None()) {
-      return frameSize_;
-    }
+    if (frameClass() == FrameSizeClass::None()) return frameSize_;
     return frameClass().frameSize();
   }
   MachineState machine() { return MachineState::FromBailout(regs_, fpregs_); }
@@ -49,9 +47,8 @@ class BailoutStack {
     return snapshotOffset_;
   }
   uint8_t* parentStackPointer() const {
-    if (frameClass() == FrameSizeClass::None()) {
+    if (frameClass() == FrameSizeClass::None())
       return (uint8_t*)this + sizeof(BailoutStack);
-    }
     return (uint8_t*)this + offsetof(BailoutStack, snapshotOffset_);
   }
 };
@@ -60,7 +57,7 @@ class BailoutStack {
 }  // namespace js
 
 #if defined(_WIN32)
-#  pragma pack(pop)
+#pragma pack(pop)
 #endif
 
 BailoutFrameInfo::BailoutFrameInfo(const JitActivationIterator& activations,
@@ -83,7 +80,8 @@ BailoutFrameInfo::BailoutFrameInfo(const JitActivationIterator& activations,
   }
 
   // Compute the snapshot offset from the bailout ID.
-  JSRuntime* rt = activation->compartment()->runtimeFromMainThread();
+  JSRuntime* rt =
+      activation->compartment()->runtimeFromActiveCooperatingThread();
   TrampolinePtr code = rt->jitRuntime()->getBailoutTable(bailout->frameClass());
 #ifdef DEBUG
   uint32_t tableSize =

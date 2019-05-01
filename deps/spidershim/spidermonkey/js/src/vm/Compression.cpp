@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,8 +30,7 @@ Compressor::Compressor(const unsigned char* inp, size_t inplen)
       finished(false),
       currentChunkSize(0),
       chunkOffsets() {
-  MOZ_ASSERT(inplen > 0, "data to compress can't be empty");
-
+  MOZ_ASSERT(inplen > 0);
   zs.opaque = nullptr;
   zs.next_in = (Bytef*)inp;
   zs.avail_in = 0;
@@ -39,13 +38,6 @@ Compressor::Compressor(const unsigned char* inp, size_t inplen)
   zs.avail_out = 0;
   zs.zalloc = zlib_alloc;
   zs.zfree = zlib_free;
-  zs.total_in = 0;
-  zs.total_out = 0;
-  zs.msg = nullptr;
-  zs.state = nullptr;
-  zs.data_type = 0;
-  zs.adler = 0;
-  zs.reserved = 0;
 
   // Reserve space for the CompressedDataHeader.
   outbytes = sizeof(CompressedDataHeader);
@@ -68,9 +60,7 @@ Compressor::~Compressor() {
 static const int WindowBits = -15;
 
 bool Compressor::init() {
-  if (inplen >= UINT32_MAX) {
-    return false;
-  }
+  if (inplen >= UINT32_MAX) return false;
   // zlib is slow and we'd rather be done compression sooner
   // even if it means decompression is slower which penalizes
   // Function.toString()
@@ -93,11 +83,10 @@ void Compressor::setOutput(unsigned char* out, size_t outlen) {
 Compressor::Status Compressor::compressMore() {
   MOZ_ASSERT(zs.next_out);
   uInt left = inplen - (zs.next_in - inp);
-  if (left <= MAX_INPUT_SIZE) {
+  if (left <= MAX_INPUT_SIZE)
     zs.avail_in = left;
-  } else if (zs.avail_in == 0) {
+  else if (zs.avail_in == 0)
     zs.avail_in = MAX_INPUT_SIZE;
-  }
 
   // Finish the current chunk if needed.
   bool flush = false;
@@ -134,9 +123,7 @@ Compressor::Status Compressor::compressMore() {
   if (done || currentChunkSize == CHUNK_SIZE) {
     MOZ_ASSERT_IF(!done, flush);
     MOZ_ASSERT(chunkSize(inplen, chunkOffsets.length()) == currentChunkSize);
-    if (!chunkOffsets.append(outbytes)) {
-      return OOM;
-    }
+    if (!chunkOffsets.append(outbytes)) return OOM;
     currentChunkSize = 0;
     MOZ_ASSERT_IF(done, chunkOffsets.length() == (inplen - 1) / CHUNK_SIZE + 1);
   }
@@ -250,9 +237,7 @@ bool js::DecompressStringChunk(const unsigned char* inp, size_t chunk,
     MOZ_RELEASE_ASSERT(ret == Z_STREAM_END);
   } else {
     ret = inflate(&zs, Z_NO_FLUSH);
-    if (ret == Z_MEM_ERROR) {
-      return false;
-    }
+    if (ret == Z_MEM_ERROR) return false;
     MOZ_RELEASE_ASSERT(ret == Z_OK);
   }
   MOZ_ASSERT(zs.avail_in == 0);

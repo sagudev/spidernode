@@ -91,7 +91,7 @@ zh_Hant_HK{
             }
         }
     }
-    Version{"2.1.47.86"}
+    Version{"2.1.37.6"}
     calendar{
         buddhist{
             availableFormats{
@@ -336,6 +336,7 @@ zh_Hant_HK{
                         evening1{"晚上"}
                         midnight{"午夜"}
                         morning1{"早上"}
+                        morning2{"上午"}
                         night1{"凌晨"}
                     }
                     narrow{
@@ -344,6 +345,7 @@ zh_Hant_HK{
                         evening1{"晚上"}
                         midnight{"午夜"}
                         morning1{"早上"}
+                        morning2{"上午"}
                         night1{"凌晨"}
                     }
                     wide{
@@ -352,6 +354,7 @@ zh_Hant_HK{
                         evening1{"晚上"}
                         midnight{"午夜"}
                         morning1{"早上"}
+                        morning2{"上午"}
                         night1{"凌晨"}
                     }
                 }
@@ -361,6 +364,7 @@ zh_Hant_HK{
                         afternoon2{"下午"}
                         evening1{"晚上"}
                         morning1{"早上"}
+                        morning2{"上午"}
                         night1{"凌晨"}
                     }
                     narrow{
@@ -368,6 +372,7 @@ zh_Hant_HK{
                         afternoon2{"下午"}
                         evening1{"晚上"}
                         morning1{"早上"}
+                        morning2{"上午"}
                         night1{"凌晨"}
                     }
                     wide{
@@ -375,16 +380,13 @@ zh_Hant_HK{
                         afternoon2{"下午"}
                         evening1{"晚上"}
                         morning1{"早上"}
+                        morning2{"上午"}
                         night1{"凌晨"}
                     }
                 }
             }
             eras{
                 abbreviated{
-                    "公元前",
-                    "公元",
-                }
-                narrow{
                     "公元前",
                     "公元",
                 }

@@ -17,8 +17,8 @@ function test(name, fn) {
   print(name);
 
   // Reset state.
-  root1 = newGlobal({newCompartment: true});
-  root2 = newGlobal({newCompartment: true});
+  root1 = newGlobal();
+  root2 = newGlobal();
   dbg1 = new Debugger;
   dbg2 = new Debugger;
 

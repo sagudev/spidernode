@@ -4,7 +4,7 @@
 
 //! Rust wrappers around the raw JS apis
 
-use ar::AutoRealm;
+use ac::AutoCompartment;
 use libc::c_uint;
 use std::cell::{Cell, UnsafeCell};
 use std::char;
@@ -22,8 +22,8 @@ use std::sync::mpsc::{SyncSender, sync_channel};
 use std::thread;
 use jsapi::root::*;
 use jsval::{self, UndefinedValue};
-use glue::{CreateRootedObjectVector, CreateCallArgsFromVp, AppendToRootedObjectVector, DeleteRootedObjectVector, IsDebugBuild};
-use glue::{CreateRootedIdVector, SliceRootedIdVector, DestroyRootedIdVector, GetMutableHandleIdVector};
+use glue::{CreateAutoObjectVector, CreateCallArgsFromVp, AppendToAutoObjectVector, DeleteAutoObjectVector, IsDebugBuild};
+use glue::{CreateAutoIdVector, SliceAutoIdVector, DestroyAutoIdVector};
 use glue::{NewCompileOptions, DeleteCompileOptions};
 use panic;
 
@@ -189,12 +189,14 @@ impl Runtime {
             });
 
             if use_internal_job_queue {
-                assert!(js::UseInternalJobQueues(js_context));
+                assert!(js::UseInternalJobQueues(js_context, false));
             }
 
             JS::InitSelfHostedCode(js_context);
 
             JS::SetWarningReporter(js_context, Some(report_warning));
+
+            JS_BeginRequest(js_context);
 
             Ok(Runtime {
                 cx: js_context,
@@ -229,16 +231,10 @@ impl Runtime {
         };
         assert!(!ptr.is_null());
         unsafe {
-            let _ar = AutoRealm::with_obj(self.cx(), glob.get());
+            let _ac = AutoCompartment::with_obj(self.cx(), glob.get());
             let options = CompileOptionsWrapper::new(self.cx(), filename_cstr.as_ptr(), line_num);
 
-            let mut srcBuf = JS::SourceText {
-                units_: ptr,
-                length_: len as _,
-                ownsUnits_: false,
-                _phantom_0: marker::PhantomData
-            };
-            if !JS::Evaluate(self.cx(), options.ptr, &mut srcBuf, rval) {
+            if !JS::Evaluate2(self.cx(), options.ptr, ptr as *const u16, len as _, rval) {
                 debug!("...err!");
                 panic::maybe_resume_unwind();
                 Err(())
@@ -255,6 +251,7 @@ impl Runtime {
 impl Drop for Runtime {
     fn drop(&mut self) {
         unsafe {
+            JS_EndRequest(self.cx);
             JS_DestroyContext(self.cx);
 
             CONTEXT.with(|context| {
@@ -307,12 +304,6 @@ impl RootKind for *mut JSString {
 impl RootKind for *mut JS::Symbol {
     #[inline(always)]
     fn rootKind() -> JS::RootKind { JS::RootKind::Symbol }
-}
-
-#[cfg(feature = "bigint")]
-impl RootKind for *mut JS::BigInt {
-    #[inline(always)]
-    fn rootKind() -> JS::RootKind { JS::RootKind::BigInt }
 }
 
 impl RootKind for *mut JSScript {
@@ -550,8 +541,8 @@ impl JS::HandleObject {
 
 impl Default for jsid {
     fn default() -> jsid {
-        jsid {
-            asBits: JSID_TYPE_VOID as usize,
+        unsafe {
+            JSID_VOID
         }
     }
 }
@@ -560,7 +551,7 @@ impl Default for JS::Value {
     fn default() -> JS::Value { jsval::UndefinedValue() }
 }
 
-impl Default for JS::RealmOptions {
+impl Default for JS::CompartmentOptions {
     fn default() -> Self { unsafe { ::std::mem::zeroed() } }
 }
 
@@ -572,43 +563,37 @@ const ChunkLocationOffset: usize = ChunkSize - 2 * 4 - 8;
 
 pub trait GCMethods {
     unsafe fn initial() -> Self;
-    unsafe fn write_barriers(v: *mut Self, prev: Self, next: Self);
+    unsafe fn post_barrier(v: *mut Self, prev: Self, next: Self);
 }
 
 impl GCMethods for jsid {
-    unsafe fn initial() -> jsid { Default::default() }
-    unsafe fn write_barriers(_: *mut jsid, _: jsid, _: jsid) {}
+    unsafe fn initial() -> jsid { JSID_VOID }
+    unsafe fn post_barrier(_: *mut jsid, _: jsid, _: jsid) {}
 }
 
 impl GCMethods for *mut JSObject {
     unsafe fn initial() -> *mut JSObject { ptr::null_mut() }
-    unsafe fn write_barriers(v: *mut *mut JSObject,
+    unsafe fn post_barrier(v: *mut *mut JSObject,
                            prev: *mut JSObject, next: *mut JSObject) {
-        JS::HeapObjectWriteBarriers(v, prev, next);
+        JS::HeapObjectPostBarrier(v, prev, next);
     }
 }
 
 impl GCMethods for *mut JSString {
     unsafe fn initial() -> *mut JSString { ptr::null_mut() }
-    unsafe fn write_barriers(v: *mut *mut JSString, prev: *mut JSString,
-                             next: *mut JSString) {
-        JS::HeapStringWriteBarriers(v, prev, next);
-    }
+    unsafe fn post_barrier(_: *mut *mut JSString, _: *mut JSString, _: *mut JSString) {}
 }
 
 impl GCMethods for *mut JSScript {
     unsafe fn initial() -> *mut JSScript { ptr::null_mut() }
-    unsafe fn write_barriers(v: *mut *mut JSScript, prev: *mut JSScript,
-                             next: *mut JSScript) {
-        JS::HeapScriptWriteBarriers(v, prev, next);
-    }
+    unsafe fn post_barrier(_: *mut *mut JSScript, _: *mut JSScript, _: *mut JSScript) { }
 }
 
 impl GCMethods for *mut JSFunction {
     unsafe fn initial() -> *mut JSFunction { ptr::null_mut() }
-    unsafe fn write_barriers(v: *mut *mut JSFunction,
-                             prev: *mut JSFunction, next: *mut JSFunction) {
-        JS::HeapObjectWriteBarriers(mem::transmute(v),
+    unsafe fn post_barrier(v: *mut *mut JSFunction,
+                           prev: *mut JSFunction, next: *mut JSFunction) {
+        JS::HeapObjectPostBarrier(mem::transmute(v),
                                   mem::transmute(prev),
                                   mem::transmute(next));
     }
@@ -616,17 +601,17 @@ impl GCMethods for *mut JSFunction {
 
 impl GCMethods for JS::Value {
     unsafe fn initial() -> JS::Value { UndefinedValue() }
-    unsafe fn write_barriers(v: *mut JS::Value, prev: JS::Value, next: JS::Value) {
-        JS::HeapValueWriteBarriers(v, &prev, &next);
+    unsafe fn post_barrier(v: *mut JS::Value, prev: JS::Value, next: JS::Value) {
+        JS::HeapValuePostBarrier(v, &prev, &next);
     }
 }
 
 // ___________________________________________________________________________
 // Implementations for various things in jsapi.rs
 
-impl Drop for JSAutoRealm {
+impl Drop for JSAutoCompartment {
     fn drop(&mut self) {
-        unsafe { JS::LeaveRealm(self.cx_, self.oldRealm_); }
+        unsafe { JS_LeaveCompartment(self.cx_, self.oldCompartment_); }
     }
 }
 
@@ -755,29 +740,29 @@ impl JSJitSetterCallArgs {
 // ___________________________________________________________________________
 // Wrappers around things in jsglue.cpp
 
-pub struct RootedObjectVectorWrapper {
-    pub ptr: *mut JS::RootedObjectVector
+pub struct AutoObjectVectorWrapper {
+    pub ptr: *mut JS::AutoObjectVector
 }
 
-impl RootedObjectVectorWrapper {
-    pub fn new(cx: *mut JSContext) -> RootedObjectVectorWrapper {
-        RootedObjectVectorWrapper {
+impl AutoObjectVectorWrapper {
+    pub fn new(cx: *mut JSContext) -> AutoObjectVectorWrapper {
+        AutoObjectVectorWrapper {
             ptr: unsafe {
-                 CreateRootedObjectVector(cx)
+                 CreateAutoObjectVector(cx)
             }
         }
     }
 
     pub fn append(&self, obj: *mut JSObject) -> bool {
         unsafe {
-            AppendToRootedObjectVector(self.ptr, obj)
+            AppendToAutoObjectVector(self.ptr, obj)
         }
     }
 }
 
-impl Drop for RootedObjectVectorWrapper {
+impl Drop for AutoObjectVectorWrapper {
     fn drop(&mut self) {
-        unsafe { DeleteRootedObjectVector(self.ptr) }
+        unsafe { DeleteAutoObjectVector(self.ptr) }
     }
 }
 
@@ -934,41 +919,35 @@ impl JSNativeWrapper {
     }
 }
 
-pub struct RootedIdVectorWrapper {
-    pub ptr: *mut JS::RootedIdVector
-}
+pub struct IdVector(*mut JS::AutoIdVector);
 
-impl RootedIdVectorWrapper {
-    pub fn new(cx: *mut JSContext) -> RootedIdVectorWrapper {
-        RootedIdVectorWrapper {
-            ptr: unsafe {
-                CreateRootedIdVector(cx)
-            }
-        }
+impl IdVector {
+    pub unsafe fn new(cx: *mut JSContext) -> IdVector {
+        let vector = CreateAutoIdVector(cx);
+        assert!(!vector.is_null());
+        IdVector(vector)
     }
 
-    pub fn handle_mut(&self) -> JS::MutableHandleIdVector {
-        unsafe {
-            GetMutableHandleIdVector(self.ptr)
-        }
+    pub fn get(&self) -> *mut JS::AutoIdVector {
+        self.0
     }
 }
 
-impl Drop for RootedIdVectorWrapper {
+impl Drop for IdVector {
     fn drop(&mut self) {
         unsafe {
-            DestroyRootedIdVector(self.ptr)
+            DestroyAutoIdVector(self.0)
         }
     }
 }
 
-impl Deref for RootedIdVectorWrapper {
+impl Deref for IdVector {
     type Target = [jsid];
 
     fn deref(&self) -> &[jsid] {
         unsafe {
             let mut length = 0;
-            let pointer = SliceRootedIdVector(self.ptr as *const _, &mut length);
+            let pointer = SliceAutoIdVector(self.0 as *const _, &mut length);
             slice::from_raw_parts(pointer, length)
         }
     }
@@ -1069,9 +1048,8 @@ pub unsafe fn get_object_class(obj: *mut JSObject) -> *const JSClass {
 }
 
 #[inline]
-pub unsafe fn get_object_compartment(obj: *mut JSObject) -> *mut JS::Compartment {
-    let realm = (*get_object_group(obj)).realm as *const JS::shadow::Realm;
-    (*realm).compartment_
+pub unsafe fn get_object_compartment(obj: *mut JSObject) -> *mut JSCompartment {
+    (*get_object_group(obj)).compartment
 }
 
 #[inline]
@@ -1189,15 +1167,15 @@ impl JSPropertySpec {
         JSPropertySpec {
             name: name,
             flags: flags,
-            u: JSPropertySpec_AccessorsOrValue {
-                accessors: JSPropertySpec_AccessorsOrValue_Accessors {
-                    getter: JSPropertySpec_Accessor {
+            __bindgen_anon_1: JSPropertySpec__bindgen_ty_1 {
+                accessors: JSPropertySpec__bindgen_ty_1__bindgen_ty_1 {
+                    getter: JSPropertySpec__bindgen_ty_1__bindgen_ty_1__bindgen_ty_1 {
                         native: JSNativeWrapper {
                             op: func,
                             info: ptr::null(),
                         },
                     },
-                    setter: JSPropertySpec_Accessor {
+                    setter: JSPropertySpec__bindgen_ty_1__bindgen_ty_1__bindgen_ty_2 {
                         native: JSNativeWrapper {
                             op: None,
                             info: ptr::null(),
@@ -1217,15 +1195,15 @@ impl JSPropertySpec {
         JSPropertySpec {
             name: name,
             flags: flags,
-            u: JSPropertySpec_AccessorsOrValue {
-                accessors: JSPropertySpec_AccessorsOrValue_Accessors {
-                    getter: JSPropertySpec_Accessor {
+            __bindgen_anon_1: JSPropertySpec__bindgen_ty_1 {
+                accessors: JSPropertySpec__bindgen_ty_1__bindgen_ty_1 {
+                    getter: JSPropertySpec__bindgen_ty_1__bindgen_ty_1__bindgen_ty_1 {
                         native: JSNativeWrapper {
                             op: g_f,
                             info: ptr::null(),
                         },
                     },
-                    setter: JSPropertySpec_Accessor {
+                    setter: JSPropertySpec__bindgen_ty_1__bindgen_ty_1__bindgen_ty_2 {
                         native: JSNativeWrapper {
                             op: s_f,
                             info: ptr::null(),
@@ -1239,15 +1217,15 @@ impl JSPropertySpec {
     pub const NULL: JSPropertySpec = JSPropertySpec {
         name: 0 as *const _,
         flags: 0,
-        u: JSPropertySpec_AccessorsOrValue{
-            accessors: JSPropertySpec_AccessorsOrValue_Accessors {
-                getter: JSPropertySpec_Accessor {
+        __bindgen_anon_1: JSPropertySpec__bindgen_ty_1{
+            accessors: JSPropertySpec__bindgen_ty_1__bindgen_ty_1 {
+                getter: JSPropertySpec__bindgen_ty_1__bindgen_ty_1__bindgen_ty_1 {
                     native: JSNativeWrapper {
                         op: None,
                         info: 0 as *const _,
                     },
                 },
-                setter: JSPropertySpec_Accessor {
+                setter: JSPropertySpec__bindgen_ty_1__bindgen_ty_1__bindgen_ty_2 {
                     native: JSNativeWrapper {
                         op: None,
                         info: 0 as *const _,

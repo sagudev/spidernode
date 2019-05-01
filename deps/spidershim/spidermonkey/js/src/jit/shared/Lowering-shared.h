@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,7 +22,7 @@ class MDefinition;
 class MInstruction;
 class LOsiPoint;
 
-class LIRGeneratorShared {
+class LIRGeneratorShared : public MDefinitionVisitor {
  protected:
   MIRGenerator* gen;
   MIRGraph& graph;
@@ -32,26 +32,20 @@ class LIRGeneratorShared {
   LRecoverInfo* cachedRecoverInfo_;
   LOsiPoint* osiPoint_;
 
+ public:
   LIRGeneratorShared(MIRGenerator* gen, MIRGraph& graph, LIRGraph& lirGraph)
       : gen(gen),
         graph(graph),
         lirGraph_(lirGraph),
-        current(nullptr),
         lastResumePoint_(nullptr),
         cachedRecoverInfo_(nullptr),
         osiPoint_(nullptr) {}
 
   MIRGenerator* mir() { return gen; }
 
-  // Abort errors are caught at end of visitInstruction. It is possible for
-  // multiple errors to be detected before the end of visitInstruction. In
-  // this case, we only report the first back to the MIRGenerator.
+  // Needed to capture the abort error out of the visitInstruction methods.
   bool errored() { return gen->getOffThreadStatus().isErr(); }
   void abort(AbortReason r, const char* message, ...) MOZ_FORMAT_PRINTF(3, 4) {
-    if (errored()) {
-      return;
-    }
-
     va_list ap;
     va_start(ap, message);
     auto reason_ = gen->abortFmt(r, message, ap);
@@ -59,14 +53,11 @@ class LIRGeneratorShared {
     gen->setOffThreadStatus(reason_);
   }
   void abort(AbortReason r) {
-    if (errored()) {
-      return;
-    }
-
     auto reason_ = gen->abort(r);
     gen->setOffThreadStatus(reason_);
   }
 
+ protected:
   static void ReorderCommutative(MDefinition** lhsp, MDefinition** rhsp,
                                  MInstruction* ins);
   static bool ShouldReorderCommutative(MDefinition* lhs, MDefinition* rhs,
@@ -86,8 +77,6 @@ class LIRGeneratorShared {
   // The lowest-level calls to use, those that do not wrap another call to
   // use(), must prefix grabbing virtual register IDs by these calls.
   inline void ensureDefined(MDefinition* mir);
-
-  void visitEmittedAtUses(MInstruction* ins);
 
   // These all create a use of a virtual register, with an optional
   // allocation policy.
@@ -157,10 +146,8 @@ class LIRGeneratorShared {
   inline LDefinition tempDouble();
   inline LDefinition tempCopy(MDefinition* input, uint32_t reusedInput);
 
-  // Note that the fixed register has a GENERAL type,
-  // unless the arg is of FloatRegister type
+  // Note that the fixed register has a GENERAL type.
   inline LDefinition tempFixed(Register reg);
-  inline LDefinition tempFixed(FloatRegister reg);
 
   template <size_t Ops, size_t Temps>
   inline void defineFixed(LInstructionHelper<1, Ops, Temps>* lir,
@@ -186,6 +173,7 @@ class LIRGeneratorShared {
                            MDefinition* mir,
                            LDefinition::Policy policy = LDefinition::REGISTER);
 
+  inline void defineSharedStubReturn(LInstruction* lir, MDefinition* mir);
   inline void defineReturn(LInstruction* lir, MDefinition* mir);
 
   template <size_t X>
@@ -280,25 +268,7 @@ class LIRGeneratorShared {
 
   void lowerTypedPhiInput(MPhi* phi, uint32_t inputPosition, LBlock* block,
                           size_t lirIndex);
-
-  void definePhiOneRegister(MPhi* phi, size_t lirIndex);
-#ifdef JS_NUNBOX32
-  void definePhiTwoRegisters(MPhi* phi, size_t lirIndex);
-#endif
-
-  void defineTypedPhi(MPhi* phi, size_t lirIndex) {
-    // One register containing the payload.
-    definePhiOneRegister(phi, lirIndex);
-  }
-  void defineUntypedPhi(MPhi* phi, size_t lirIndex) {
-#ifdef JS_NUNBOX32
-    // Two registers: one for the type, one for the payload.
-    definePhiTwoRegisters(phi, lirIndex);
-#else
-    // One register containing the full Value.
-    definePhiOneRegister(phi, lirIndex);
-#endif
-  }
+  void defineTypedPhi(MPhi* phi, size_t lirIndex);
 
   LOsiPoint* popOsiPoint() {
     LOsiPoint* tmp = osiPoint_;
@@ -323,9 +293,7 @@ class LIRGeneratorShared {
   void assignSafepoint(LInstruction* ins, MInstruction* mir,
                        BailoutKind kind = Bailout_DuringVMCall);
 
-  // Marks this instruction as needing a wasm safepoint.
-  void assignWasmSafepoint(LInstruction* ins, MInstruction* mir);
-
+ public:
   void lowerConstantDouble(double d, MInstruction* mir) {
     define(new (alloc()) LDouble(d), mir);
   }
@@ -333,9 +301,35 @@ class LIRGeneratorShared {
     define(new (alloc()) LFloat32(f), mir);
   }
 
- public:
+  void visitConstant(MConstant* ins) override;
+  void visitWasmFloatConstant(MWasmFloatConstant* ins) override;
+
   // Whether to generate typed reads for element accesses with hole checks.
   static bool allowTypedElementHoleCheck() { return false; }
+
+  // Provide NYI default implementations of the SIMD visitor functions.
+  // Many targets don't implement SIMD at all, and we don't want to duplicate
+  // these stubs in the specific sub-classes.
+  // Some SIMD visitors are implemented in LIRGenerator in Lowering.cpp. These
+  // shared implementations are not included here.
+  void visitSimdInsertElement(MSimdInsertElement*) override {
+    MOZ_CRASH("NYI");
+  }
+  void visitSimdExtractElement(MSimdExtractElement*) override {
+    MOZ_CRASH("NYI");
+  }
+  void visitSimdBinaryArith(MSimdBinaryArith*) override { MOZ_CRASH("NYI"); }
+  void visitSimdSelect(MSimdSelect*) override { MOZ_CRASH("NYI"); }
+  void visitSimdSplat(MSimdSplat*) override { MOZ_CRASH("NYI"); }
+  void visitSimdValueX4(MSimdValueX4*) override { MOZ_CRASH("NYI"); }
+  void visitSimdBinarySaturating(MSimdBinarySaturating*) override {
+    MOZ_CRASH("NYI");
+  }
+  void visitSimdSwizzle(MSimdSwizzle*) override { MOZ_CRASH("NYI"); }
+  void visitSimdShuffle(MSimdShuffle*) override { MOZ_CRASH("NYI"); }
+  void visitSimdGeneralShuffle(MSimdGeneralShuffle*) override {
+    MOZ_CRASH("NYI");
+  }
 };
 
 }  // namespace jit

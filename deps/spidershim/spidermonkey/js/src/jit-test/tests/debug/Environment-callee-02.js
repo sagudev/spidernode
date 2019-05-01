@@ -1,6 +1,6 @@
 // Debugger.Environment.prototype.callee gets the right closure.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger;
 var gw = dbg.addDebuggee(g);
 

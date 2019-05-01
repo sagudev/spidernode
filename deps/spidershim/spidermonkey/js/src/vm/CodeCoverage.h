@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +13,6 @@
 
 #include "js/HashTable.h"
 #include "js/TypeDecls.h"
-#include "js/Utility.h"
 
 #include "vm/Printer.h"
 
@@ -23,14 +22,16 @@ class ScriptSourceObject;
 
 namespace coverage {
 
+class LCovCompartment;
+
 class LCovSource {
  public:
-  LCovSource(LifoAlloc* alloc, JS::UniqueChars name);
+  LCovSource(LifoAlloc* alloc, const char* name);
   LCovSource(LCovSource&& src);
-  ~LCovSource() = default;
+  ~LCovSource();
 
   // Whether the given script name matches this LCovSource.
-  bool match(const char* name) const { return strcmp(name_.get(), name) == 0; }
+  bool match(const char* name) const { return strcmp(name_, name) == 0; }
 
   // Whether the current source is complete and if it can be flushed.
   bool isComplete() const { return hasTopLevelScript_; }
@@ -41,7 +42,7 @@ class LCovSource {
 
   // Write the Lcov output in a buffer, such as the one associated with
   // the runtime code coverage trace file.
-  void exportInto(GenericPrinter& out);
+  void exportInto(GenericPrinter& out) const;
 
  private:
   // Write the script name in out.
@@ -49,7 +50,7 @@ class LCovSource {
 
  private:
   // Name of the source file.
-  JS::UniqueChars name_;
+  const char* name_;
 
   // LifoAlloc strings which hold the filename of each function as
   // well as the number of hits for each function.
@@ -76,13 +77,13 @@ class LCovSource {
   bool hasTopLevelScript_ : 1;
 };
 
-class LCovRealm {
+class LCovCompartment {
  public:
-  LCovRealm();
-  ~LCovRealm();
+  LCovCompartment();
+  ~LCovCompartment();
 
   // Collect code coverage information for the given source.
-  void collectCodeCoverageInfo(JS::Realm* realm, JSScript* topLevel,
+  void collectCodeCoverageInfo(JSCompartment* comp, JSScript* topLevel,
                                const char* name);
 
   // Write the Lcov output in a buffer, such as the one associated with
@@ -91,10 +92,10 @@ class LCovRealm {
 
  private:
   // Write the script name in out.
-  bool writeRealmName(JS::Realm* realm);
+  bool writeCompartmentName(JSCompartment* comp);
 
   // Return the LCovSource entry which matches the given ScriptSourceObject.
-  LCovSource* lookupOrAdd(JS::Realm* realm, const char* name);
+  LCovSource* lookupOrAdd(JSCompartment* comp, const char* name);
 
  private:
   typedef mozilla::Vector<LCovSource, 16, LifoAllocPolicy<Fallible>>
@@ -104,10 +105,10 @@ class LCovRealm {
   // strings to be written in the file.
   LifoAlloc alloc_;
 
-  // LifoAlloc string which hold the name of the realm.
+  // LifoAlloc string which hold the name of the compartment.
   LSprinter outTN_;
 
-  // Vector of all sources which are used in this realm.
+  // Vector of all sources which are used in this compartment.
   LCovSourceVector* sources_;
 };
 
@@ -125,9 +126,12 @@ class LCovRuntime {
   // all the scripts executed in the current JSRuntime.
   void init();
 
-  // Write the aggregated result of the code coverage of a realm
+  // Check if we should collect code coverage information.
+  bool isEnabled() const { return out_.isInitialized(); }
+
+  // Write the aggregated result of the code coverage of a compartment
   // into a file.
-  void writeLCovResult(LCovRealm& realm);
+  void writeLCovResult(LCovCompartment& comp);
 
  private:
   // When a process forks, the file will remain open, but 2 processes will
@@ -156,15 +160,6 @@ class LCovRuntime {
   // file is not a valid LCov file.
   bool isEmpty_;
 };
-
-extern void InitLCov();
-
-extern void EnableLCov();
-
-inline bool IsLCovEnabled() {
-  extern bool gLCovIsEnabled;
-  return gLCovIsEnabled;
-}
 
 }  // namespace coverage
 }  // namespace js

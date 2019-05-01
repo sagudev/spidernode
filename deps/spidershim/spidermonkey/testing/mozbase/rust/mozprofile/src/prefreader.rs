@@ -1,4 +1,4 @@
-use crate::preferences::{Pref, PrefValue, Preferences};
+use preferences::{Pref, PrefValue, Preferences};
 use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::char;
@@ -6,33 +6,28 @@ use std::error::Error;
 use std::fmt;
 use std::io::{self, Write};
 use std::iter::Iterator;
+use std::str;
 use std::mem;
 use std::ops::Deref;
-use std::str;
 
 impl PrefReaderError {
-    fn new(
-        message: &'static str,
-        position: Position,
-        parent: Option<Box<Error>>,
-    ) -> PrefReaderError {
+    fn new(message: &'static str, position: Position, parent: Option<Box<Error>>) -> PrefReaderError {
         PrefReaderError {
-            message,
-            position,
-            parent,
+            message: message,
+            position: position,
+            parent: parent
         }
     }
 }
 
+
 impl fmt::Display for PrefReaderError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{} at line {}, column {}",
-            self.message, self.position.line, self.position.column
-        )
+        write!(f, "{} at line {}, column {}",
+               self.message, self.position.line, self.position.column)
     }
 }
+
 
 impl Error for PrefReaderError {
     fn description(&self) -> &str {
@@ -42,14 +37,16 @@ impl Error for PrefReaderError {
     fn cause(&self) -> Option<&Error> {
         match self.parent {
             None => None,
-            Some(ref cause) => Some(cause.deref()),
+            Some(ref cause) => Some(cause.deref())
         }
     }
 }
 
 impl From<io::Error> for PrefReaderError {
     fn from(err: io::Error) -> PrefReaderError {
-        PrefReaderError::new("IOError", Position::new(), Some(err.into()))
+        PrefReaderError::new("IOError",
+                             Position::new(),
+                             Some(err.into()))
     }
 }
 
@@ -72,15 +69,18 @@ enum TokenizerState {
     Error,
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Position {
     line: u32,
-    column: u32,
+    column: u32
 }
 
 impl Position {
     pub fn new() -> Position {
-        Position { line: 1, column: 0 }
+        Position {
+            line: 1,
+            column: 0
+        }
     }
 }
 
@@ -99,7 +99,7 @@ pub enum TokenType {
     String,
     Int,
     Bool,
-    Error,
+    Error
 }
 
 #[derive(Debug, PartialEq)]
@@ -116,7 +116,7 @@ pub enum PrefToken<'a> {
     String(Cow<'a, str>, Position),
     Int(i64, Position),
     Bool(bool, Position),
-    Error(&'static str, Position),
+    Error(&'static str, Position)
 }
 
 impl<'a> PrefToken<'a> {
@@ -134,7 +134,7 @@ impl<'a> PrefToken<'a> {
             PrefToken::String(_, position) => position,
             PrefToken::Int(_, position) => position,
             PrefToken::Bool(_, position) => position,
-            PrefToken::Error(_, position) => position,
+            PrefToken::Error(_, position) => position
         }
     }
 }
@@ -143,7 +143,7 @@ impl<'a> PrefToken<'a> {
 pub struct PrefReaderError {
     message: &'static str,
     position: Position,
-    parent: Option<Box<Error>>,
+    parent: Option<Box<Error>>
 }
 
 struct TokenData<'a> {
@@ -157,11 +157,11 @@ struct TokenData<'a> {
 impl<'a> TokenData<'a> {
     fn new(token_type: TokenType, position: Position, start_pos: usize) -> TokenData<'a> {
         TokenData {
-            token_type,
+            token_type: token_type,
             complete: false,
-            position,
+            position: position,
             data: Cow::Borrowed(""),
-            start_pos,
+            start_pos: start_pos,
         }
     }
 
@@ -180,11 +180,8 @@ impl<'a> TokenData<'a> {
         let data = match str::from_utf8(&buf[self.start_pos..end_pos]) {
             Ok(x) => x,
             Err(_) => {
-                return Err(PrefReaderError::new(
-                    "Could not convert string to utf8",
-                    self.position,
-                    None,
-                ));
+                return Err(PrefReaderError::new("Could not convert string to utf8",
+                                               self.position, None));
             }
         };
         if self.data != "" {
@@ -213,7 +210,7 @@ pub struct PrefTokenizer<'a> {
 impl<'a> PrefTokenizer<'a> {
     pub fn new(data: &'a [u8]) -> PrefTokenizer<'a> {
         PrefTokenizer {
-            data,
+            data: data,
             pos: 0,
             cur: None,
             position: Position::new(),
@@ -238,31 +235,31 @@ impl<'a> PrefTokenizer<'a> {
                     panic!("Expected a buffer of length one");
                 }
                 PrefToken::Paren(buf.chars().next().unwrap(), position)
-            }
+            },
             TokenType::Semicolon => PrefToken::Semicolon(position),
             TokenType::Comma => PrefToken::Comma(position),
             TokenType::String => PrefToken::String(buf, position),
             TokenType::Int => {
-                let value =
-                    i64::from_str_radix(buf.borrow(), 10).expect("Integer wasn't parsed as an i64");
+                let value = i64::from_str_radix(buf.borrow(), 10)
+                    .expect("Integer wasn't parsed as an i64");
                 PrefToken::Int(value, position)
-            }
+            },
             TokenType::Bool => {
                 let value = match buf.borrow() {
                     "true" => true,
                     "false" => false,
-                    x => panic!(format!("Boolean wasn't 'true' or 'false' (was {})", x)),
+                    x => panic!(format!("Boolean wasn't 'true' or 'false' (was {})", x))
                 };
                 PrefToken::Bool(value, position)
-            }
-            TokenType::Error => panic!("make_token can't construct errors"),
+            },
+            TokenType::Error => panic!("make_token can't construct errors")
         }
     }
 
     fn get_char(&mut self) -> Option<char> {
         if self.pos >= self.data.len() - 1 {
             self.cur = None;
-            return None;
+            return None
         };
         if self.cur.is_some() {
             self.pos += 1;
@@ -303,7 +300,7 @@ impl<'a> PrefTokenizer<'a> {
     fn is_space(c: char) -> bool {
         match c {
             ' ' | '\t' | '\r' | '\n' => true,
-            _ => false,
+            _ => false
         }
     }
 
@@ -312,7 +309,7 @@ impl<'a> PrefTokenizer<'a> {
             if PrefTokenizer::is_space(c) {
                 self.get_char();
             } else {
-                break;
+                break
             };
         }
         self.cur
@@ -320,9 +317,9 @@ impl<'a> PrefTokenizer<'a> {
 
     fn consume_escape(&mut self, token_data: &mut TokenData<'a>) -> Result<(), PrefReaderError> {
         let pos = self.pos;
-        let escaped = self.read_escape()?;
+        let escaped = try!(self.read_escape());
         if let Some(escape_char) = escaped {
-            token_data.add_slice_to_token(&self.data, pos)?;
+            try!(token_data.add_slice_to_token(&self.data, pos));
             token_data.push_char(&self, escape_char);
         };
         Ok(())
@@ -330,25 +327,20 @@ impl<'a> PrefTokenizer<'a> {
 
     fn read_escape(&mut self) -> Result<Option<char>, PrefReaderError> {
         let escape_char = match self.get_char() {
-            Some('u') => self.read_hex_escape(4, true)?,
-            Some('x') => self.read_hex_escape(2, true)?,
+            Some('u') => try!(self.read_hex_escape(4, true)),
+            Some('x') => try!(self.read_hex_escape(2, true)),
             Some('\\') => '\\' as u32,
             Some('"') => '"' as u32,
             Some('\'') => '\'' as u32,
             Some('r') => '\r' as u32,
             Some('n') => '\n' as u32,
             Some(_) => return Ok(None),
-            None => {
-                return Err(PrefReaderError::new(
-                    "EOF in character escape",
-                    self.position,
-                    None,
-                ))
-            }
+            None => return Err(PrefReaderError::new("EOF in character escape",
+                                                   self.position, None))
         };
-        Ok(Some(char::from_u32(escape_char).ok_or_else(|| {
-            PrefReaderError::new("Invalid codepoint decoded from escape", self.position, None)
-        })?))
+        Ok(Some(try!(char::from_u32(escape_char)
+                     .ok_or(PrefReaderError::new("Invalid codepoint decoded from escape",
+                                                 self.position, None)))))
     }
 
     fn read_hex_escape(&mut self, hex_chars: isize, first: bool) -> Result<u32, PrefReaderError> {
@@ -361,51 +353,34 @@ impl<'a> PrefTokenizer<'a> {
                         '0'...'9' => value += x as u32 - '0' as u32,
                         'a'...'f' => value += x as u32 - 'a' as u32,
                         'A'...'F' => value += x as u32 - 'A' as u32,
-                        _ => {
-                            return Err(PrefReaderError::new(
-                                "Unexpected character in escape",
-                                self.position,
-                                None,
-                            ))
-                        }
+                        _ => return Err(PrefReaderError::new(
+                            "Unexpected character in escape", self.position, None))
                     }
-                }
-                None => {
-                    return Err(PrefReaderError::new(
-                        "Unexpected EOF in escape",
-                        self.position,
-                        None,
-                    ))
-                }
+                },
+                None => return Err(PrefReaderError::new(
+                    "Unexpected EOF in escape", self.position, None))
             }
         }
         if first && value >= 0xD800 && value <= 0xDBFF {
             // First part of a surrogate pair
             if self.get_char() != Some('\\') || self.get_char() != Some('u') {
-                return Err(PrefReaderError::new(
-                    "Lone high surrogate in surrogate pair",
-                    self.position,
-                    None,
-                ));
+                return Err(PrefReaderError::new("Lone high surrogate in surrogate pair",
+                                               self.position, None))
             }
             self.unget_char();
             let high_surrogate = value;
-            let low_surrogate = self.read_hex_escape(4, false)?;
+            let low_surrogate = try!(self.read_hex_escape(4, false));
             let high_value = (high_surrogate - 0xD800) << 10;
             let low_value = low_surrogate - 0xDC00;
             value = high_value + low_value + 0x10000;
         } else if first && value >= 0xDC00 && value <= 0xDFFF {
-            return Err(PrefReaderError::new(
-                "Lone low surrogate",
-                self.position,
-                None,
-            ));
+            return Err(PrefReaderError::new("Lone low surrogate",
+                                            self.position,
+                                            None))
         } else if !first && (value < 0xDC00 || value > 0xDFFF) {
-            return Err(PrefReaderError::new(
-                "Invalid low surrogate in surrogate pair",
-                self.position,
-                None,
-            ));
+            return Err(PrefReaderError::new("Invalid low surrogate in surrogate pair",
+                                            self.position,
+                                            None));
         }
         Ok(value)
     }
@@ -445,14 +420,14 @@ impl<'a> PrefTokenizer<'a> {
         loop {
             let mut c = match self.get_char() {
                 Some(x) => x,
-                None => return Ok(None),
+                None => return Ok(None)
             };
 
             self.state = match self.state {
                 TokenizerState::Junk => {
                     c = match self.skip_whitespace() {
                         Some(x) => x,
-                        None => return Ok(None),
+                        None => return Ok(None)
                     };
                     match c {
                         '/' => TokenizerState::CommentStart,
@@ -460,7 +435,7 @@ impl<'a> PrefTokenizer<'a> {
                             token_data.start(&self, TokenType::CommentBashLine);
                             token_data.start_pos = self.pos + 1;
                             TokenizerState::CommentLine
-                        }
+                        },
                         _ => {
                             self.unget_char();
                             let next = match self.next_state {
@@ -469,51 +444,56 @@ impl<'a> PrefTokenizer<'a> {
                                     return Err(PrefReaderError::new(
                                         "In Junk state without a next state defined",
                                         self.position,
-                                        None,
-                                    ))
+                                        None))
                                 }
                             };
                             self.next_state = None;
                             next
                         }
                     }
-                }
-                TokenizerState::CommentStart => match c {
-                    '*' => {
-                        token_data.start(&self, TokenType::CommentBlock);
-                        token_data.start_pos = self.pos + 1;
-                        TokenizerState::CommentBlock
-                    }
-                    '/' => {
-                        token_data.start(&self, TokenType::CommentLine);
-                        token_data.start_pos = self.pos + 1;
-                        TokenizerState::CommentLine
-                    }
-                    _ => {
-                        return Err(PrefReaderError::new(
-                            "Invalid character after /",
-                            self.position,
-                            None,
-                        ))
-                    }
                 },
-                TokenizerState::CommentLine => match c {
-                    '\n' => {
-                        token_data.end(&self.data, self.pos)?;
-                        TokenizerState::Junk
-                    }
-                    _ => TokenizerState::CommentLine,
-                },
-                TokenizerState::CommentBlock => match c {
-                    '*' => {
-                        if self.get_char() == Some('/') {
-                            token_data.end(&self.data, self.pos - 1)?;
-                            TokenizerState::Junk
-                        } else {
+                TokenizerState::CommentStart => {
+                    match c {
+                        '*' => {
+                            token_data.start(&self, TokenType::CommentBlock);
+                            token_data.start_pos = self.pos + 1;
                             TokenizerState::CommentBlock
+                        },
+                        '/' => {
+                            token_data.start(&self, TokenType::CommentLine);
+                            token_data.start_pos = self.pos + 1;
+                            TokenizerState::CommentLine
+                        },
+                        _ => {
+                            return Err(PrefReaderError::new(
+                                "Invalid character after /", self.position, None))
                         }
                     }
-                    _ => TokenizerState::CommentBlock,
+
+                },
+                TokenizerState::CommentLine => {
+                    match c {
+                        '\n' => {
+                            try!(token_data.end(&self.data, self.pos));
+                            TokenizerState::Junk
+                        },
+                        _ => {
+                            TokenizerState::CommentLine
+                        }
+                    }
+                },
+                TokenizerState::CommentBlock => {
+                    match c {
+                        '*' => {
+                            if self.get_char() == Some('/') {
+                                try!(token_data.end(&self.data, self.pos - 1));
+                                TokenizerState::Junk
+                            } else {
+                                TokenizerState::CommentBlock
+                            }
+                        },
+                        _ => TokenizerState::CommentBlock
+                    }
                 },
                 TokenizerState::FunctionName => {
                     let position = self.position;
@@ -523,7 +503,7 @@ impl<'a> PrefTokenizer<'a> {
                             if self.get_match("user_pref", "(") {
                                 token_data.start(&self, TokenType::UserPrefFunction);
                             }
-                        }
+                        },
                         's' => {
                             if self.get_match("sticky_pref", "(") {
                                 token_data.start(&self, TokenType::StickyPrefFunction);
@@ -533,136 +513,133 @@ impl<'a> PrefTokenizer<'a> {
                             if self.get_match("pref", "(") {
                                 token_data.start(&self, TokenType::PrefFunction);
                             }
-                        }
+                        },
                         _ => {}
                     };
                     if token_data.token_type == TokenType::None {
                         // We didn't match anything
                         return Err(PrefReaderError::new(
-                            "Expected a pref function name",
-                            position,
-                            None,
-                        ));
+                            "Expected a pref function name", position, None))
                     } else {
                         token_data.start_pos = start_pos;
                         token_data.position = position;
-                        token_data.end(&self.data, self.pos + 1)?;
+                        try!(token_data.end(&self.data, self.pos + 1));
                         self.next_state = Some(TokenizerState::AfterFunctionName);
                         TokenizerState::Junk
                     }
-                }
-                TokenizerState::AfterFunctionName => match c {
-                    '(' => {
-                        self.next_state = Some(TokenizerState::FunctionArgs);
-                        token_data.start(&self, TokenType::Paren);
-                        token_data.end(&self.data, self.pos + 1)?;
-                        self.next_state = Some(TokenizerState::FunctionArgs);
-                        TokenizerState::Junk
-                    }
-                    _ => {
-                        return Err(PrefReaderError::new(
-                            "Expected an opening paren",
-                            self.position,
-                            None,
-                        ))
+                },
+                TokenizerState::AfterFunctionName => {
+                    match c {
+                        '(' => {
+                            self.next_state = Some(TokenizerState::FunctionArgs);
+                            token_data.start(&self, TokenType::Paren);
+                            try!(token_data.end(&self.data, self.pos + 1));
+                            self.next_state = Some(TokenizerState::FunctionArgs);
+                            TokenizerState::Junk
+                        },
+                        _ => {
+                            return Err(PrefReaderError::new(
+                                "Expected an opening paren", self.position, None))
+                        }
                     }
                 },
-                TokenizerState::FunctionArgs => match c {
-                    ')' => {
-                        token_data.start(&self, TokenType::Paren);
-                        token_data.end(&self.data, self.pos + 1)?;
-                        self.next_state = Some(TokenizerState::AfterFunction);
-                        TokenizerState::Junk
-                    }
-                    _ => {
-                        self.unget_char();
-                        TokenizerState::FunctionArg
-                    }
-                },
-                TokenizerState::FunctionArg => match c {
-                    '"' => {
-                        token_data.start(&self, TokenType::String);
-                        token_data.start_pos = self.pos + 1;
-                        TokenizerState::DoubleQuotedString
-                    }
-                    '\'' => {
-                        token_data.start(&self, TokenType::String);
-                        token_data.start_pos = self.pos + 1;
-                        TokenizerState::SingleQuotedString
-                    }
-                    't' | 'f' => {
-                        self.unget_char();
-                        TokenizerState::Bool
-                    }
-                    '0'...'9' | '-' | '+' => {
-                        token_data.start(&self, TokenType::Int);
-                        TokenizerState::Number
-                    }
-                    _ => {
-                        return Err(PrefReaderError::new(
-                            "Invalid character at start of function argument",
-                            self.position,
-                            None,
-                        ))
+                TokenizerState::FunctionArgs => {
+                    match c {
+                        ')' => {
+                            token_data.start(&self, TokenType::Paren);
+                            try!(token_data.end(&self.data, self.pos + 1));
+                            self.next_state = Some(TokenizerState::AfterFunction);
+                            TokenizerState::Junk
+                        },
+                        _ => {
+                            self.unget_char();
+                            TokenizerState::FunctionArg
+                        }
                     }
                 },
-                TokenizerState::DoubleQuotedString => match c {
-                    '"' => {
-                        token_data.end(&self.data, self.pos)?;
-                        self.next_state = Some(TokenizerState::AfterFunctionArg);
-                        TokenizerState::Junk
+                TokenizerState::FunctionArg => {
+                    match c {
+                        '"' => {
+                            token_data.start(&self, TokenType::String);
+                            token_data.start_pos = self.pos + 1;
+                            TokenizerState::DoubleQuotedString
+                        },
+                        '\'' => {
+                            token_data.start(&self, TokenType::String);
+                            token_data.start_pos = self.pos + 1;
+                            TokenizerState::SingleQuotedString
+                        },
+                        't' | 'f' => {
+                            self.unget_char();
+                            TokenizerState::Bool
+                        },
+                        '0'...'9' | '-' |'+' => {
+                            token_data.start(&self, TokenType::Int);
+                            TokenizerState::Number
+                        },
+                        _ => {
+                            return Err(PrefReaderError::new(
+                                "Invalid character at start of function argument",
+                                self.position, None))
+                        }
                     }
-                    '\n' => {
-                        return Err(PrefReaderError::new(
-                            "EOL in double quoted string",
-                            self.position,
-                            None,
-                        ))
-                    }
-                    '\\' => {
-                        self.consume_escape(&mut token_data)?;
-                        TokenizerState::DoubleQuotedString
-                    }
-                    _ => TokenizerState::DoubleQuotedString,
                 },
-                TokenizerState::SingleQuotedString => match c {
-                    '\'' => {
-                        token_data.end(&self.data, self.pos)?;
-                        self.next_state = Some(TokenizerState::AfterFunctionArg);
-                        TokenizerState::Junk
+                TokenizerState::DoubleQuotedString => {
+                    match c {
+                        '"' => {
+                            try!(token_data.end(&self.data, self.pos));
+                            self.next_state = Some(TokenizerState::AfterFunctionArg);
+                            TokenizerState::Junk
+
+                        },
+                        '\n' => {
+                            return Err(PrefReaderError::new(
+                                "EOL in double quoted string", self.position, None))
+                        },
+                        '\\' => {
+                            try!(self.consume_escape(&mut token_data));
+                            TokenizerState::DoubleQuotedString
+                        },
+                        _ => TokenizerState::DoubleQuotedString
                     }
-                    '\n' => {
-                        return Err(PrefReaderError::new(
-                            "EOL in single quoted string",
-                            self.position,
-                            None,
-                        ))
-                    }
-                    '\\' => {
-                        self.consume_escape(&mut token_data)?;
-                        TokenizerState::SingleQuotedString
-                    }
-                    _ => TokenizerState::SingleQuotedString,
                 },
-                TokenizerState::Number => match c {
-                    '0'...'9' => TokenizerState::Number,
-                    ')' | ',' => {
-                        token_data.end(&self.data, self.pos)?;
-                        self.unget_char();
-                        self.next_state = Some(TokenizerState::AfterFunctionArg);
-                        TokenizerState::Junk
+                TokenizerState::SingleQuotedString => {
+                    match c {
+                        '\'' => {
+                            try!(token_data.end(&self.data, self.pos));
+                            self.next_state = Some(TokenizerState::AfterFunctionArg);
+                            TokenizerState::Junk
+
+                        },
+                        '\n' => {
+                            return Err(PrefReaderError::new(
+                                "EOL in single quoted string", self.position, None))
+                        },
+                        '\\' => {
+                            try!(self.consume_escape(&mut token_data));
+                            TokenizerState::SingleQuotedString
+                        }
+                        _ => TokenizerState::SingleQuotedString
                     }
-                    x if PrefTokenizer::is_space(x) => {
-                        token_data.end(&self.data, self.pos)?;
-                        self.next_state = Some(TokenizerState::AfterFunctionArg);
-                        TokenizerState::Junk
-                    }
-                    _ => {
-                        return Err(PrefReaderError::new(
-                            "Invalid character in number literal",
-                            self.position,
-                            None,
-                        ))
+                },
+                TokenizerState::Number => {
+                    match c {
+                        '0'...'9' => TokenizerState::Number,
+                        ')' | ',' => {
+                            try!(token_data.end(&self.data, self.pos));
+                            self.unget_char();
+                            self.next_state = Some(TokenizerState::AfterFunctionArg);
+                            TokenizerState::Junk
+                        },
+                        x if PrefTokenizer::is_space(x) => {
+                            try!(token_data.end(&self.data, self.pos));
+                            self.next_state = Some(TokenizerState::AfterFunctionArg);
+                            TokenizerState::Junk
+                        },
+                        _ => {
+                            return Err(PrefReaderError::new(
+                                "Invalid character in number literal", self.position, None))
+                        }
                     }
                 },
                 TokenizerState::Bool => {
@@ -673,7 +650,7 @@ impl<'a> PrefTokenizer<'a> {
                             if self.get_match("true", ",)") {
                                 token_data.start(&self, TokenType::Bool)
                             }
-                        }
+                        },
                         'f' => {
                             if self.get_match("false", ",)") {
                                 token_data.start(&self, TokenType::Bool)
@@ -684,54 +661,49 @@ impl<'a> PrefTokenizer<'a> {
                     if token_data.token_type == TokenType::None {
                         return Err(PrefReaderError::new(
                             "Unexpected characters in function argument",
-                            position,
-                            None,
-                        ));
+                            position, None));
                     } else {
                         token_data.start_pos = start_pos;
                         token_data.position = position;
-                        token_data.end(&self.data, self.pos + 1)?;
+                        try!(token_data.end(&self.data, self.pos + 1));
                         self.next_state = Some(TokenizerState::AfterFunctionArg);
                         TokenizerState::Junk
                     }
-                }
-                TokenizerState::AfterFunctionArg => match c {
-                    ',' => {
-                        token_data.start(&self, TokenType::Comma);
-                        token_data.end(&self.data, self.pos + 1)?;
-                        self.next_state = Some(TokenizerState::FunctionArg);
-                        TokenizerState::Junk
-                    }
-                    ')' => {
-                        token_data.start(&self, TokenType::Paren);
-                        token_data.end(&self.data, self.pos + 1)?;
-                        self.next_state = Some(TokenizerState::AfterFunction);
-                        TokenizerState::Junk
-                    }
-                    _ => {
-                        return Err(PrefReaderError::new(
-                            "Unexpected character after function argument",
-                            self.position,
-                            None,
-                        ))
+                },
+                TokenizerState::AfterFunctionArg => {
+                    match c {
+                        ',' => {
+                            token_data.start(&self, TokenType::Comma);
+                            try!(token_data.end(&self.data, self.pos + 1));
+                            self.next_state = Some(TokenizerState::FunctionArg);
+                            TokenizerState::Junk
+                        }
+                        ')' => {
+                            token_data.start(&self, TokenType::Paren);
+                            try!(token_data.end(&self.data, self.pos + 1));
+                            self.next_state = Some(TokenizerState::AfterFunction);
+                            TokenizerState::Junk
+                        }
+                        _ => return Err(PrefReaderError::new
+                                        ("Unexpected character after function argument",
+                                         self.position,
+                                         None))
                     }
                 },
-                TokenizerState::AfterFunction => match c {
-                    ';' => {
-                        token_data.start(&self, TokenType::Semicolon);
-                        token_data.end(&self.data, self.pos)?;
-                        self.next_state = Some(TokenizerState::FunctionName);
-                        TokenizerState::Junk
-                    }
-                    _ => {
-                        return Err(PrefReaderError::new(
+                TokenizerState::AfterFunction => {
+                    match c {
+                        ';' => {
+                            token_data.start(&self, TokenType::Semicolon);
+                            try!(token_data.end(&self.data, self.pos));
+                            self.next_state = Some(TokenizerState::FunctionName);
+                            TokenizerState::Junk
+                        }
+                        _ => return Err(PrefReaderError::new(
                             "Unexpected character after function",
-                            self.position,
-                            None,
-                        ))
+                            self.position, None))
                     }
                 },
-                TokenizerState::Error => TokenizerState::Error,
+                TokenizerState::Error => TokenizerState::Error
             };
             if token_data.complete {
                 return Ok(Some(token_data));
@@ -750,8 +722,10 @@ impl<'a> Iterator for PrefTokenizer<'a> {
         let token_data = match self.next_token() {
             Err(e) => {
                 self.state = TokenizerState::Error;
-                return Some(PrefToken::Error(e.message, e.position));
-            }
+                return Some(PrefToken::Error(e.message,
+                                             e.position))
+
+            },
             Ok(Some(token_data)) => token_data,
             Ok(None) => return None,
         };
@@ -760,81 +734,77 @@ impl<'a> Iterator for PrefTokenizer<'a> {
     }
 }
 
-pub fn tokenize(data: &[u8]) -> PrefTokenizer {
+pub fn tokenize<'a>(data: &'a [u8]) -> PrefTokenizer<'a> {
     PrefTokenizer::new(data)
 }
 
 pub fn serialize_token<T: Write>(token: &PrefToken, output: &mut T) -> Result<(), PrefReaderError> {
     let mut data_buf = String::new();
 
-    let data = match *token {
-        PrefToken::PrefFunction(_) => "pref",
-        PrefToken::UserPrefFunction(_) => "user_pref",
-        PrefToken::StickyPrefFunction(_) => "sticky_pref",
-        PrefToken::CommentBlock(ref data, _) => {
+    let data = match token {
+        &PrefToken::PrefFunction(_) => "pref",
+        &PrefToken::UserPrefFunction(_) => "user_pref",
+        &PrefToken::StickyPrefFunction(_) => "sticky_pref",
+        &PrefToken::CommentBlock(ref data, _) => {
             data_buf.reserve(data.len() + 4);
             data_buf.push_str("/*");
             data_buf.push_str(data.borrow());
             data_buf.push_str("*");
             &*data_buf
-        }
-        PrefToken::CommentLine(ref data, _) => {
+        },
+        &PrefToken::CommentLine(ref data, _) => {
             data_buf.reserve(data.len() + 2);
             data_buf.push_str("//");
             data_buf.push_str(data.borrow());
             &*data_buf
-        }
-        PrefToken::CommentBashLine(ref data, _) => {
+        },
+        &PrefToken::CommentBashLine(ref data, _) => {
             data_buf.reserve(data.len() + 1);
             data_buf.push_str("#");
             data_buf.push_str(data.borrow());
             &*data_buf
-        }
-        PrefToken::Paren(data, _) => {
+        },
+        &PrefToken::Paren(data, _) => {
             data_buf.push(data);
             &*data_buf
-        }
-        PrefToken::Comma(_) => ",",
-        PrefToken::Semicolon(_) => ";\n",
-        PrefToken::String(ref data, _) => {
+        },
+        &PrefToken::Comma(_) => ",",
+        &PrefToken::Semicolon(_) => ";\n",
+        &PrefToken::String(ref data, _) => {
             data_buf.reserve(data.len() + 2);
             data_buf.push('"');
             data_buf.push_str(escape_quote(data.borrow()).borrow());
             data_buf.push('"');
             &*data_buf
-        }
-        PrefToken::Int(data, _) => {
+        },
+        &PrefToken::Int(data, _) => {
             data_buf.push_str(&*data.to_string());
             &*data_buf
-        }
-        PrefToken::Bool(data, _) => {
-            if data {
-                "true"
-            } else {
-                "false"
-            }
-        }
-        PrefToken::Error(data, pos) => return Err(PrefReaderError::new(data, pos, None)),
+        },
+        &PrefToken::Bool(data, _) => {
+            if data {"true"} else {"false"}
+        },
+        &PrefToken::Error(data, pos) => return Err(PrefReaderError::new(data, pos, None))
     };
-    output.write_all(data.as_bytes())?;
+    try!(output.write(data.as_bytes()));
     Ok(())
 }
 
 pub fn serialize_tokens<'a, I, W>(tokens: I, output: &mut W) -> Result<(), PrefReaderError>
-where
-    I: Iterator<Item = &'a PrefToken<'a>>,
-    W: Write,
-{
+    where I: Iterator<Item=&'a PrefToken<'a>>, W: Write {
     for token in tokens {
-        serialize_token(token, output)?;
+        try!(serialize_token(token, output));
     }
     Ok(())
 }
 
-fn escape_quote(data: &str) -> Cow<str> {
+fn escape_quote<'a>(data: &'a str) -> Cow<'a, str> {
     // Not very efficient…
-    if data.contains('"') || data.contains('\\') {
-        Cow::Owned(data.replace(r#"\"#, r#"\\"#).replace(r#"""#, r#"\""#))
+    if data.contains("\"") || data.contains("\\") {
+        let new_data = Cow::Owned(data
+            .replace(r#"\"#, r#"\\"#)
+            .replace(r#"""#, r#"\""#));
+        new_data
     } else {
         Cow::Borrowed(data)
     }
@@ -850,7 +820,7 @@ enum ParserState {
 struct PrefBuilder {
     key: Option<String>,
     value: Option<PrefValue>,
-    sticky: bool,
+    sticky: bool
 }
 
 impl PrefBuilder {
@@ -858,24 +828,27 @@ impl PrefBuilder {
         PrefBuilder {
             key: None,
             value: None,
-            sticky: false,
+            sticky: false
         }
     }
 }
 
+
 fn skip_comments<'a>(tokenizer: &mut PrefTokenizer<'a>) -> Option<PrefToken<'a>> {
     loop {
         match tokenizer.next() {
-            Some(PrefToken::CommentBashLine(_, _))
-            | Some(PrefToken::CommentBlock(_, _))
-            | Some(PrefToken::CommentLine(_, _)) => {}
+            Some(PrefToken::CommentBashLine(_, _)) |
+            Some(PrefToken::CommentBlock(_, _)) |
+            Some(PrefToken::CommentLine(_, _)) => {},
             Some(x) => return Some(x),
             None => return None,
         }
     }
 }
 
-pub fn parse_tokens<'a>(tokenizer: &mut PrefTokenizer<'a>) -> Result<Preferences, PrefReaderError> {
+pub fn parse_tokens<'a>(tokenizer: &mut PrefTokenizer<'a>) -> Result<Preferences,
+                                                                     PrefReaderError> {
+
     let mut state = ParserState::Function;
     let mut current_pref = PrefBuilder::new();
     let mut rv = Preferences::new();
@@ -886,17 +859,19 @@ pub fn parse_tokens<'a>(tokenizer: &mut PrefTokenizer<'a>) -> Result<Preferences
         let token = {
             match tokenizer.next() {
                 Some(x) => x,
-                None => break,
+                None => break
             }
         };
         // First deal with comments and errors
         match token {
             PrefToken::Error(msg, position) => {
-                return Err(PrefReaderError::new(msg, position, None));
-            }
-            PrefToken::CommentBashLine(_, _)
-            | PrefToken::CommentLine(_, _)
-            | PrefToken::CommentBlock(_, _) => continue,
+                return Err(PrefReaderError::new(msg.into(), position, None));
+            },
+            PrefToken::CommentBashLine(_, _) |
+            PrefToken::CommentLine(_, _) |
+            PrefToken::CommentBlock(_, _) => {
+                continue
+            },
             _ => {}
         }
         state = match state {
@@ -907,89 +882,72 @@ pub fn parse_tokens<'a>(tokenizer: &mut PrefTokenizer<'a>) -> Result<Preferences
                     }
                     PrefToken::UserPrefFunction(_) => {
                         current_pref.sticky = false;
-                    }
+                    },
                     PrefToken::StickyPrefFunction(_) => {
                         current_pref.sticky = true;
-                    }
+                    },
                     _ => {
-                        return Err(PrefReaderError::new(
-                            "Expected pref function",
-                            token.position(),
-                            None,
-                        ));
+                        return Err(PrefReaderError::new("Expected pref function".into(),
+                                                        token.position(), None));
                     }
                 }
                 let next = skip_comments(tokenizer);
                 match next {
                     Some(PrefToken::Paren('(', _)) => ParserState::Key,
-                    _ => {
-                        return Err(PrefReaderError::new(
-                            "Expected open paren",
-                            next.map(|x| x.position()).unwrap_or(tokenizer.position),
-                            None,
-                        ))
-                    }
+                    _ => return Err(PrefReaderError::new("Expected open paren".into(),
+                                                         next.map(|x| x.position())
+                                                         .unwrap_or(tokenizer.position),
+                                                         None))
                 }
-            }
+            },
             ParserState::Key => {
                 match token {
                     PrefToken::String(data, _) => current_pref.key = Some(data.into_owned()),
                     _ => {
-                        return Err(PrefReaderError::new(
-                            "Expected string",
-                            token.position(),
-                            None,
-                        ));
+                        return Err(PrefReaderError::new("Expected string", token.position(), None));
                     }
                 }
                 let next = skip_comments(tokenizer);
                 match next {
                     Some(PrefToken::Comma(_)) => ParserState::Value,
-                    _ => {
-                        return Err(PrefReaderError::new(
-                            "Expected comma",
-                            next.map(|x| x.position()).unwrap_or(tokenizer.position),
-                            None,
-                        ))
-                    }
+                    _ => return Err(PrefReaderError::new("Expected comma",
+                                                         next.map(|x| x.position())
+                                                         .unwrap_or(tokenizer.position),
+                                                         None))
                 }
-            }
+            },
             ParserState::Value => {
                 match token {
                     PrefToken::String(data, _) => {
                         current_pref.value = Some(PrefValue::String(data.into_owned()))
+                    },
+                    PrefToken::Int(data, _) => {
+                        current_pref.value = Some(PrefValue::Int(data))
                     }
-                    PrefToken::Int(data, _) => current_pref.value = Some(PrefValue::Int(data)),
-                    PrefToken::Bool(data, _) => current_pref.value = Some(PrefValue::Bool(data)),
+                    PrefToken::Bool(data, _) => {
+                        current_pref.value = Some(PrefValue::Bool(data))
+                    },
                     _ => {
-                        return Err(PrefReaderError::new(
-                            "Expected value",
-                            token.position(),
-                            None,
-                        ))
+                        return Err(PrefReaderError::new("Expected value", token.position(),
+                                                        None))
                     }
                 }
                 let next = skip_comments(tokenizer);
                 match next {
                     Some(PrefToken::Paren(')', _)) => {}
-                    _ => {
-                        return Err(PrefReaderError::new(
-                            "Expected close paren",
-                            next.map(|x| x.position()).unwrap_or(tokenizer.position),
-                            None,
-                        ))
-                    }
+                    _ => return Err(PrefReaderError::new("Expected close paren",
+                                                         next.map(|x| x.position())
+                                                         .unwrap_or(tokenizer.position),
+                                                         None))
                 }
                 let next = skip_comments(tokenizer);
                 match next {
-                    Some(PrefToken::Semicolon(_)) | None => {}
-                    _ => {
-                        return Err(PrefReaderError::new(
-                            "Expected semicolon",
-                            next.map(|x| x.position()).unwrap_or(tokenizer.position),
-                            None,
-                        ))
-                    }
+                    Some(PrefToken::Semicolon(_)) |
+                    None => {},
+                    _ => return Err(PrefReaderError::new("Expected semicolon",
+                                                         next.map(|x| x.position())
+                                                         .unwrap_or(tokenizer.position),
+                                                         None))
                 }
                 let key = mem::replace(&mut current_pref.key, None);
                 let value = mem::replace(&mut current_pref.value, None);
@@ -1001,17 +959,14 @@ pub fn parse_tokens<'a>(tokenizer: &mut PrefTokenizer<'a>) -> Result<Preferences
                 rv.insert(key.unwrap(), pref);
                 current_pref.sticky = false;
                 ParserState::Function
-            }
+            },
         }
     }
     match state {
         ParserState::Key | ParserState::Value => {
-            return Err(PrefReaderError::new(
-                "EOF in middle of function",
-                tokenizer.position,
-                None,
-            ));
-        }
+            return Err(PrefReaderError::new("EOF in middle of function",
+                                            tokenizer.position, None));
+        },
         _ => {}
     }
     Ok(rv)
@@ -1020,36 +975,36 @@ pub fn parse_tokens<'a>(tokenizer: &mut PrefTokenizer<'a>) -> Result<Preferences
 pub fn serialize<W: Write>(prefs: &Preferences, output: &mut W) -> io::Result<()> {
     let mut p: Vec<_> = prefs.iter().collect();
     p.sort_by(|a, b| a.0.cmp(&b.0));
-    for &(key, pref) in &p {
+    for &(key, pref) in p.iter() {
         let func = if pref.sticky {
             "sticky_pref("
         } else {
             "user_pref("
         }.as_bytes();
-        output.write_all(func)?;
-        output.write_all(b"\"")?;
-        output.write_all(escape_quote(key).as_bytes())?;
-        output.write_all(b"\"")?;
-        output.write_all(b", ")?;
+        try!(output.write(func));
+        try!(output.write("\"".as_bytes()));
+        try!(output.write(escape_quote(key).as_bytes()));
+        try!(output.write("\"".as_bytes()));
+        try!(output.write(", ".as_bytes()));
         match pref.value {
             PrefValue::Bool(x) => {
-                output.write_all(if x { b"true" } else { b"false" })?;
-            }
+                try!(output.write((if x {"true"} else {"false"}).as_bytes()));
+            },
             PrefValue::Int(x) => {
-                output.write_all(x.to_string().as_bytes())?;
-            }
+                try!(output.write(x.to_string().as_bytes()));
+            },
             PrefValue::String(ref x) => {
-                output.write_all(b"\"")?;
-                output.write_all(escape_quote(x).as_bytes())?;
-                output.write_all(b"\"")?;
+                try!(output.write("\"".as_bytes()));
+                try!(output.write(escape_quote(x).as_bytes()));
+                try!(output.write("\"".as_bytes()));
             }
         };
-        output.write_all(b");\n")?;
-    }
+        try!(output.write(");\n".as_bytes()));
+    };
     Ok(())
 }
 
-pub fn parse(data: &[u8]) -> Result<Preferences, PrefReaderError> {
+pub fn parse<'a>(data: &'a [u8]) -> Result<Preferences, PrefReaderError> {
     let mut tokenizer = tokenize(data);
     parse_tokens(&mut tokenizer)
 }

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,10 +8,6 @@
 #define threading_ProtectedData_h
 
 #include "threading/Thread.h"
-
-namespace JS {
-class Zone;
-}
 
 namespace js {
 
@@ -31,7 +27,7 @@ namespace js {
 // Protected data checks are enabled in debug builds, except on android where
 // they cause some permatimeouts in automation.
 #if defined(DEBUG) && !defined(ANDROID)
-#  define JS_HAS_PROTECTED_DATA_CHECKS
+#define JS_HAS_PROTECTED_DATA_CHECKS
 #endif
 
 #define DECLARE_ONE_BOOL_OPERATOR(OP, T)   \
@@ -57,9 +53,7 @@ namespace js {
 class MOZ_RAII AutoNoteSingleThreadedRegion {
  public:
 #ifdef JS_HAS_PROTECTED_DATA_CHECKS
-  static mozilla::Atomic<size_t, mozilla::SequentiallyConsistent,
-                         mozilla::recordreplay::Behavior::DontPreserve>
-      count;
+  static mozilla::Atomic<size_t> count;
   AutoNoteSingleThreadedRegion() { count++; }
   ~AutoNoteSingleThreadedRegion() { count--; }
 #else
@@ -76,7 +70,7 @@ class ProtectedData {
  public:
   template <typename... Args>
   explicit ProtectedData(const Check& check, Args&&... args)
-      : value(std::forward<Args>(args)...)
+      : value(mozilla::Forward<Args>(args)...)
 #ifdef JS_HAS_PROTECTED_DATA_CHECKS
         ,
         check(check)
@@ -92,12 +86,6 @@ class ProtectedData {
   template <typename U>
   ThisType& operator=(const U& p) {
     this->ref() = p;
-    return *this;
-  }
-
-  template <typename U>
-  ThisType& operator=(U&& p) {
-    this->ref() = std::move(p);
     return *this;
   }
 
@@ -132,26 +120,20 @@ class ProtectedData {
 
   T& ref() {
 #ifdef JS_HAS_PROTECTED_DATA_CHECKS
-    if (!AutoNoteSingleThreadedRegion::count) {
-      check.check();
-    }
+    if (!AutoNoteSingleThreadedRegion::count) check.check();
 #endif
     return value;
   }
 
   const T& ref() const {
 #ifdef JS_HAS_PROTECTED_DATA_CHECKS
-    if (!AutoNoteSingleThreadedRegion::count) {
-      check.check();
-    }
+    if (!AutoNoteSingleThreadedRegion::count) check.check();
 #endif
     return value;
   }
 
   T& refNoCheck() { return value; }
   const T& refNoCheck() const { return value; }
-
-  static size_t offsetOfValue() { return offsetof(ThisType, value); }
 
  private:
   T value;
@@ -164,28 +146,39 @@ class ProtectedData {
 // arguments.
 template <typename Check, typename T>
 class ProtectedDataNoCheckArgs : public ProtectedData<Check, T> {
-  using Base = ProtectedData<Check, T>;
+  typedef ProtectedDataNoCheckArgs<Check, T> ThisType;
 
  public:
   template <typename... Args>
   explicit ProtectedDataNoCheckArgs(Args&&... args)
-      : ProtectedData<Check, T>(Check(), std::forward<Args>(args)...) {}
+      : ProtectedData<Check, T>(Check(), mozilla::Forward<Args>(args)...) {}
 
-  using Base::operator=;
+  template <typename U>
+  ThisType& operator=(const U& p) {
+    this->ref() = p;
+    return *this;
+  }
 };
 
-// Intermediate class for protected data whose checks take a Zone constructor
-// argument.
+class ZoneGroup;
+
+// Intermediate class for protected data whose checks take a ZoneGroup
+// constructor argument.
 template <typename Check, typename T>
-class ProtectedDataZoneArg : public ProtectedData<Check, T> {
-  using Base = ProtectedData<Check, T>;
+class ProtectedDataZoneGroupArg : public ProtectedData<Check, T> {
+  typedef ProtectedDataZoneGroupArg<Check, T> ThisType;
 
  public:
   template <typename... Args>
-  explicit ProtectedDataZoneArg(JS::Zone* zone, Args&&... args)
-      : ProtectedData<Check, T>(Check(zone), std::forward<Args>(args)...) {}
+  explicit ProtectedDataZoneGroupArg(ZoneGroup* group, Args&&... args)
+      : ProtectedData<Check, T>(Check(group), mozilla::Forward<Args>(args)...) {
+  }
 
-  using Base::operator=;
+  template <typename U>
+  ThisType& operator=(const U& p) {
+    this->ref() = p;
+    return *this;
+  }
 };
 
 class CheckUnprotected {
@@ -214,68 +207,75 @@ class CheckThreadLocal {
 
 // Data which may only be accessed by the thread on which it is created.
 template <typename T>
-using ThreadData = ProtectedDataNoCheckArgs<CheckThreadLocal, T>;
+using ThreadLocalData = ProtectedDataNoCheckArgs<CheckThreadLocal, T>;
 
 // Enum describing which helper threads (GC tasks or Ion compilations) may
-// access data even though they do not have exclusive access to any zone.
+// access data even though they do not have exclusive access to any zone group.
 enum class AllowedHelperThread { None, GCTask, IonCompile, GCTaskOrIonCompile };
 
 template <AllowedHelperThread Helper>
-class CheckMainThread {
+class CheckActiveThread {
  public:
   void check() const;
 };
 
-// Data which may only be accessed by the runtime's main thread.
+// Data which may only be accessed by the runtime's cooperatively scheduled
+// active thread.
 template <typename T>
-using MainThreadData =
-    ProtectedDataNoCheckArgs<CheckMainThread<AllowedHelperThread::None>, T>;
+using ActiveThreadData =
+    ProtectedDataNoCheckArgs<CheckActiveThread<AllowedHelperThread::None>, T>;
 
-// Data which may only be accessed by the runtime's main thread or by various
-// helper thread tasks.
+// Data which may only be accessed by the runtime's cooperatively scheduled
+// active thread, or by various helper thread tasks.
 template <typename T>
-using MainThreadOrGCTaskData =
-    ProtectedDataNoCheckArgs<CheckMainThread<AllowedHelperThread::GCTask>, T>;
+using ActiveThreadOrGCTaskData =
+    ProtectedDataNoCheckArgs<CheckActiveThread<AllowedHelperThread::GCTask>, T>;
 template <typename T>
-using MainThreadOrIonCompileData =
-    ProtectedDataNoCheckArgs<CheckMainThread<AllowedHelperThread::IonCompile>,
+using ActiveThreadOrIonCompileData =
+    ProtectedDataNoCheckArgs<CheckActiveThread<AllowedHelperThread::IonCompile>,
                              T>;
 
 template <AllowedHelperThread Helper>
-class CheckZone {
+class CheckZoneGroup {
 #ifdef JS_HAS_PROTECTED_DATA_CHECKS
- protected:
-  JS::Zone* zone;
+  ZoneGroup* group;
 
  public:
-  explicit CheckZone(JS::Zone* zone) : zone(zone) {}
+  explicit CheckZoneGroup(ZoneGroup* group) : group(group) {}
   void check() const;
 #else
  public:
-  explicit CheckZone(JS::Zone* zone) {}
+  explicit CheckZoneGroup(ZoneGroup* group) {}
 #endif
 };
 
 // Data which may only be accessed by threads with exclusive access to the
-// associated zone, or by the runtime's main thread for zones which are not in
-// use by a helper thread.
+// associated zone group, or by the runtime's cooperatively scheduled
+// active thread for zone groups which are not in use by a helper thread.
 template <typename T>
-using ZoneData = ProtectedDataZoneArg<CheckZone<AllowedHelperThread::None>, T>;
+using ZoneGroupData =
+    ProtectedDataZoneGroupArg<CheckZoneGroup<AllowedHelperThread::None>, T>;
 
 // Data which may only be accessed by threads with exclusive access to the
-// associated zone, or by various helper thread tasks.
+// associated zone group, or by various helper thread tasks.
 template <typename T>
-using ZoneOrGCTaskData =
-    ProtectedDataZoneArg<CheckZone<AllowedHelperThread::GCTask>, T>;
+using ZoneGroupOrGCTaskData =
+    ProtectedDataZoneGroupArg<CheckZoneGroup<AllowedHelperThread::GCTask>, T>;
 template <typename T>
-using ZoneOrIonCompileData =
-    ProtectedDataZoneArg<CheckZone<AllowedHelperThread::IonCompile>, T>;
+using ZoneGroupOrIonCompileData =
+    ProtectedDataZoneGroupArg<CheckZoneGroup<AllowedHelperThread::IonCompile>,
+                              T>;
 template <typename T>
-using ZoneOrGCTaskOrIonCompileData =
-    ProtectedDataZoneArg<CheckZone<AllowedHelperThread::GCTaskOrIonCompile>, T>;
+using ZoneGroupOrGCTaskOrIonCompileData = ProtectedDataZoneGroupArg<
+    CheckZoneGroup<AllowedHelperThread::GCTaskOrIonCompile>, T>;
 
 // Runtime wide locks which might protect some data.
-enum class GlobalLock { GCLock, ScriptDataLock, HelperThreadLock };
+enum class GlobalLock {
+  GCLock,
+  ExclusiveAccessLock,
+  ScriptDataLock,
+  HelperThreadLock
+};
 
 template <GlobalLock Lock, AllowedHelperThread Helper>
 class CheckGlobalLock {
@@ -289,6 +289,21 @@ class CheckGlobalLock {
 template <typename T>
 using GCLockData = ProtectedDataNoCheckArgs<
     CheckGlobalLock<GlobalLock::GCLock, AllowedHelperThread::None>, T>;
+
+// Data which may only be accessed while holding the exclusive access lock.
+template <typename T>
+using ExclusiveAccessLockData = ProtectedDataNoCheckArgs<
+    CheckGlobalLock<GlobalLock::ExclusiveAccessLock, AllowedHelperThread::None>,
+    T>;
+
+// Data which may only be accessed while holding the exclusive access lock or
+// by GC helper thread tasks (at which point a foreground thread should be
+// holding the exclusive access lock, though we do not check this).
+template <typename T>
+using ExclusiveAccessLockOrGCTaskData =
+    ProtectedDataNoCheckArgs<CheckGlobalLock<GlobalLock::ExclusiveAccessLock,
+                                             AllowedHelperThread::GCTask>,
+                             T>;
 
 // Data which may only be accessed while holding the script data lock.
 template <typename T>
@@ -314,7 +329,7 @@ class ProtectedDataWriteOnce {
  public:
   template <typename... Args>
   explicit ProtectedDataWriteOnce(Args&&... args)
-      : value(std::forward<Args>(args)...)
+      : value(mozilla::Forward<Args>(args)...)
 #ifdef JS_HAS_PROTECTED_DATA_CHECKS
         ,
         nwrites(0)
@@ -329,9 +344,7 @@ class ProtectedDataWriteOnce {
 
   template <typename U>
   ThisType& operator=(const U& p) {
-    if (ref() != p) {
-      this->writeRef() = p;
-    }
+    if (ref() != p) this->writeRef() = p;
     return *this;
   }
 
@@ -339,9 +352,7 @@ class ProtectedDataWriteOnce {
 
   T& writeRef() {
 #ifdef JS_HAS_PROTECTED_DATA_CHECKS
-    if (!AutoNoteSingleThreadedRegion::count) {
-      check.check();
-    }
+    if (!AutoNoteSingleThreadedRegion::count) check.check();
     // Despite the WriteOnce name, actually allow two writes to accommodate
     // data that is cleared during teardown.
     MOZ_ASSERT(++nwrites <= 2);
@@ -362,26 +373,11 @@ class ProtectedDataWriteOnce {
 template <typename T>
 using WriteOnceData = ProtectedDataWriteOnce<CheckUnprotected, T>;
 
-// Custom check for arena list data that requires the GC lock to be held when
-// accessing the atoms zone if parallel parsing is running, in addition to the
-// usual Zone checks.
-template <AllowedHelperThread Helper>
-class CheckArenaListAccess : public CheckZone<AllowedHelperThread::None> {
-#ifdef JS_HAS_PROTECTED_DATA_CHECKS
- public:
-  explicit CheckArenaListAccess(JS::Zone* zone)
-      : CheckZone<AllowedHelperThread::None>(zone) {}
-  void check() const;
-#else
- public:
-  explicit CheckArenaListAccess(JS::Zone* zone)
-      : CheckZone<AllowedHelperThread::None>(zone) {}
-#endif
-};
-
+// Data that is written once, and only while holding the exclusive access lock.
 template <typename T>
-using ArenaListData =
-    ProtectedDataZoneArg<CheckArenaListAccess<AllowedHelperThread::GCTask>, T>;
+using ExclusiveAccessLockWriteOnceData = ProtectedDataWriteOnce<
+    CheckGlobalLock<GlobalLock::ExclusiveAccessLock, AllowedHelperThread::None>,
+    T>;
 
 #undef DECLARE_ASSIGNMENT_OPERATOR
 #undef DECLARE_ONE_BOOL_OPERATOR

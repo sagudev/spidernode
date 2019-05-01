@@ -12,7 +12,7 @@ function onRejected(val) {
 Promise.prototype.then = 1;
 
 // Replacing Promise@@species shouldn't affect addPromiseReactions.
-Object.defineProperty(Promise, Symbol.species, { get: function(){} });
+Promise[Symbol.species] = function(){};
 
 // Replacing `Promise` shouldn't affect addPromiseReactions.
 let PromiseCtor = Promise;

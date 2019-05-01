@@ -5,7 +5,6 @@ es6id: 21.1.2.2
 description: >
   The length property of the String.fromCodePoint constructor is 1.
 includes: [propertyHelper.js]
-features: [String.fromCodePoint]
 ---*/
 
 assert.sameValue(

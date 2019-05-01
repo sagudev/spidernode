@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,8 +27,6 @@ class Debugger;
 namespace JS {
 namespace dbg {
 
-// [SMDOC] Debugger builder API
-//
 // Helping embedding code build objects for Debugger
 // -------------------------------------------------
 //
@@ -97,9 +95,8 @@ namespace dbg {
 //                                 Builder::Object& result)
 //    {
 //        JSObject* eventObject = ... obtain debuggee event object somehow ...;
-//        if (!eventObject) {
+//        if (!eventObject)
 //            return false;
-//        }
 //        result = builder.newObject(cx);
 //        return result &&
 //               result.defineProperty(cx, "eventType",
@@ -155,7 +152,7 @@ class Builder {
     PersistentRooted<T> value;
 
     BuiltThing(JSContext* cx, Builder& owner_,
-               T value_ = SafelyInitialized<T>())
+               T value_ = GCPolicy<T>::initial())
         : owner(owner_), value(cx, value_) {
       owner.assertBuilt(value_);
     }
@@ -295,7 +292,7 @@ JS_PUBLIC_API bool IsDebugger(JSObject& obj);
 // Append each of the debuggee global objects observed by the Debugger object
 // |dbgObj| to |vector|. Returns true on success, false on failure.
 JS_PUBLIC_API bool GetDebuggeeGlobals(JSContext* cx, JSObject& dbgObj,
-                                      MutableHandleObjectVector vector);
+                                      AutoObjectVector& vector);
 
 // Hooks for reporting where JavaScript execution began.
 //

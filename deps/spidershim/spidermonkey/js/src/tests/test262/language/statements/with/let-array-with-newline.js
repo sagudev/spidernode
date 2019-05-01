@@ -16,7 +16,7 @@ negative:
 flags: [noStrict]
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 // Wrapped in an if-statement to avoid reference errors at runtime.
 if (false) {

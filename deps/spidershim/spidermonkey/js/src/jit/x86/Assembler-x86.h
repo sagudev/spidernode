@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +11,7 @@
 
 #include "jit/CompactBuffer.h"
 #include "jit/IonCode.h"
-#include "jit/JitRealm.h"
+#include "jit/JitCompartment.h"
 #include "jit/shared/Assembler-shared.h"
 #include "jit/x86-shared/Constants-x86-shared.h"
 
@@ -96,7 +96,6 @@ class ABIArgGenerator {
 static constexpr Register ABINonArgReg0 = eax;
 static constexpr Register ABINonArgReg1 = ebx;
 static constexpr Register ABINonArgReg2 = ecx;
-static constexpr Register ABINonArgReg3 = edx;
 
 // This register may be volatile or nonvolatile. Avoid xmm7 which is the
 // ScratchDoubleReg.
@@ -121,13 +120,25 @@ static constexpr Register WasmTlsReg = esi;
 
 // Registers used for asm.js/wasm table calls. These registers must be disjoint
 // from the ABI argument registers, WasmTlsReg and each other.
-static constexpr Register WasmTableCallScratchReg0 = ABINonArgReg0;
-static constexpr Register WasmTableCallScratchReg1 = ABINonArgReg1;
-static constexpr Register WasmTableCallSigReg = ABINonArgReg2;
-static constexpr Register WasmTableCallIndexReg = ABINonArgReg3;
+static constexpr Register WasmTableCallScratchReg = ABINonArgReg0;
+static constexpr Register WasmTableCallSigReg = ABINonArgReg1;
+static constexpr Register WasmTableCallIndexReg = ABINonArgReg2;
 
 static constexpr Register OsrFrameReg = edx;
 static constexpr Register PreBarrierReg = edx;
+
+// Registers used in the GenerateFFIIonExit Enable Activation block.
+static constexpr Register WasmIonExitRegCallee = ecx;
+static constexpr Register WasmIonExitRegE0 = edi;
+static constexpr Register WasmIonExitRegE1 = eax;
+
+// Registers used in the GenerateFFIIonExit Disable Activation block.
+static constexpr Register WasmIonExitRegReturnData = edx;
+static constexpr Register WasmIonExitRegReturnType = ecx;
+static constexpr Register WasmIonExitTlsReg = esi;
+static constexpr Register WasmIonExitRegD0 = edi;
+static constexpr Register WasmIonExitRegD1 = eax;
+static constexpr Register WasmIonExitRegD2 = ebx;
 
 // Registerd used in RegExpMatcher instruction (do not use JSReturnOperand).
 static constexpr Register RegExpMatcherRegExpReg = CallTempReg0;
@@ -159,7 +170,7 @@ static_assert(JitStackAlignment % sizeof(Value) == 0 &&
 // this architecture or not. Rather than a method in the LIRGenerator, it is
 // here such that it is accessible from the entire codebase. Once full support
 // for SIMD is reached on all tier-1 platforms, this constant can be deleted.
-static constexpr bool SupportsSimd = false;
+static constexpr bool SupportsSimd = true;
 static constexpr uint32_t SimdMemoryAlignment = 16;
 
 static_assert(CodeAlignment % SimdMemoryAlignment == 0,
@@ -176,7 +187,6 @@ static_assert(JitStackAlignment % SimdMemoryAlignment == 0,
               "for SIMD accesses.");
 
 static const uint32_t WasmStackAlignment = SimdMemoryAlignment;
-static const uint32_t WasmTrapInstructionLength = 2;
 
 struct ImmTag : public Imm32 {
   explicit ImmTag(JSValueTag mask) : Imm32(int32_t(mask)) {}
@@ -196,7 +206,8 @@ static const Scale ScalePointer = TimesFour;
 namespace js {
 namespace jit {
 
-static inline void PatchJump(CodeLocationJump jump, CodeLocationLabel label) {
+static inline void PatchJump(CodeLocationJump jump, CodeLocationLabel label,
+                             ReprotectCode reprotect = DontReprotect) {
 #ifdef DEBUG
   // Assert that we're overwriting a jump instruction, either:
   //   0F 80+cc <imm32>, or
@@ -204,7 +215,13 @@ static inline void PatchJump(CodeLocationJump jump, CodeLocationLabel label) {
   unsigned char* x = (unsigned char*)jump.raw() - 5;
   MOZ_ASSERT(((*x >= 0x80 && *x <= 0x8F) && *(x - 1) == 0x0F) || (*x == 0xE9));
 #endif
+  MaybeAutoWritableJitCode awjc(jump.raw() - 8, 8, reprotect);
   X86Encoding::SetRel32(jump.raw(), label.raw());
+}
+static inline void PatchBackedge(CodeLocationJump& jump_,
+                                 CodeLocationLabel label,
+                                 JitZoneGroup::BackedgeTarget target) {
+  PatchJump(jump_, label);
 }
 
 static inline Operand LowWord(const Operand& op) {
@@ -237,12 +254,10 @@ class Assembler : public AssemblerX86Shared {
   void writeRelocation(JmpSrc src) {
     jumpRelocations_.writeUnsigned(src.offset());
   }
-  void addPendingJump(JmpSrc src, ImmPtr target, RelocationKind kind) {
+  void addPendingJump(JmpSrc src, ImmPtr target, Relocation::Kind kind) {
     enoughMemory_ &=
         jumps_.append(RelativePatch(src.offset(), target.value, kind));
-    if (kind == RelocationKind::JITCODE) {
-      writeRelocation(src);
-    }
+    if (kind == Relocation::JITCODE) writeRelocation(src);
   }
 
  public:
@@ -328,11 +343,10 @@ class Assembler : public AssemblerX86Shared {
     // Use xor for setting registers to zero, as it is specially optimized
     // for this purpose on modern hardware. Note that it does clobber FLAGS
     // though.
-    if (imm.value == 0) {
+    if (imm.value == 0)
       xorl(dest, dest);
-    } else {
+    else
       movl(imm, dest);
-    }
   }
   void mov(ImmPtr imm, Register dest) {
     mov(ImmWord(uintptr_t(imm.value)), dest);
@@ -352,8 +366,6 @@ class Assembler : public AssemblerX86Shared {
   void mov(Register src, Register dest) { movl(src, dest); }
   void xchg(Register src, Register dest) { xchgl(src, dest); }
   void lea(const Operand& src, Register dest) { return leal(src, dest); }
-  void cmovz32(const Operand& src, Register dest) { return cmovzl(src, dest); }
-  void cmovzPtr(const Operand& src, Register dest) { return cmovzl(src, dest); }
 
   void fstp32(const Operand& src) {
     switch (src.kind()) {
@@ -502,30 +514,28 @@ class Assembler : public AssemblerX86Shared {
     }
   }
 
-  void jmp(ImmPtr target, RelocationKind reloc = RelocationKind::HARDCODED) {
+  void jmp(ImmPtr target, Relocation::Kind reloc = Relocation::HARDCODED) {
     JmpSrc src = masm.jmp();
     addPendingJump(src, target, reloc);
   }
   void j(Condition cond, ImmPtr target,
-         RelocationKind reloc = RelocationKind::HARDCODED) {
+         Relocation::Kind reloc = Relocation::HARDCODED) {
     JmpSrc src = masm.jCC(static_cast<X86Encoding::Condition>(cond));
     addPendingJump(src, target, reloc);
   }
 
-  void jmp(JitCode* target) {
-    jmp(ImmPtr(target->raw()), RelocationKind::JITCODE);
-  }
+  void jmp(JitCode* target) { jmp(ImmPtr(target->raw()), Relocation::JITCODE); }
   void j(Condition cond, JitCode* target) {
-    j(cond, ImmPtr(target->raw()), RelocationKind::JITCODE);
+    j(cond, ImmPtr(target->raw()), Relocation::JITCODE);
   }
   void call(JitCode* target) {
     JmpSrc src = masm.call();
-    addPendingJump(src, ImmPtr(target->raw()), RelocationKind::JITCODE);
+    addPendingJump(src, ImmPtr(target->raw()), Relocation::JITCODE);
   }
   void call(ImmWord target) { call(ImmPtr((void*)target.value)); }
   void call(ImmPtr target) {
     JmpSrc src = masm.call();
-    addPendingJump(src, target, RelocationKind::HARDCODED);
+    addPendingJump(src, target, Relocation::HARDCODED);
   }
 
   // Emit a CALL or CMP (nop) instruction. ToggleCall can be used to patch
@@ -533,7 +543,7 @@ class Assembler : public AssemblerX86Shared {
   CodeOffset toggledCall(JitCode* target, bool enabled) {
     CodeOffset offset(size());
     JmpSrc src = enabled ? masm.call() : masm.cmp_eax();
-    addPendingJump(src, ImmPtr(target->raw()), RelocationKind::JITCODE);
+    addPendingJump(src, ImmPtr(target->raw()), Relocation::JITCODE);
     MOZ_ASSERT_IF(!oom(), size() - offset.offset() == ToggledCallSize(nullptr));
     return offset;
   }
@@ -545,7 +555,7 @@ class Assembler : public AssemblerX86Shared {
 
   // Re-routes pending jumps to an external target, flushing the label in the
   // process.
-  void retarget(Label* label, ImmPtr target, RelocationKind reloc) {
+  void retarget(Label* label, ImmPtr target, Relocation::Kind reloc) {
     if (label->used()) {
       bool more;
       X86Encoding::JmpSrc jmp(label->offset());
@@ -1060,6 +1070,10 @@ class Assembler : public AssemblerX86Shared {
     masm.vmovups_rm(src.encoding(), dest.addr);
     return CodeOffset(masm.currentOffset());
   }
+
+  static bool canUseInSingleByteInstruction(Register reg) {
+    return X86Encoding::HasSubregL(reg.encoding());
+  }
 };
 
 // Get a register in which we plan to put a quantity that will be used as an
@@ -1069,9 +1083,7 @@ class Assembler : public AssemblerX86Shared {
 // run out too.
 static inline bool GetTempRegForIntArg(uint32_t usedIntArgs,
                                        uint32_t usedFloatArgs, Register* out) {
-  if (usedIntArgs >= NumCallTempNonArgRegs) {
-    return false;
-  }
+  if (usedIntArgs >= NumCallTempNonArgRegs) return false;
   *out = CallTempNonArgRegs[usedIntArgs];
   return true;
 }

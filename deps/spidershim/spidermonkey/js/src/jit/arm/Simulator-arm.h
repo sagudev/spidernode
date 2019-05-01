@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 // Copyright 2012 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
@@ -31,15 +31,15 @@
 
 #ifdef JS_SIMULATOR_ARM
 
-#  include "mozilla/Atomics.h"
+#include "mozilla/Atomics.h"
 
-#  include "jit/arm/Architecture-arm.h"
-#  include "jit/arm/disasm/Disasm-arm.h"
-#  include "jit/IonTypes.h"
-#  include "js/ProfilingFrameIterator.h"
-#  include "threading/Thread.h"
-#  include "vm/MutexIDs.h"
-#  include "wasm/WasmSignalHandlers.h"
+#include "jit/arm/Architecture-arm.h"
+#include "jit/arm/disasm/Disasm-arm.h"
+#include "jit/IonTypes.h"
+#include "js/ProfilingFrameIterator.h"
+#include "threading/Thread.h"
+#include "vm/MutexIDs.h"
+#include "wasm/WasmCode.h"
 
 namespace js {
 namespace jit {
@@ -188,13 +188,13 @@ class Simulator {
   };
 
   // Returns nullptr on OOM.
-  static Simulator* Create();
+  static Simulator* Create(JSContext* cx);
 
   static void Destroy(Simulator* simulator);
 
   // Constructor/destructor are for internal use only; use the static methods
   // above.
-  Simulator();
+  explicit Simulator(JSContext* cx);
   ~Simulator();
 
   static bool supportsAtomics() { return HasLDSTREXBHD(); }
@@ -280,6 +280,13 @@ class Simulator {
   template <typename T>
   T get_pc_as() const {
     return reinterpret_cast<T>(get_pc());
+  }
+
+  void trigger_wasm_interrupt() {
+    // This can be called several times if a single interrupt isn't caught
+    // and handled by the simulator, but this is fine; once the current
+    // instruction is done executing, the interrupt will be handled anyhow.
+    wasm_interrupt_ = true;
   }
 
   void enable_single_stepping(SingleStepCallback cb, void* arg);
@@ -369,24 +376,12 @@ class Simulator {
   void printStopInfo(uint32_t code);
 
   // Handle a wasm interrupt triggered by an async signal handler.
+  void handleWasmInterrupt();
   JS::ProfilingFrameIterator::RegisterState registerState();
 
   // Handle any wasm faults, returning true if the fault was handled.
-  // This method is rather hot so inline the normal (no-wasm) case.
-  bool MOZ_ALWAYS_INLINE handleWasmSegFault(int32_t addr, unsigned numBytes) {
-    if (MOZ_LIKELY(!wasm::CodeExists)) {
-      return false;
-    }
-
-    uint8_t* newPC;
-    if (!wasm::MemoryAccessTraps(registerState(), (uint8_t*)addr, numBytes,
-                                 &newPC)) {
-      return false;
-    }
-
-    set_pc(int32_t(newPC));
-    return true;
-  }
+  bool handleWasmSegFault(int32_t addr, unsigned numBytes);
+  bool handleWasmIllFault();
 
   // Read and write memory.
   inline uint8_t readBU(int32_t addr);
@@ -483,6 +478,8 @@ class Simulator {
 
   void callInternal(uint8_t* entry);
 
+  JSContext* const cx_;
+
   // Architecture state.
   // Saturating instructions require a Q flag to indicate saturation.
   // There is currently no way to read the CPSR directly, and thus read the Q
@@ -516,6 +513,9 @@ class Simulator {
   uintptr_t stackLimit_;
   bool pc_modified_;
   int64_t icount_;
+
+  // wasm async interrupt / fault support
+  bool wasm_interrupt_;
 
   // Debugger input.
   char* lastDebuggerInput_;
@@ -580,11 +580,19 @@ class SimulatorProcess {
       ICacheCheckingDisableCount;
   static void FlushICache(void* start, size_t size);
 
+  // Jitcode may be rewritten from a signal handler, but is prevented from
+  // calling FlushICache() because the signal may arrive within the critical
+  // area of an AutoLockSimulatorCache. This flag instructs the Simulator
+  // to remove all cache entries the next time it checks, avoiding false
+  // negatives.
+  static mozilla::Atomic<bool, mozilla::ReleaseAcquire>
+      cacheInvalidatedBySignalHandler_;
+
   static void checkICacheLocked(SimInstruction* instr);
 
   static bool initialize() {
     singleton_ = js_new<SimulatorProcess>();
-    return singleton_;
+    return singleton_ && singleton_->init();
   }
   static void destroy() {
     js_delete(singleton_);
@@ -595,6 +603,8 @@ class SimulatorProcess {
   ~SimulatorProcess();
 
  private:
+  bool init();
+
   static SimulatorProcess* singleton_;
 
   // This lock creates a critical section around 'redirection_' and

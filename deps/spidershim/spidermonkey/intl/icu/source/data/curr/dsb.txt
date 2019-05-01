@@ -464,10 +464,6 @@ dsb{
         }
         MRO{
             "MRO",
-            "mauretański ouguiya (1973–2017)",
-        }
-        MRU{
-            "MRU",
             "mauretański ouguiya",
         }
         MUR{
@@ -624,10 +620,6 @@ dsb{
         }
         STD{
             "STD",
-            "são-tomeska dobra (1977–2017)",
-        }
-        STN{
-            "STN",
             "são-tomeska dobra",
         }
         SVC{
@@ -700,10 +692,6 @@ dsb{
         }
         VEF{
             "VEF",
-            "venezuelski bolívar (2008–2018)",
-        }
-        VES{
-            "VES",
             "venezuelski bolívar",
         }
         VND{
@@ -735,7 +723,7 @@ dsb{
             "CFP-frank",
         }
         XXX{
-            "¤",
+            "XXX",
             "njeznate pjenjeze",
         }
         YER{
@@ -1446,12 +1434,6 @@ dsb{
             two{"macaoskej pataca"}
         }
         MRO{
-            few{"mauretańske ouguiya (1973–2017)"}
-            one{"mauretański ouguiya (1973–2017)"}
-            other{"mauretański ouguiya (1973–2017)"}
-            two{"mauretańskej ouguiya (1973–2017)"}
-        }
-        MRU{
             few{"mauretańske ouguiya"}
             one{"mauretański ouguiya"}
             other{"mauretański ouguiya"}
@@ -1686,12 +1668,6 @@ dsb{
             two{"pódpołdnjowosudańskej punta"}
         }
         STD{
-            few{"são-tomeske dobry (1977–2017)"}
-            one{"são-tomeska dobra (1977–2017)"}
-            other{"são-tomeskich dobrow (1977–2017)"}
-            two{"são-tomeskej dobrje (1977–2017)"}
-        }
-        STN{
             few{"são-tomeske dobry"}
             one{"são-tomeska dobra"}
             other{"são-tomeskich dobrow"}
@@ -1800,12 +1776,6 @@ dsb{
             two{"usbekiskej suma"}
         }
         VEF{
-            few{"venezuelske bolívary (2008–2018)"}
-            one{"venezuelski bolívar (2008–2018)"}
-            other{"venezuelskich bolívarow (2008–2018)"}
-            two{"venezuelskej bolívara (2008–2018)"}
-        }
-        VES{
             few{"venezuelske bolívary"}
             one{"venezuelski bolívar"}
             other{"venezuelskich bolívarow"}
@@ -1884,5 +1854,5 @@ dsb{
         other{"{0} {1}"}
         two{"{0} {1}"}
     }
-    Version{"2.1.47.82"}
+    Version{"2.1.37.1"}
 }

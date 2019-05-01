@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,8 +11,8 @@
 
 #include "gc/Allocator.h"
 #include "gc/GCTrace.h"
+#include "vm/JSCompartment.h"
 #include "vm/Probes.h"
-#include "vm/Realm.h"
 
 #include "vm/JSObject-inl.h"
 
@@ -53,41 +53,26 @@ inline NativeObject* NewObjectCache::newObjectFromHit(JSContext* cx,
   // runtimeFromAnyThread.
   ObjectGroup* group = templateObj->group_;
 
-  // If we did the lookup based on the proto we might have a group/object from a
-  // different (same-compartment) realm, so we have to do a realm check.
-  if (group->realm() != cx->realm()) {
-    return nullptr;
-  }
-
   MOZ_ASSERT(!group->hasUnanalyzedPreliminaryObjects());
 
-  {
-    AutoSweepObjectGroup sweepGroup(group);
-    if (group->shouldPreTenure(sweepGroup)) {
-      heap = gc::TenuredHeap;
-    }
-  }
+  if (group->shouldPreTenure()) heap = gc::TenuredHeap;
 
-  if (cx->runtime()->gc.upcomingZealousGC()) {
-    return nullptr;
-  }
+  if (cx->runtime()->gc.upcomingZealousGC()) return nullptr;
 
-  NativeObject* obj = static_cast<NativeObject*>(AllocateObject<NoGC>(
-      cx, entry->kind, /* nDynamicSlots = */ 0, heap, group->clasp()));
-  if (!obj) {
-    return nullptr;
-  }
+  NativeObject* obj = static_cast<NativeObject*>(
+      Allocate<JSObject, NoGC>(cx, entry->kind,
+                               /* nDynamicSlots = */ 0, heap, group->clasp()));
+  if (!obj) return nullptr;
 
   copyCachedToObject(obj, templateObj, entry->kind);
 
-  if (group->clasp()->shouldDelayMetadataBuilder()) {
-    cx->realm()->setObjectPendingMetadata(cx, obj);
-  } else {
+  if (group->clasp()->shouldDelayMetadataBuilder())
+    cx->compartment()->setObjectPendingMetadata(cx, obj);
+  else
     obj = static_cast<NativeObject*>(SetNewObjectMetadata(cx, obj));
-  }
 
   probes::CreateObject(cx, obj);
-  gc::gcTracer.traceCreateObject(obj);
+  gc::TraceCreateObject(obj);
   return obj;
 }
 

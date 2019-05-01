@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "jit/x64/Lowering-x64.h"
 
-#include "jit/Lowering.h"
 #include "jit/MIR.h"
 #include "jit/x64/Assembler-x64.h"
 
@@ -60,7 +59,7 @@ void LIRGeneratorX64::lowerForMulInt64(LMulI64* ins, MMul* mir,
   defineInt64ReuseInput(ins, mir, 0);
 }
 
-void LIRGenerator::visitBox(MBox* box) {
+void LIRGeneratorX64::visitBox(MBox* box) {
   MDefinition* opd = box->getOperand(0);
 
   // If the operand is a constant, emit near its uses.
@@ -78,15 +77,13 @@ void LIRGenerator::visitBox(MBox* box) {
   }
 }
 
-void LIRGenerator::visitUnbox(MUnbox* unbox) {
+void LIRGeneratorX64::visitUnbox(MUnbox* unbox) {
   MDefinition* box = unbox->getOperand(0);
 
   if (box->type() == MIRType::ObjectOrNull) {
     LUnboxObjectOrNull* lir =
         new (alloc()) LUnboxObjectOrNull(useRegisterAtStart(box));
-    if (unbox->fallible()) {
-      assignSnapshot(lir, unbox->bailoutKind());
-    }
+    if (unbox->fallible()) assignSnapshot(lir, unbox->bailoutKind());
     defineReuseInput(lir, unbox, 0);
     return;
   }
@@ -105,20 +102,22 @@ void LIRGenerator::visitUnbox(MUnbox* unbox) {
     lir = new (alloc()) LUnbox(useAtStart(box));
   }
 
-  if (unbox->fallible()) {
-    assignSnapshot(lir, unbox->bailoutKind());
-  }
+  if (unbox->fallible()) assignSnapshot(lir, unbox->bailoutKind());
 
   define(lir, unbox);
 }
 
-void LIRGenerator::visitReturn(MReturn* ret) {
+void LIRGeneratorX64::visitReturn(MReturn* ret) {
   MDefinition* opd = ret->getOperand(0);
   MOZ_ASSERT(opd->type() == MIRType::Value);
 
   LReturn* ins = new (alloc()) LReturn;
   ins->setOperand(0, useFixed(opd, JSReturnReg));
   add(ins);
+}
+
+void LIRGeneratorX64::defineUntypedPhi(MPhi* phi, size_t lirIndex) {
+  defineTypedPhi(phi, lirIndex);
 }
 
 void LIRGeneratorX64::lowerUntypedPhiInput(MPhi* phi, uint32_t inputPosition,
@@ -135,37 +134,37 @@ void LIRGeneratorX64::lowerInt64PhiInput(MPhi* phi, uint32_t inputPosition,
   lowerTypedPhiInput(phi, inputPosition, block, lirIndex);
 }
 
-void LIRGenerator::visitCompareExchangeTypedArrayElement(
+void LIRGeneratorX64::visitCompareExchangeTypedArrayElement(
     MCompareExchangeTypedArrayElement* ins) {
   lowerCompareExchangeTypedArrayElement(ins,
                                         /* useI386ByteRegisters = */ false);
 }
 
-void LIRGenerator::visitAtomicExchangeTypedArrayElement(
+void LIRGeneratorX64::visitAtomicExchangeTypedArrayElement(
     MAtomicExchangeTypedArrayElement* ins) {
   lowerAtomicExchangeTypedArrayElement(ins, /* useI386ByteRegisters = */ false);
 }
 
-void LIRGenerator::visitAtomicTypedArrayElementBinop(
+void LIRGeneratorX64::visitAtomicTypedArrayElementBinop(
     MAtomicTypedArrayElementBinop* ins) {
   lowerAtomicTypedArrayElementBinop(ins, /* useI386ByteRegisters = */ false);
 }
 
-void LIRGenerator::visitWasmUnsignedToDouble(MWasmUnsignedToDouble* ins) {
+void LIRGeneratorX64::visitWasmUnsignedToDouble(MWasmUnsignedToDouble* ins) {
   MOZ_ASSERT(ins->input()->type() == MIRType::Int32);
   LWasmUint32ToDouble* lir =
       new (alloc()) LWasmUint32ToDouble(useRegisterAtStart(ins->input()));
   define(lir, ins);
 }
 
-void LIRGenerator::visitWasmUnsignedToFloat32(MWasmUnsignedToFloat32* ins) {
+void LIRGeneratorX64::visitWasmUnsignedToFloat32(MWasmUnsignedToFloat32* ins) {
   MOZ_ASSERT(ins->input()->type() == MIRType::Int32);
   LWasmUint32ToFloat32* lir =
       new (alloc()) LWasmUint32ToFloat32(useRegisterAtStart(ins->input()));
   define(lir, ins);
 }
 
-void LIRGenerator::visitWasmLoad(MWasmLoad* ins) {
+void LIRGeneratorX64::visitWasmLoad(MWasmLoad* ins) {
   MDefinition* base = ins->base();
   MOZ_ASSERT(base->type() == MIRType::Int32);
 
@@ -179,7 +178,7 @@ void LIRGenerator::visitWasmLoad(MWasmLoad* ins) {
   defineInt64(lir, ins);
 }
 
-void LIRGenerator::visitWasmStore(MWasmStore* ins) {
+void LIRGeneratorX64::visitWasmStore(MWasmStore* ins) {
   MDefinition* base = ins->base();
   MOZ_ASSERT(base->type() == MIRType::Int32);
 
@@ -196,18 +195,19 @@ void LIRGenerator::visitWasmStore(MWasmStore* ins) {
       break;
     case Scalar::Int64:
       // No way to encode an int64-to-memory move on x64.
-      if (value->isConstant() && value->type() != MIRType::Int64) {
+      if (value->isConstant() && value->type() != MIRType::Int64)
         valueAlloc = useOrConstantAtStart(value);
-      } else {
+      else
         valueAlloc = useRegisterAtStart(value);
-      }
       break;
     case Scalar::Float32:
     case Scalar::Float64:
+    case Scalar::Float32x4:
+    case Scalar::Int8x16:
+    case Scalar::Int16x8:
+    case Scalar::Int32x4:
       valueAlloc = useRegisterAtStart(value);
       break;
-    case Scalar::BigInt64:
-    case Scalar::BigUint64:
     case Scalar::Uint8Clamped:
     case Scalar::MaxTypedArrayViewType:
       MOZ_CRASH("unexpected array type");
@@ -218,7 +218,48 @@ void LIRGenerator::visitWasmStore(MWasmStore* ins) {
   add(lir, ins);
 }
 
-void LIRGenerator::visitWasmCompareExchangeHeap(MWasmCompareExchangeHeap* ins) {
+void LIRGeneratorX64::visitAsmJSLoadHeap(MAsmJSLoadHeap* ins) {
+  MDefinition* base = ins->base();
+  MOZ_ASSERT(base->type() == MIRType::Int32);
+
+  define(new (alloc()) LAsmJSLoadHeap(useRegisterOrZeroAtStart(base)), ins);
+}
+
+void LIRGeneratorX64::visitAsmJSStoreHeap(MAsmJSStoreHeap* ins) {
+  MDefinition* base = ins->base();
+  MOZ_ASSERT(base->type() == MIRType::Int32);
+
+  LAsmJSStoreHeap* lir = nullptr;  // initialize to silence GCC warning
+  switch (ins->access().type()) {
+    case Scalar::Int8:
+    case Scalar::Uint8:
+    case Scalar::Int16:
+    case Scalar::Uint16:
+    case Scalar::Int32:
+    case Scalar::Uint32:
+      lir = new (alloc())
+          LAsmJSStoreHeap(useRegisterOrZeroAtStart(base),
+                          useRegisterOrConstantAtStart(ins->value()));
+      break;
+    case Scalar::Float32:
+    case Scalar::Float64:
+    case Scalar::Float32x4:
+    case Scalar::Int8x16:
+    case Scalar::Int16x8:
+    case Scalar::Int32x4:
+      lir = new (alloc()) LAsmJSStoreHeap(useRegisterOrZeroAtStart(base),
+                                          useRegisterAtStart(ins->value()));
+      break;
+    case Scalar::Int64:
+    case Scalar::Uint8Clamped:
+    case Scalar::MaxTypedArrayViewType:
+      MOZ_CRASH("unexpected array type");
+  }
+  add(lir, ins);
+}
+
+void LIRGeneratorX64::visitWasmCompareExchangeHeap(
+    MWasmCompareExchangeHeap* ins) {
   MDefinition* base = ins->base();
   MOZ_ASSERT(base->type() == MIRType::Int32);
 
@@ -236,7 +277,8 @@ void LIRGenerator::visitWasmCompareExchangeHeap(MWasmCompareExchangeHeap* ins) {
   defineFixed(lir, ins, LAllocation(AnyRegister(eax)));
 }
 
-void LIRGenerator::visitWasmAtomicExchangeHeap(MWasmAtomicExchangeHeap* ins) {
+void LIRGeneratorX64::visitWasmAtomicExchangeHeap(
+    MWasmAtomicExchangeHeap* ins) {
   MOZ_ASSERT(ins->base()->type() == MIRType::Int32);
 
   const LAllocation base = useRegister(ins->base());
@@ -251,7 +293,7 @@ void LIRGenerator::visitWasmAtomicExchangeHeap(MWasmAtomicExchangeHeap* ins) {
   define(lir, ins);
 }
 
-void LIRGenerator::visitWasmAtomicBinopHeap(MWasmAtomicBinopHeap* ins) {
+void LIRGeneratorX64::visitWasmAtomicBinopHeap(MWasmAtomicBinopHeap* ins) {
   MDefinition* base = ins->base();
   MOZ_ASSERT(base->type() == MIRType::Int32);
 
@@ -312,16 +354,15 @@ void LIRGenerator::visitWasmAtomicBinopHeap(MWasmAtomicBinopHeap* ins) {
   auto* lir = new (alloc()) LWasmAtomicBinopHeap(
       useRegister(base), value, bitOp ? temp() : LDefinition::BogusTemp());
 
-  if (reuseInput) {
+  if (reuseInput)
     defineReuseInput(lir, ins, LWasmAtomicBinopHeap::valueOp);
-  } else if (bitOp) {
+  else if (bitOp)
     defineFixed(lir, ins, LAllocation(AnyRegister(rax)));
-  } else {
+  else
     define(lir, ins);
-  }
 }
 
-void LIRGenerator::visitSubstr(MSubstr* ins) {
+void LIRGeneratorX64::visitSubstr(MSubstr* ins) {
   LSubstr* lir = new (alloc())
       LSubstr(useRegister(ins->string()), useRegister(ins->begin()),
               useRegister(ins->length()), temp(), temp(), tempByteOpRegister());
@@ -329,7 +370,7 @@ void LIRGenerator::visitSubstr(MSubstr* ins) {
   assignSafepoint(lir, ins);
 }
 
-void LIRGenerator::visitRandom(MRandom* ins) {
+void LIRGeneratorX64::visitRandom(MRandom* ins) {
   LRandom* lir = new (alloc()) LRandom(temp(), temp(), temp());
   defineFixed(lir, ins, LFloatReg(ReturnDoubleReg));
 }
@@ -368,7 +409,7 @@ void LIRGeneratorX64::lowerUModI64(MMod* mod) {
   defineInt64Fixed(lir, mod, LInt64Allocation(LAllocation(AnyRegister(rdx))));
 }
 
-void LIRGenerator::visitWasmTruncateToInt64(MWasmTruncateToInt64* ins) {
+void LIRGeneratorX64::visitWasmTruncateToInt64(MWasmTruncateToInt64* ins) {
   MDefinition* opd = ins->input();
   MOZ_ASSERT(opd->type() == MIRType::Double || opd->type() == MIRType::Float32);
 
@@ -378,7 +419,7 @@ void LIRGenerator::visitWasmTruncateToInt64(MWasmTruncateToInt64* ins) {
               ins);
 }
 
-void LIRGenerator::visitInt64ToFloatingPoint(MInt64ToFloatingPoint* ins) {
+void LIRGeneratorX64::visitInt64ToFloatingPoint(MInt64ToFloatingPoint* ins) {
   MDefinition* opd = ins->input();
   MOZ_ASSERT(opd->type() == MIRType::Int64);
   MOZ_ASSERT(IsFloatingPointType(ins->type()));
@@ -388,11 +429,11 @@ void LIRGenerator::visitInt64ToFloatingPoint(MInt64ToFloatingPoint* ins) {
          ins);
 }
 
-void LIRGenerator::visitExtendInt32ToInt64(MExtendInt32ToInt64* ins) {
+void LIRGeneratorX64::visitExtendInt32ToInt64(MExtendInt32ToInt64* ins) {
   defineInt64(new (alloc()) LExtendInt32ToInt64(useAtStart(ins->input())), ins);
 }
 
-void LIRGenerator::visitSignExtendInt64(MSignExtendInt64* ins) {
+void LIRGeneratorX64::visitSignExtendInt64(MSignExtendInt64* ins) {
   defineInt64(new (alloc())
                   LSignExtendInt64(useInt64RegisterAtStart(ins->input())),
               ins);

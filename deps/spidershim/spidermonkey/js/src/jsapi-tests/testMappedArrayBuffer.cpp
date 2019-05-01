@@ -1,22 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 
 #include <fcntl.h>
 #include <stdio.h>
 
 #include "jsfriendapi.h"
-#include "js/ArrayBuffer.h"  // JS::{{Create,Release}MappedArrayBufferContents,DetachArrayBuffer,GetArrayBuffer{ByteLength,Data},Is{,Detached,Mapped}ArrayBufferObject,NewMappedArrayBufferWithContents,StealArrayBufferContents}
 #include "js/StructuredClone.h"
 #include "jsapi-tests/tests.h"
 #include "vm/ArrayBufferObject.h"
 
 #ifdef XP_WIN
-#  include <io.h>
-#  define GET_OS_FD(a) int(_get_osfhandle(a))
+#include <io.h>
+#define GET_OS_FD(a) int(_get_osfhandle(a))
 #else
-#  include <unistd.h>
-#  define GET_OS_FD(a) (a)
+#include <unistd.h>
+#define GET_OS_FD(a) (a)
 #endif
 
 const char test_data[] =
@@ -66,15 +65,12 @@ BEGIN_TEST(testMappedArrayBuffer_bug945152) {
 
 JSObject* CreateNewObject(const int offset, const int length) {
   int fd = open(test_filename, O_RDONLY);
-  void* ptr =
-      JS::CreateMappedArrayBufferContents(GET_OS_FD(fd), offset, length);
+  void* ptr = JS_CreateMappedArrayBufferContents(GET_OS_FD(fd), offset, length);
   close(fd);
-  if (!ptr) {
-    return nullptr;
-  }
-  JSObject* obj = JS::NewMappedArrayBufferWithContents(cx, length, ptr);
+  if (!ptr) return nullptr;
+  JSObject* obj = JS_NewMappedArrayBufferWithContents(cx, length, ptr);
   if (!obj) {
-    JS::ReleaseMappedArrayBufferContents(ptr, length);
+    JS_ReleaseMappedArrayBufferContents(ptr, length);
     return nullptr;
   }
   return obj;
@@ -85,16 +81,15 @@ bool VerifyObject(JS::HandleObject obj, uint32_t offset, uint32_t length,
   JS::AutoCheckCannotGC nogc;
 
   CHECK(obj);
-  CHECK(JS::IsArrayBufferObject(obj));
-  CHECK_EQUAL(JS::GetArrayBufferByteLength(obj), length);
-  if (mapped) {
-    CHECK(JS::IsMappedArrayBufferObject(obj));
-  } else {
-    CHECK(!JS::IsMappedArrayBufferObject(obj));
-  }
+  CHECK(JS_IsArrayBufferObject(obj));
+  CHECK_EQUAL(JS_GetArrayBufferByteLength(obj), length);
+  if (mapped)
+    CHECK(JS_IsMappedArrayBufferObject(obj));
+  else
+    CHECK(!JS_IsMappedArrayBufferObject(obj));
   bool sharedDummy;
   const char* data = reinterpret_cast<const char*>(
-      JS::GetArrayBufferData(obj, &sharedDummy, nogc));
+      JS_GetArrayBufferData(obj, &sharedDummy, nogc));
   CHECK(data);
   CHECK(memcmp(data, test_data + offset, length) == 0);
 
@@ -110,12 +105,10 @@ bool TestCreateObject(uint32_t offset, uint32_t length) {
 
 bool TestReleaseContents() {
   int fd = open(test_filename, O_RDONLY);
-  void* ptr = JS::CreateMappedArrayBufferContents(GET_OS_FD(fd), 0, 12);
+  void* ptr = JS_CreateMappedArrayBufferContents(GET_OS_FD(fd), 0, 12);
   close(fd);
-  if (!ptr) {
-    return false;
-  }
-  JS::ReleaseMappedArrayBufferContents(ptr, 12);
+  if (!ptr) return false;
+  JS_ReleaseMappedArrayBufferContents(ptr, 12);
 
   return true;
 }
@@ -123,8 +116,8 @@ bool TestReleaseContents() {
 bool TestDetachObject() {
   JS::RootedObject obj(cx, CreateNewObject(8, 12));
   CHECK(obj);
-  JS::DetachArrayBuffer(cx, obj);
-  CHECK(JS::IsDetachedArrayBufferObject(obj));
+  JS_DetachArrayBuffer(cx, obj);
+  CHECK(JS_IsDetachedArrayBufferObject(obj));
 
   return true;
 }
@@ -147,10 +140,10 @@ bool TestCloneObject() {
 bool TestStealContents() {
   JS::RootedObject obj(cx, CreateNewObject(8, 12));
   CHECK(obj);
-  void* contents = JS::StealArrayBufferContents(cx, obj);
+  void* contents = JS_StealArrayBufferContents(cx, obj);
   CHECK(contents);
   CHECK(memcmp(contents, test_data + 8, 12) == 0);
-  CHECK(JS::IsDetachedArrayBufferObject(obj));
+  CHECK(JS_IsDetachedArrayBufferObject(obj));
 
   return true;
 }
@@ -161,10 +154,8 @@ bool TestTransferObject() {
   JS::RootedValue v1(cx, JS::ObjectValue(*obj1));
 
   // Create an Array of transferable values.
-  JS::RootedValueVector argv(cx);
-  if (!argv.append(v1)) {
-    return false;
-  }
+  JS::AutoValueVector argv(cx);
+  if (!argv.append(v1)) return false;
 
   JS::RootedObject obj(
       cx, JS_NewArrayObject(cx, JS::HandleValueArray::subarray(argv, 0, 1)));
@@ -180,7 +171,7 @@ bool TestTransferObject() {
   CHECK(cloned_buffer.read(cx, &v2, nullptr, nullptr));
   JS::RootedObject obj2(cx, v2.toObjectOrNull());
   CHECK(VerifyObject(obj2, 8, 12, true));
-  CHECK(JS::IsDetachedArrayBufferObject(obj1));
+  CHECK(JS_IsDetachedArrayBufferObject(obj1));
 
   return true;
 }

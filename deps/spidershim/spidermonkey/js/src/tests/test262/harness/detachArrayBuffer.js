@@ -9,6 +9,8 @@ description: >
     $DETACHBUFFER relies on the presence of a definition for $262.detachArrayBuffer.
 
     Without a definition, calling $DETACHBUFFER will result in a ReferenceError
+
+includes: [sta.js]
 ---*/
 
 var ab = new ArrayBuffer(1);

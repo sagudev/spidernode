@@ -1,16 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gc/GCInternals.h"
+#include "gc/Zone.h"
 #include "js/GCVector.h"
 
 #include "jsapi-tests/tests.h"
-
-#include "gc/Zone-inl.h"
 
 static void MinimizeHeap(JSContext* cx) {
   // The second collection is to force us to wait for the background
@@ -94,28 +93,22 @@ BEGIN_TEST(testGCUID) {
   // Tear holes in the heap by unrooting the even objects and collecting.
   JS::Rooted<ObjectVector> vec2(cx, ObjectVector(cx));
   for (size_t i = 0; i < N; ++i) {
-    if (i % 2 == 1) {
-      CHECK(vec2.append(vec[i]));
-    }
+    if (i % 2 == 1) CHECK(vec2.append(vec[i]));
   }
   vec.clear();
+  MinimizeHeap(cx);
 
   // Grab the last object in the vector as our object of interest.
   obj = vec2.back();
   CHECK(obj);
-  CHECK(!js::gc::IsInsideNursery(obj));
   tenuredAddr = uintptr_t(obj.get());
   CHECK(obj->zone()->getOrCreateUniqueId(obj, &uid));
 
   // Force a compaction to move the object and check that the uid moved to
   // the new tenured heap location.
   JS::PrepareForFullGC(cx);
-  JS::NonIncrementalGC(cx, GC_SHRINK, JS::GCReason::API);
-
-  // There's a very low probability that this check could fail, but it is
-  // possible.  If it becomes an annoying intermittent then we should make
-  // this test more robust by recording IDs of many objects and then checking
-  // that some have moved.
+  JS::GCForReason(cx, GC_SHRINK, JS::gcreason::API);
+  MinimizeHeap(cx);
   CHECK(uintptr_t(obj.get()) != tenuredAddr);
   CHECK(obj->zone()->hasUniqueId(obj));
   CHECK(obj->zone()->getOrCreateUniqueId(obj, &tmp));

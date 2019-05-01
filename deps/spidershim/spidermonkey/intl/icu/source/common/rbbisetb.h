@@ -82,8 +82,7 @@ public:
     RBBISetBuilder(RBBIRuleBuilder *rb);
     ~RBBISetBuilder();
 
-    void     buildRanges();
-    void     buildTrie();
+    void     build();
     void     addValToSets(UVector *sets,      uint32_t val);
     void     addValToSet (RBBINode *usetNode, uint32_t val);
     int32_t  getNumCharCategories() const;   // CharCategories are the same as input symbol set to the
@@ -94,15 +93,6 @@ public:
     UChar32  getFirstChar(int32_t  val) const;
     UBool    sawBOF() const;                 // Indicate whether any references to the {bof} pseudo
                                              //   character were encountered.
-    /**
-     * Merge two character categories that have been identified as having equivalent behavior.
-     * The ranges belonging to the second category (table column) will be added to the first.
-     * @param categories the pair of categories to be merged.
-     */
-    void     mergeCategories(IntPair categories);
-
-    static constexpr int32_t DICT_BIT = 0x4000;
-
 #ifdef RBBI_DEBUG
     void     printSets();
     void     printRanges();

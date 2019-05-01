@@ -10,19 +10,16 @@ info: |
 
     7. If trap is undefined, then
         b. Return Construct(target, argumentsList, newTarget).
-features: [new.target, Proxy, Reflect, Reflect.construct]
+features: [Reflect.construct]
 ---*/
 
 var calls = 0;
 
 function NewTarget() {}
-
 function Target(a, b) {
-  assert.sameValue(new.target, NewTarget);
-  calls += 1;
-  return {
-    sum: a + b
-  };
+    assert.sameValue(new.target, NewTarget);
+    calls += 1;
+    return {sum: a + b};
 }
 
 var P = new Proxy(Target, {});

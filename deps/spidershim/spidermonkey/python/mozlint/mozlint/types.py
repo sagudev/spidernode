@@ -29,20 +29,9 @@ class BaseType(object):
         :param config: Linter config the paths are being linted against.
         :param lintargs: External arguments to the linter not defined in
                          the definition, but passed in by a consumer.
-        :returns: A list of :class:`~result.Issue` objects.
+        :returns: A list of :class:`~result.ResultContainer` objects.
         """
-        if lintargs.get('use_filters', True):
-            paths, exclude = filterpaths(
-                lintargs['root'],
-                paths,
-                config['include'],
-                config.get('exclude', []),
-                config.get('extensions', []),
-            )
-            config['exclude'] = exclude
-        elif config.get('exclude'):
-            del config['exclude']
-
+        paths = filterpaths(paths, config, **lintargs)
         if not paths:
             return
 
@@ -82,10 +71,8 @@ class LineType(BaseType):
         else:
             patterns = ['**/*.{}'.format(e) for e in config['extensions']]
 
-        exclude = [os.path.relpath(e, path) for e in config.get('exclude', [])]
-        finder = FileFinder(path, ignore=exclude)
-
         errors = []
+        finder = FileFinder(path, ignore=lintargs.get('exclude', []))
         for pattern in patterns:
             for p, f in finder.find(pattern):
                 errors.extend(self._lint(os.path.join(path, p), config, **lintargs))
@@ -125,7 +112,7 @@ class ExternalType(BaseType):
     """Linter type that runs an external function.
 
     The function is responsible for properly formatting the results
-    into a list of :class:`~result.Issue` objects.
+    into a list of :class:`~result.ResultContainer` objects.
     """
     batch = True
 

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +9,7 @@
 
 #include "mozilla/Attributes.h"
 
-#include "builtin/Array.h"
+#include "jsarray.h"
 
 #include "jit/MIR.h"
 #include "jit/Snapshots.h"
@@ -17,8 +17,6 @@
 namespace js {
 namespace jit {
 
-// [SMDOC] IonMonkey Recover Instructions
-//
 // This file contains all recover instructions.
 //
 // A recover instruction is an equivalent of a MIR instruction which is executed
@@ -78,7 +76,6 @@ namespace jit {
   _(Floor)                     \
   _(Ceil)                      \
   _(Round)                     \
-  _(Trunc)                     \
   _(CharCodeAt)                \
   _(FromCharCode)              \
   _(Pow)                       \
@@ -89,7 +86,6 @@ namespace jit {
   _(Atan2)                     \
   _(Hypot)                     \
   _(NearbyInt)                 \
-  _(Sign)                      \
   _(MathFunction)              \
   _(Random)                    \
   _(StringSplit)               \
@@ -112,6 +108,7 @@ namespace jit {
   _(CreateThisWithTemplate)    \
   _(Lambda)                    \
   _(LambdaArrow)               \
+  _(SimdBox)                   \
   _(ObjectState)               \
   _(ArrayState)                \
   _(SetArrayLength)            \
@@ -175,15 +172,14 @@ class MOZ_NON_PARAM RInstruction {
   uint32_t numOperands() const override { return numOp; }
 
 #ifdef DEBUG
-#  define RINSTRUCTION_HEADER_NUM_OP_(op, numOp)                      \
-    RINSTRUCTION_HEADER_NUM_OP_MAIN(op, numOp)                        \
-    static_assert(                                                    \
-        M##op::staticNumOperands == numOp,                            \
-        "The recover instructions's numOperands should equal to the " \
-        "MIR's numOperands");
+#define RINSTRUCTION_HEADER_NUM_OP_(op, numOp)                                \
+  RINSTRUCTION_HEADER_NUM_OP_MAIN(op, numOp)                                  \
+  static_assert(M##op::staticNumOperands == numOp,                            \
+                "The recover instructions's numOperands should equal to the " \
+                "MIR's numOperands");
 #else
-#  define RINSTRUCTION_HEADER_NUM_OP_(op, numOp) \
-    RINSTRUCTION_HEADER_NUM_OP_MAIN(op, numOp)
+#define RINSTRUCTION_HEADER_NUM_OP_(op, numOp) \
+  RINSTRUCTION_HEADER_NUM_OP_MAIN(op, numOp)
 #endif
 
 class RResumePoint final : public RInstruction {
@@ -376,14 +372,6 @@ class RRound final : public RInstruction {
                             SnapshotIterator& iter) const override;
 };
 
-class RTrunc final : public RInstruction {
- public:
-  RINSTRUCTION_HEADER_NUM_OP_(Trunc, 1)
-
-  MOZ_MUST_USE bool recover(JSContext* cx,
-                            SnapshotIterator& iter) const override;
-};
-
 class RCharCodeAt final : public RInstruction {
  public:
   RINSTRUCTION_HEADER_NUM_OP_(CharCodeAt, 2)
@@ -473,14 +461,6 @@ class RNearbyInt final : public RInstruction {
 
  public:
   RINSTRUCTION_HEADER_NUM_OP_(NearbyInt, 1)
-
-  MOZ_MUST_USE bool recover(JSContext* cx,
-                            SnapshotIterator& iter) const override;
-};
-
-class RSign final : public RInstruction {
- public:
-  RINSTRUCTION_HEADER_NUM_OP_(Sign, 1)
 
   MOZ_MUST_USE bool recover(JSContext* cx,
                             SnapshotIterator& iter) const override;
@@ -617,6 +597,9 @@ class RNewArray final : public RInstruction {
 };
 
 class RNewArrayCopyOnWrite final : public RInstruction {
+ private:
+  gc::InitialHeap initialHeap_;
+
  public:
   RINSTRUCTION_HEADER_NUM_OP_(NewArrayCopyOnWrite, 1)
 
@@ -670,6 +653,17 @@ class RLambdaArrow final : public RInstruction {
 class RNewCallObject final : public RInstruction {
  public:
   RINSTRUCTION_HEADER_NUM_OP_(NewCallObject, 1)
+
+  MOZ_MUST_USE bool recover(JSContext* cx,
+                            SnapshotIterator& iter) const override;
+};
+
+class RSimdBox final : public RInstruction {
+ private:
+  uint8_t type_;
+
+ public:
+  RINSTRUCTION_HEADER_NUM_OP_(SimdBox, 1)
 
   MOZ_MUST_USE bool recover(JSContext* cx,
                             SnapshotIterator& iter) const override;

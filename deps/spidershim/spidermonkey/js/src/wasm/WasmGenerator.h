@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * Copyright 2015 Mozilla Foundation
  *
@@ -18,8 +18,6 @@
 
 #ifndef wasm_generator_h
 #define wasm_generator_h
-
-#include "mozilla/MemoryReporting.h"
 
 #include "jit/MacroAssembler.h"
 #include "wasm/WasmCompile.h"
@@ -48,7 +46,7 @@ struct FuncCompileInput {
         end(end),
         index(index),
         lineOrBytecode(lineOrBytecode),
-        callSiteLineNums(std::move(callSiteLineNums)) {}
+        callSiteLineNums(Move(callSiteLineNums)) {}
 };
 
 typedef Vector<FuncCompileInput, 8, SystemAllocPolicy> FuncCompileInputVector;
@@ -62,9 +60,12 @@ struct CompiledCode {
   CallSiteVector callSites;
   CallSiteTargetVector callSiteTargets;
   TrapSiteVectorArray trapSites;
+  OldTrapSiteVector oldTrapSites;
+  OldTrapFarJumpVector oldTrapFarJumps;
+  CallFarJumpVector callFarJumps;
+  MemoryAccessVector memoryAccesses;
   SymbolicAccessVector symbolicAccesses;
   jit::CodeLabelVector codeLabels;
-  StackMaps stackMaps;
 
   MOZ_MUST_USE bool swap(jit::MacroAssembler& masm);
 
@@ -74,19 +75,22 @@ struct CompiledCode {
     callSites.clear();
     callSiteTargets.clear();
     trapSites.clear();
+    oldTrapSites.clear();
+    oldTrapFarJumps.clear();
+    callFarJumps.clear();
+    memoryAccesses.clear();
     symbolicAccesses.clear();
     codeLabels.clear();
-    stackMaps.clear();
     MOZ_ASSERT(empty());
   }
 
   bool empty() {
     return bytes.empty() && codeRanges.empty() && callSites.empty() &&
            callSiteTargets.empty() && trapSites.empty() &&
-           symbolicAccesses.empty() && codeLabels.empty() && stackMaps.empty();
+           oldTrapSites.empty() && oldTrapFarJumps.empty() &&
+           callFarJumps.empty() && memoryAccesses.empty() &&
+           symbolicAccesses.empty() && codeLabels.empty();
   }
-
-  size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 };
 
 // The CompileTaskState of a ModuleGenerator contains the mutable state shared
@@ -111,7 +115,7 @@ typedef ExclusiveWaitableData<CompileTaskState> ExclusiveCompileTaskState;
 // A CompileTask holds a batch of input functions that are to be compiled on a
 // helper thread as well as, eventually, the results of compilation.
 
-struct CompileTask : public RunnableTask {
+struct CompileTask {
   const ModuleEnvironment& env;
   ExclusiveCompileTaskState& state;
   LifoAlloc lifo;
@@ -121,12 +125,6 @@ struct CompileTask : public RunnableTask {
   CompileTask(const ModuleEnvironment& env, ExclusiveCompileTaskState& state,
               size_t defaultChunkSize)
       : env(env), state(state), lifo(defaultChunkSize) {}
-
-  virtual ~CompileTask(){};
-
-  size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
-
-  void runTask() override;
 };
 
 // A ModuleGenerator encapsulates the creation of a wasm module. During the
@@ -137,13 +135,8 @@ struct CompileTask : public RunnableTask {
 
 class MOZ_STACK_CLASS ModuleGenerator {
   typedef Vector<CompileTask, 0, SystemAllocPolicy> CompileTaskVector;
+  typedef EnumeratedArray<Trap, Trap::Limit, uint32_t> OldTrapOffsetArray;
   typedef Vector<jit::CodeOffset, 0, SystemAllocPolicy> CodeOffsetVector;
-  struct CallFarJump {
-    uint32_t funcIndex;
-    jit::CodeOffset jump;
-    CallFarJump(uint32_t fi, jit::CodeOffset j) : funcIndex(fi), jump(j) {}
-  };
-  typedef Vector<CallFarJump, 0, SystemAllocPolicy> CallFarJumpVector;
 
   // Constant parameters
   SharedCompileArgs const compileArgs_;
@@ -152,7 +145,8 @@ class MOZ_STACK_CLASS ModuleGenerator {
   ModuleEnvironment* const env_;
 
   // Data that is moved into the result of finish()
-  UniqueLinkData linkData_;
+  Assumptions assumptions_;
+  UniqueLinkDataTier linkDataTier_;
   UniqueMetadataTier metadataTier_;
   MutableMetadata metadata_;
 
@@ -161,9 +155,11 @@ class MOZ_STACK_CLASS ModuleGenerator {
   LifoAlloc lifo_;
   jit::JitContext jcx_;
   jit::TempAllocator masmAlloc_;
-  jit::WasmMacroAssembler masm_;
+  jit::MacroAssembler masm_;
   Uint32Vector funcToCodeRange_;
+  OldTrapOffsetArray oldTrapCodeOffsets_;
   uint32_t debugTrapCodeOffset_;
+  OldTrapFarJumpVector oldTrapFarJumps_;
   CallFarJumpVector callFarJumps_;
   CallSiteTargetVector callSiteTargets_;
   uint32_t lastPatchedCallSite_;
@@ -188,19 +184,17 @@ class MOZ_STACK_CLASS ModuleGenerator {
   const CodeRange& funcCodeRange(uint32_t funcIndex) const;
   bool linkCallSites();
   void noteCodeRange(uint32_t codeRangeIndex, const CodeRange& codeRange);
-  bool linkCompiledCode(CompiledCode& code);
-  bool locallyCompileCurrentTask();
+  bool linkCompiledCode(const CompiledCode& code);
   bool finishTask(CompileTask* task);
   bool launchBatchCompile();
   bool finishOutstandingTask();
-  bool finishCodegen();
-  bool finishMetadataTier();
-  UniqueCodeTier finishCodeTier();
-  SharedMetadata finishMetadata(const Bytes& bytecode);
+  bool finishCode();
+  bool finishMetadata(const ShareableBytes& bytecode);
+  UniqueModuleSegment finish(const ShareableBytes& bytecode);
 
   bool isAsmJS() const { return env_->isAsmJS(); }
-  Tier tier() const { return env_->tier(); }
-  CompileMode mode() const { return env_->mode(); }
+  Tier tier() const { return env_->tier; }
+  CompileMode mode() const { return env_->mode; }
   bool debugEnabled() const { return env_->debugEnabled(); }
 
  public:
@@ -225,10 +219,8 @@ class MOZ_STACK_CLASS ModuleGenerator {
   // a new Module. Otherwise, if env->mode is Tier2, finishTier2() must be
   // called to augment the given Module with tier 2 code.
 
-  SharedModule finishModule(
-      const ShareableBytes& bytecode,
-      JS::OptimizedEncodingListener* maybeTier2Listener = nullptr);
-  MOZ_MUST_USE bool finishTier2(const Module& module);
+  SharedModule finishModule(const ShareableBytes& bytecode);
+  MOZ_MUST_USE bool finishTier2(Module& module);
 };
 
 }  // namespace wasm

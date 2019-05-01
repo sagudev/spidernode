@@ -1,5 +1,5 @@
 // Run debugger in its own global
-let g = newGlobal({newCompartment: true});
+let g = newGlobal();
 g.target = this;
 g.evaluate(`
     let d = new Debugger;

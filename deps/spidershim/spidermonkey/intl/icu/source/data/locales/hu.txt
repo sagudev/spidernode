@@ -29,14 +29,13 @@ hu{
         default{"latn"}
         latn{
             miscPatterns{
-                approximately{"~{0}"}
                 atLeast{"{0}+"}
-                atMost{"≤{0}"}
                 range{"{0}–{1}"}
             }
             patterns{
                 accountingFormat{"#,##0.00 ¤"}
                 currencyFormat{"#,##0.00 ¤"}
+                decimalFormat{"#,##0.###"}
                 percentFormat{"#,##0%"}
                 scientificFormat{"#E0"}
             }
@@ -200,10 +199,13 @@ hu{
                 group{" "}
                 infinity{"∞"}
                 list{";"}
+                minusSign{"-"}
                 nan{"NaN"}
                 perMille{"‰"}
                 percentSign{"%"}
+                plusSign{"+"}
                 superscriptingExponent{"×"}
+                timeSeparator{":"}
             }
         }
         minimalPairs{
@@ -219,7 +221,7 @@ hu{
         minimumGroupingDigits{"4"}
         native{"latn"}
     }
-    Version{"2.1.48.42"}
+    Version{"2.1.37.5"}
     calendar{
         buddhist{
             eras{
@@ -299,6 +301,20 @@ hu{
             }
         }
         coptic{
+            eras{
+                abbreviated{
+                    "ERA0",
+                    "ERA1",
+                }
+                narrow{
+                    "ERA0",
+                    "ERA1",
+                }
+                wide{
+                    "ERA0",
+                    "ERA1",
+                }
+            }
             monthNames{
                 format{
                     abbreviated{
@@ -382,6 +398,20 @@ hu{
             }
         }
         ethiopic{
+            eras{
+                abbreviated{
+                    "ERA0",
+                    "ERA1",
+                }
+                narrow{
+                    "ERA0",
+                    "ERA1",
+                }
+                wide{
+                    "ERA0",
+                    "ERA1",
+                }
+            }
             monthNames{
                 format{
                     abbreviated{
@@ -509,36 +539,6 @@ hu{
                 yyyyQQQQ{"G y. QQQQ"}
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h–h B"}
-                }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm–h:mm B"}
-                    m{"h:mm – h:mm B"}
-                }
-                Gy{
-                    G{"G y – G y"}
-                    y{"G y–y"}
-                }
-                GyM{
-                    G{"GGGGG y-MM – GGGGG y-MM"}
-                    M{"GGGGG y-MM – y-MM"}
-                    y{"GGGGG y-MM – y-MM"}
-                }
-                GyMEd{
-                    G{"GGGGG y-MM-dd, E – GGGGG y-MM-dd, E"}
-                    M{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    d{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    y{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                }
-                GyMd{
-                    G{"GGGGG y-MM-dd – GGGGG y-MM-dd"}
-                    M{"GGGGG y-MM-dd – y-MM-dd"}
-                    d{"GGGGG y-MM-dd – y-MM-dd"}
-                    y{"GGGGG y-MM-dd – y-MM-dd"}
-                }
                 H{
                     H{"H–H"}
                 }
@@ -691,8 +691,8 @@ hu{
                 MMM{"LLL"}
                 MMMEd{"MMM d., E"}
                 MMMMW{
-                    one{"MMMM W. 'hete'"}
-                    other{"MMMM W. 'hete'"}
+                    one{"MMM W. 'hete'"}
+                    other{"MMM W. 'hete'"}
                 }
                 MMMMd{"MMMM d."}
                 MMMd{"MMM d."}
@@ -875,10 +875,6 @@ hu{
                     "i. e.",
                     "i. sz.",
                 }
-                abbreviated%variant{
-                    "i.e.",
-                    "i.sz.",
-                }
                 narrow{
                     "ie.",
                     "isz.",
@@ -893,36 +889,6 @@ hu{
                 }
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h–h B"}
-                }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm–h:mm B"}
-                    m{"h:mm–h:mm B"}
-                }
-                Gy{
-                    G{"G y – G y"}
-                    y{"G y–y"}
-                }
-                GyM{
-                    G{"GGGGG y-MM – GGGGG y-MM"}
-                    M{"GGGGG y-MM – y-MM"}
-                    y{"GGGGG y-MM – y-MM"}
-                }
-                GyMEd{
-                    G{"GGGGG y-MM-dd, E – GGGGG y-MM-dd, E"}
-                    M{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    d{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    y{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                }
-                GyMd{
-                    G{"GGGGG y-MM-dd – GGGGG y-MM-dd"}
-                    M{"GGGGG y-MM-dd – y-MM-dd"}
-                    d{"GGGGG y-MM-dd – y-MM-dd"}
-                    y{"GGGGG y-MM-dd – y-MM-dd"}
-                }
                 H{
                     H{"H–H"}
                 }
@@ -1392,20 +1358,6 @@ hu{
         persian{
             monthNames{
                 format{
-                    abbreviated{
-                        "farvardin",
-                        "ordibehesht",
-                        "khordad",
-                        "tir",
-                        "mordad",
-                        "shahrivar",
-                        "mehr",
-                        "aban",
-                        "azar",
-                        "dey",
-                        "bahman",
-                        "esfand",
-                    }
                     narrow{
                         "1",
                         "2",
@@ -1571,12 +1523,6 @@ hu{
         weather{"időjárás"}
         western_asian_scripts{"nyugat-ázsiai írásrendszerek"}
         whitespace{"térköz"}
-    }
-    contextTransforms{
-        typographicNames:intvector{
-            1,
-            1,
-        }
     }
     delimiters{
         alternateQuotationEnd{"«"}
@@ -2424,12 +2370,6 @@ hu{
             middle{"{0}, {1}"}
             start{"{0}, {1}"}
         }
-        standard-narrow{
-            2{"{0} és {1}"}
-            end{"{0} és {1}"}
-            middle{"{0}, {1}"}
-            start{"{0}, {1}"}
-        }
         standard-short{
             2{"{0} és {1}"}
             end{"{0} és {1}"}
@@ -2459,37 +2399,5 @@ hu{
         UK{"angol"}
         US{"amerikai"}
         metric{"metrikus"}
-    }
-    parse{
-        date{
-            lenient{
-                "[\\--/]",
-                "[\\:∶]",
-            }
-        }
-        general{
-            lenient{
-                "[.․。︒﹒．｡]",
-                "['ʼ՚᾽᾿’＇]",
-                "[%٪﹪％]",
-                "[؉‰]",
-                "[\$﹩＄$]",
-                "[£₤]",
-                "[¥￥]",
-                "[₩￦]",
-                "[₨₹{Rp}{Rs}]",
-            }
-        }
-        number{
-            lenient{
-                "[\\-‒⁻₋−➖﹣－]",
-                "[,،٫、︐︑﹐﹑，､]",
-                "[+⁺₊➕﬩﹢＋]",
-            }
-            stricter{
-                "[,٫︐﹐，]",
-                "[.․﹒．｡]",
-            }
-        }
     }
 }

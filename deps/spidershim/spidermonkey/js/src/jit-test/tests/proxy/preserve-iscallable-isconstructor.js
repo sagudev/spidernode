@@ -1,6 +1,6 @@
 load(libdir + "asserts.js");
 
-var global = newGlobal({newCompartment: true})
+var global = newGlobal()
 var fun = global.eval("(function() {})")
 var p = new Proxy(fun, {})
 

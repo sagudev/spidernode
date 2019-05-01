@@ -19,14 +19,20 @@ def configure_error(message):
     their inputs from moz.configure usage.'''
     raise ConfigureError(message)
 
+# A wrapper to obtain a process' output that returns the output generated
+# by running the given command if it exits normally, and streams that
+# output to log.debug and calls die or the given error callback if it
+# does not.
 
-# A wrapper to obtain a process' output and return code.
-# Returns a tuple (retcode, stdout, stderr).
-@imports('os')
+
 @imports(_from='__builtin__', _import='unicode')
 @imports('subprocess')
+@imports('sys')
+@imports(_from='mozbuild.configure.util', _import='LineIO')
 @imports(_from='mozbuild.shellutil', _import='quote')
-def get_cmd_output(*args, **kwargs):
+def check_cmd_output(*args, **kwargs):
+    onerror = kwargs.pop('onerror', None)
+
     # subprocess on older Pythons can't handle unicode keys or values in
     # environment dicts. Normalize automagically so callers don't have to
     # deal with this.
@@ -43,30 +49,12 @@ def get_cmd_output(*args, **kwargs):
 
         kwargs['env'] = normalized_env
 
-    log.debug('Executing: `%s`', quote(*args))
-    proc = subprocess.Popen(args, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            # On Python 2 on Windows, close_fds prevents the
-                            # process from inheriting stdout/stderr.
-                            # Elsewhere, it simply prevents it from inheriting
-                            # extra file descriptors, which is what we want.
-                            close_fds=os.name != 'nt',
-                            **kwargs)
-    stdout, stderr = proc.communicate()
-    return proc.wait(), stdout, stderr
-
-
-# A wrapper to obtain a process' output that returns the output generated
-# by running the given command if it exits normally, and streams that
-# output to log.debug and calls die or the given error callback if it
-# does not.
-@imports(_from='mozbuild.configure.util', _import='LineIO')
-@imports(_from='mozbuild.shellutil', _import='quote')
-def check_cmd_output(*args, **kwargs):
-    onerror = kwargs.pop('onerror', None)
-
     with log.queue_debug():
-        retcode, stdout, stderr = get_cmd_output(*args, **kwargs)
+        log.debug('Executing: `%s`', quote(*args))
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, **kwargs)
+        stdout, stderr = proc.communicate()
+        retcode = proc.wait()
         if retcode == 0:
             return stdout
 
@@ -153,12 +141,8 @@ def normalize_path():
                 needed = GetShortPathNameW(path, out, size)
                 if size >= needed:
                     if ' ' in out.value:
-                        die("GetShortPathName returned a long path name: `%s`. "
-                            "Use `fsutil file setshortname' "
-                            "to create a short name "
-                            "for any components of this path "
-                            "that have spaces.",
-                            out.value)
+                        die("GetShortPathName returned a long path name. "
+                            "Are 8dot3 filenames disabled?")
                     return normsep(out.value)
                 size = needed
 
@@ -208,8 +192,6 @@ def find_program(file, paths=None):
                     "not %r", paths)
             paths = list(itertools.chain(
                 *(p.split(pathsep) for p in paths if p)))
-        else:
-            paths = environ['PATH'].split(pathsep)
         return normalize_path(which(file, path=paths, exts=exts))
     except WhichError:
         return None
@@ -224,7 +206,7 @@ def try_invoke_compiler(compiler, language, source, flags=None, onerror=None):
 
     if not isinstance(flags, (list, tuple)):
         die("Flags provided to try_compile must be a list of strings, "
-            "not %r", flags)
+            "not %r", paths)
 
     suffix = {
         'C': '.c',
@@ -478,23 +460,23 @@ def extra_old_configure_args():
 
 
 @template
-def add_old_configure_assignment(var, value, when=None):
+def add_old_configure_assignment(var, value):
     var = dependable(var)
     value = dependable(value)
 
-    @depends(old_configure_assignments, var, value, when=when)
+    @depends(old_configure_assignments, var, value)
     @imports(_from='mozbuild.shellutil', _import='quote')
     def add_assignment(assignments, var, value):
         if var is None or value is None:
             return
         if value is True:
-            assignments.append((var, '1'))
+            assignments.append('%s=1' % var)
         elif value is False:
-            assignments.append((var, ''))
+            assignments.append('%s=' % var)
         else:
             if isinstance(value, (list, tuple)):
                 value = quote(*value)
-            assignments.append((var, str(value)))
+            assignments.append('%s=%s' % (var, quote(str(value))))
 
 
 @template

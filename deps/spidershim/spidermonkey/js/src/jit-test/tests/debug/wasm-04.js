@@ -1,10 +1,11 @@
-// |jit-test| skip-if: !wasmDebuggingIsSupported()
-
 // Tests that wasm module scripts throw for everything except text.
 
 load(libdir + "asserts.js");
 
-var g = newGlobal({newCompartment: true});
+if (!wasmDebuggingIsSupported())
+  quit();
+
+var g = newGlobal();
 var dbg = new Debugger(g);
 
 var s;

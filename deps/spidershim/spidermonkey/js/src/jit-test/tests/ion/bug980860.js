@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !this.hasOwnProperty("TypedObject")
+if (typeof TypedObject === 'undefined')
+    quit();
 
 var StructType = TypedObject.StructType;
 var uint8 = TypedObject.uint8;

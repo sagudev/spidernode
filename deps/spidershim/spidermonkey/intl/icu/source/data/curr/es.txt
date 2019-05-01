@@ -616,10 +616,6 @@ es{
         }
         MRO{
             "MRO",
-            "uguiya (1973–2017)",
-        }
-        MRU{
-            "MRU",
             "uguiya",
         }
         MTL{
@@ -848,10 +844,6 @@ es{
         }
         STD{
             "STD",
-            "dobra (1977–2017)",
-        }
-        STN{
-            "STN",
             "dobra",
         }
         SUR{
@@ -962,10 +954,6 @@ es{
             "UYU",
             "peso uruguayo",
         }
-        UYW{
-            "UYW",
-            "unidad previsional uruguayo",
-        }
         UZS{
             "UZS",
             "sum",
@@ -976,10 +964,6 @@ es{
         }
         VEF{
             "VEF",
-            "bolívar venezolano (2008–2018)",
-        }
-        VES{
-            "VES",
             "bolívar venezolano",
         }
         VND{
@@ -1067,7 +1051,7 @@ es{
             "código reservado para pruebas",
         }
         XXX{
-            "¤",
+            "XXX",
             "moneda desconocida",
         }
         YDD{
@@ -1154,6 +1138,7 @@ es{
         FKP{"£"}
         GBP{"£"}
         GEL{"₾"}
+        GIP{"£"}
         GNF{"FG"}
         GTQ{"Q"}
         GYD{"$"}
@@ -1168,6 +1153,7 @@ es{
         JMD{"$"}
         JPY{"¥"}
         KHR{"៛"}
+        KMF{"CF"}
         KPW{"₩"}
         KRW{"₩"}
         KYD{"$"}
@@ -1201,7 +1187,7 @@ es{
         SHP{"£"}
         SRD{"$"}
         SSP{"£"}
-        STN{"Db"}
+        STD{"Db"}
         SYP{"£"}
         THB{"฿"}
         TOP{"T$"}
@@ -1783,10 +1769,6 @@ es{
             other{"patacas de Macao"}
         }
         MRO{
-            one{"uguiya (1973–2017)"}
-            other{"uguiyas (1973–2017)"}
-        }
-        MRU{
             one{"uguiya"}
             other{"uguiyas"}
         }
@@ -2003,10 +1985,6 @@ es{
             other{"libras sursudanesas"}
         }
         STD{
-            one{"dobra (1977–2017)"}
-            other{"dobras (1977–2017)"}
-        }
-        STN{
             one{"dobra"}
             other{"dobras"}
         }
@@ -2106,10 +2084,6 @@ es{
             one{"peso uruguayo"}
             other{"pesos uruguayos"}
         }
-        UYW{
-            one{"unidad previsional uruguayo"}
-            other{"unidades previsionales uruguayos"}
-        }
         UZS{
             one{"sum"}
             other{"sums"}
@@ -2119,10 +2093,6 @@ es{
             other{"bolívares venezolanos (1871–2008)"}
         }
         VEF{
-            one{"bolívar venezolano (2008–2018)"}
-            other{"bolívares venezolanos (2008–2018)"}
-        }
-        VES{
             one{"bolívar venezolano"}
             other{"bolívares venezolanos"}
         }
@@ -2227,5 +2197,5 @@ es{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"2.1.48.20"}
+    Version{"2.1.37.22"}
 }

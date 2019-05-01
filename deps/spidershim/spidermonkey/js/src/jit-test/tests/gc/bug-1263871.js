@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !('oomTest' in this)
+if (!('oomTest' in this))
+    quit();
 
 lfLogBuffer = `this[''] = function() {}`;
 loadFile(lfLogBuffer);

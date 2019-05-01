@@ -3,7 +3,7 @@
 // things don't crash if we try to run a script with a BaselineScript that was
 // compiled with debug instrumentation when the global is no longer a debuggee.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 var counter = 0;
 dbg.onDebuggerStatement = function (frame) {

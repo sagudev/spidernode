@@ -1,25 +1,27 @@
-// |jit-test| exitstatus: 6; skip-if: !wasmDebuggingIsSupported()
+// |jit-test| exitstatus: 6;
 
 // Don't include wasm.js in timeout tests: when wasm isn't supported, it will
 // quit(0) which will cause the test to fail.
+if (!wasmDebuggingIsSupported())
+    quit(6);
 
-newGlobal({newCompartment: true}).Debugger().addDebuggee(this);
+newGlobal().Debugger().addDebuggee(this);
 
 var t = new WebAssembly.Table({
     initial: 1,
-    element: "funcref"
+    element: "anyfunc"
 });
 
 new WebAssembly.Instance(new WebAssembly.Module(wasmTextToBinary(`
 (module
     (func $iloop loop $top br $top end)
-    (import "imports" "t" (table1 funcref))
+    (import "imports" "t" (table1 anyfunc))
     (elem (i32.const0) $iloop))
 `)), { imports: { t } });
 
 outer = new WebAssembly.Instance(new WebAssembly.Module(wasmTextToBinary(`
 (module
-    (import "imports" "t" (table1 funcref))
+    (import "imports" "t" (table1 anyfunc))
     (type $v2v (func))
     (func (export "run")
         i32.const0

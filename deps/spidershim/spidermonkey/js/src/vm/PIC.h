@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -73,17 +73,13 @@ class PICChain {
     }
 
     CatStub* cur = stubs_;
-    while (cur->next()) {
-      cur = cur->next();
-    }
+    while (cur->next()) cur = cur->next();
     cur->append(stub);
   }
 
   unsigned numStubs() const {
     unsigned count = 0;
-    for (CatStub* stub = stubs_; stub; stub = stub->next()) {
-      count++;
-    }
+    for (CatStub* stub = stubs_; stub; stub = stub->next()) count++;
     return count;
   }
 
@@ -203,13 +199,6 @@ struct ForOfPIC {
     bool tryOptimizeArray(JSContext* cx, HandleArrayObject array,
                           bool* optimized);
 
-    // Check if %ArrayIteratorPrototype% still uses the default "next" method.
-    bool tryOptimizeArrayIteratorNext(JSContext* cx, bool* optimized);
-
-    void trace(JSTracer* trc);
-    void sweep(FreeOp* fop);
-
-   private:
     // Check if the global array-related objects have not been messed with
     // in a way that would disable this PIC.
     bool isArrayStateStillSane();
@@ -222,6 +211,10 @@ struct ForOfPIC {
               canonicalNextFunc_);
     }
 
+    void trace(JSTracer* trc);
+    void sweep(FreeOp* fop);
+
+   private:
     // Check if a matching optimized stub for the given object exists.
     bool hasMatchingStub(ArrayObject* obj);
 
@@ -239,14 +232,12 @@ struct ForOfPIC {
                                             Handle<GlobalObject*> global);
 
   static inline Chain* fromJSObject(NativeObject* obj) {
-    MOZ_ASSERT(obj->getClass() == &ForOfPIC::class_);
+    MOZ_ASSERT(js::GetObjectClass(obj) == &ForOfPIC::class_);
     return (ForOfPIC::Chain*)obj->getPrivate();
   }
   static inline Chain* getOrCreate(JSContext* cx) {
     NativeObject* obj = cx->global()->getForOfPICObject();
-    if (obj) {
-      return fromJSObject(obj);
-    }
+    if (obj) return fromJSObject(obj);
     return create(cx);
   }
   static Chain* create(JSContext* cx);

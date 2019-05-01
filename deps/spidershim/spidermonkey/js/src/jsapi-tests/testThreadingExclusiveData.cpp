@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,17 +25,14 @@ struct CounterAndBit {
 };
 
 void printDiagnosticMessage(uint8_t bit, uint64_t seen) {
-  if (!ShowDiagnostics) {
-    return;
-  }
+  if (!ShowDiagnostics) return;
 
   fprintf(stderr, "Thread %d saw ", bit);
   for (auto i : mozilla::IntegerRange(NumThreads)) {
-    if (seen & (uint64_t(1) << i)) {
+    if (seen & (uint64_t(1) << i))
       fprintf(stderr, "1");
-    } else {
+    else
       fprintf(stderr, "0");
-    }
   }
   fprintf(stderr, "\n");
 }
@@ -75,9 +72,7 @@ BEGIN_TEST(testExclusiveData) {
     CHECK(threads.back().init(setBitAndCheck, counterAndBit));
   }
 
-  for (auto& thread : threads) {
-    thread.join();
-  }
+  for (auto& thread : threads) thread.join();
 
   return true;
 }

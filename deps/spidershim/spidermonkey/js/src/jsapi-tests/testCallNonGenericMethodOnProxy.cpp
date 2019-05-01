@@ -28,7 +28,7 @@ static bool CustomMethod(JSContext* cx, unsigned argc, Value* vp) {
 
 BEGIN_TEST(test_CallNonGenericMethodOnProxy) {
   // Create the first global object and compartment
-  JS::RealmOptions options;
+  JS::CompartmentOptions options;
   JS::RootedObject globalA(
       cx, JS_NewGlobalObject(cx, getGlobalClass(), nullptr,
                              JS::FireOnNewGlobalHook, options));
@@ -49,14 +49,14 @@ BEGIN_TEST(test_CallNonGenericMethodOnProxy) {
 
   // Now create the second global object and compartment...
   {
-    JS::RealmOptions options;
+    JS::CompartmentOptions options;
     JS::RootedObject globalB(
         cx, JS_NewGlobalObject(cx, getGlobalClass(), nullptr,
                                JS::FireOnNewGlobalHook, options));
     CHECK(globalB);
 
     // ...and enter it.
-    JSAutoRealm enter(cx, globalB);
+    JSAutoCompartment enter(cx, globalB);
     JS::RootedObject customB(cx, JS_NewObject(cx, &CustomClass));
     CHECK(customB);
     JS_SetReservedSlot(customB, CUSTOM_SLOT, Int32Value(42));

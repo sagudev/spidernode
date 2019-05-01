@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -37,9 +37,7 @@ static bool constructHook(JSContext* cx, unsigned argc, JS::Value* vp) {
   // Perform a side-effect to indicate that this hook was actually called.
   JS::RootedValue value(cx, args[0]);
   JS::RootedObject callee(cx, &args.callee());
-  if (!JS_SetElement(cx, callee, 0, value)) {
-    return false;
-  }
+  if (!JS_SetElement(cx, callee, 0, value)) return false;
 
   args.rval().setObject(*obj);
 
@@ -53,7 +51,7 @@ static bool constructHook(JSContext* cx, unsigned argc, JS::Value* vp) {
 
 BEGIN_TEST(testNewObject_1) {
   static const size_t N = 1000;
-  JS::RootedValueVector argv(cx);
+  JS::AutoValueVector argv(cx);
   CHECK(argv.resize(N));
 
   JS::RootedValue v(cx);
@@ -83,9 +81,7 @@ BEGIN_TEST(testNewObject_1) {
   CHECK_EQUAL(len, 4u);
 
   // With N arguments.
-  for (size_t i = 0; i < N; i++) {
-    argv[i].setInt32(i);
-  }
+  for (size_t i = 0; i < N; i++) argv[i].setInt32(i);
   obj = JS_New(cx, Array, JS::HandleValueArray::subarray(argv, 0, N));
   CHECK(obj);
   rt = JS::ObjectValue(*obj);
@@ -112,34 +108,3 @@ BEGIN_TEST(testNewObject_1) {
   return true;
 }
 END_TEST(testNewObject_1)
-
-BEGIN_TEST(testNewObject_IsMapObject) {
-  // Test IsMapObject and IsSetObject
-
-  JS::RootedValue vMap(cx);
-  EVAL("Map", &vMap);
-  JS::RootedObject Map(cx, vMap.toObjectOrNull());
-
-  bool isMap = false;
-  bool isSet = false;
-  JS::RootedObject mapObj(cx, JS_New(cx, Map, JS::HandleValueArray::empty()));
-  CHECK(mapObj);
-  CHECK(JS::IsMapObject(cx, mapObj, &isMap));
-  CHECK(isMap);
-  CHECK(JS::IsSetObject(cx, mapObj, &isSet));
-  CHECK(!isSet);
-
-  JS::RootedValue vSet(cx);
-  EVAL("Set", &vSet);
-  JS::RootedObject Set(cx, vSet.toObjectOrNull());
-
-  JS::RootedObject setObj(cx, JS_New(cx, Set, JS::HandleValueArray::empty()));
-  CHECK(setObj);
-  CHECK(JS::IsMapObject(cx, setObj, &isMap));
-  CHECK(!isMap);
-  CHECK(JS::IsSetObject(cx, setObj, &isSet));
-  CHECK(isSet);
-
-  return true;
-}
-END_TEST(testNewObject_IsMapObject)

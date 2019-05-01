@@ -17,7 +17,6 @@ info: |
     12.3.3.1.1 Runtime Semantics: EvaluateNew(constructProduction, arguments)
 
     8. If IsConstructor (constructor) is false, throw a TypeError exception.
-features: [Proxy]
 ---*/
 
 var p = new Proxy(eval, {});
@@ -25,7 +24,7 @@ var p = new Proxy(eval, {});
 p(); // the Proxy object is callable
 
 assert.throws(TypeError, function() {
-  new p();
+    new p();
 });
 
 reportCompare(0, 0);

@@ -28,7 +28,6 @@ info: |
   SingleNameBinding[Yield] :
     BindingIdentifier[?Yield] Initializer[In, ?Yield]opt
 
-features: [destructuring-binding]
 ---*/
 
 // BindingElement w/ SingleNameBinding

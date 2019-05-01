@@ -14,7 +14,7 @@ negative:
   type: SyntaxError
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 LABEL_OUT : var x=0, y=0;
 

@@ -684,10 +684,6 @@ de{
         }
         MRO{
             "MRO",
-            "Mauretanischer Ouguiya (1973–2017)",
-        }
-        MRU{
-            "MRU",
             "Mauretanischer Ouguiya",
         }
         MTL{
@@ -920,10 +916,6 @@ de{
         }
         STD{
             "STD",
-            "São-toméischer Dobra (1977–2017)",
-        }
-        STN{
-            "STN",
             "São-toméischer Dobra",
         }
         SUR{
@@ -1044,10 +1036,6 @@ de{
         }
         VEF{
             "VEF",
-            "Venezolanischer Bolívar (2008–2018)",
-        }
-        VES{
-            "VES",
             "Venezolanischer Bolívar",
         }
         VND{
@@ -1237,6 +1225,7 @@ de{
         DKK{"kr"}
         DOP{"$"}
         EGP{"E£"}
+        ESP{"₧"}
         EUR{"€"}
         FJD{"$"}
         FKP{"Fl£"}
@@ -1284,6 +1273,7 @@ de{
         PYG{"₲"}
         RON{"L"}
         RUB{"₽"}
+        RUR{"р."}
         RWF{"F.Rw"}
         SBD{"$"}
         SEK{"kr"}
@@ -1291,7 +1281,7 @@ de{
         SHP{"£"}
         SRD{"$"}
         SSP{"£"}
-        STN{"Db"}
+        STD{"Db"}
         SYP{"SYP"}
         THB{"฿"}
         TOP{"T$"}
@@ -1993,10 +1983,6 @@ de{
             other{"Macao-Pataca"}
         }
         MRO{
-            one{"Mauretanischer Ouguiya (1973–2017)"}
-            other{"Mauretanische Ouguiya (1973–2017)"}
-        }
-        MRU{
             one{"Mauretanischer Ouguiya"}
             other{"Mauretanische Ouguiya"}
         }
@@ -2229,12 +2215,8 @@ de{
             other{"Südsudanesische Pfund"}
         }
         STD{
-            one{"São-toméischer Dobra (1977–2017)"}
-            other{"São-toméische Dobra (1977–2017)"}
-        }
-        STN{
             one{"São-toméischer Dobra"}
-            other{"São-toméische Dobras"}
+            other{"São-toméische Dobra"}
         }
         SUR{
             one{"Sowjetische Rubel"}
@@ -2353,10 +2335,6 @@ de{
             other{"Venezolanische Bolívares (1871–2008)"}
         }
         VEF{
-            one{"Venezolanischer Bolívar (2008–2018)"}
-            other{"Venezolanische Bolívares (2008–2018)"}
-        }
-        VES{
             one{"Venezolanischer Bolívar"}
             other{"Venezolanische Bolívares"}
         }
@@ -2525,5 +2503,5 @@ de{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"2.1.48.42"}
+    Version{"2.1.37.96"}
 }

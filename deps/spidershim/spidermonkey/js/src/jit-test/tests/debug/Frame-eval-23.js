@@ -6,7 +6,7 @@ if (!jitTogglesMatch(Opts_Ion2NoOffthreadCompilation))
   quit();
 
 withJitOptions(Opts_Ion2NoOffthreadCompilation, function () {
-  var g = newGlobal({newCompartment: true});
+  var g = newGlobal();
   var dbg = new Debugger;
 
   g.toggle = function toggle(x, d) {

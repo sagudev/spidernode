@@ -14,11 +14,10 @@ bs{
     ExemplarCharactersNumbers{"[\\- , . % ‰ + 0 1 2 3 4 5 6 7 8 9]"}
     MoreInformation{"?"}
     NumberElements{
+        default{"latn"}
         latn{
             miscPatterns{
-                approximately{"~{0}"}
                 atLeast{"{0}+"}
-                atMost{"≤{0}"}
                 range{"{0} – {1}"}
             }
             patterns{
@@ -229,21 +228,13 @@ bs{
                 percentSign{"%"}
                 plusSign{"+"}
                 superscriptingExponent{"×"}
-            }
-        }
-        minimalPairs{
-            ordinal{
-                other{"Skrenite na {0}. križanju desno."}
-            }
-            plural{
-                few{"{0} sata"}
-                one{"{0} sat"}
-                other{"{0} sati"}
+                timeSeparator{":"}
             }
         }
         minimumGroupingDigits{"1"}
+        native{"latn"}
     }
-    Version{"2.1.48.17"}
+    Version{"2.1.37.5"}
     calendar{
         generic{
             DateTimePatterns{
@@ -306,53 +297,6 @@ bs{
                 yyyyQQQQ{"G y QQQQ"}
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h – h B"}
-                }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm – h:mm B"}
-                    m{"h:mm – h:mm B"}
-                }
-                Gy{
-                    G{"G y – G y"}
-                    y{"G y–y"}
-                }
-                GyM{
-                    G{"GGGGG y-MM – GGGGG y-MM"}
-                    M{"GGGGG y-MM – y-MM"}
-                    y{"GGGGG y-MM – y-MM"}
-                }
-                GyMEd{
-                    G{"GGGGG y-MM-dd, E – GGGGG y-MM-dd, E"}
-                    M{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    d{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    y{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                }
-                GyMMM{
-                    G{"G y MMM – G y MMM"}
-                    M{"G y MMM–MMM"}
-                    y{"G y MMM – y MMM"}
-                }
-                GyMMMEd{
-                    G{"G y MMM d, E – G y MMM d, E"}
-                    M{"G y MMM d, E – MMM d, E"}
-                    d{"G y MMM d, E – MMM d, E"}
-                    y{"G y MMM d, E – y MMM d, E"}
-                }
-                GyMMMd{
-                    G{"G y MMM d – G y MMM d"}
-                    M{"G y MMM d – MMM d"}
-                    d{"G y MMM d–d"}
-                    y{"G y MMM d – y MMM d"}
-                }
-                GyMd{
-                    G{"GGGGG y-MM-dd – GGGGG y-MM-dd"}
-                    M{"GGGGG y-MM-dd – y-MM-dd"}
-                    d{"GGGGG y-MM-dd – y-MM-dd"}
-                    y{"GGGGG y-MM-dd – y-MM-dd"}
-                }
                 M{
                     M{"M. – M."}
                 }
@@ -422,8 +366,8 @@ bs{
                 "popodne",
             }
             AmPmMarkersAbbr{
-                "AM",
-                "PM",
+                "prijepodne",
+                "popodne",
             }
             AmPmMarkersNarrow{
                 "prijepodne",
@@ -437,7 +381,7 @@ bs{
                 "EEEE, d. MMMM y.",
                 "d. MMMM y.",
                 "d. MMM y.",
-                "d. M. y.",
+                "d.M.yy.",
                 "{1} {0}",
                 "{1} 'u' {0}",
                 "{1} 'u' {0}",
@@ -474,9 +418,9 @@ bs{
                 MMMEd{"E, d. MMM"}
                 MMMMEd{"E, d. MMMM"}
                 MMMMW{
-                    few{"W. 'sedmica' 'u' MMMM"}
-                    one{"W. 'sedmica' 'u' MMMM"}
-                    other{"W. 'sedmica' 'u' MMMM"}
+                    few{"W. 'sedmica' 'u' MMM"}
+                    one{"W. 'sedmica' 'u' MMM"}
+                    other{"W. 'sedmica' 'u' MMM"}
                 }
                 MMMMd{"d. MMMM"}
                 MMMd{"d. MMM"}
@@ -614,13 +558,13 @@ bs{
                 stand-alone{
                     abbreviated{
                         afternoon1{"poslijepodne"}
-                        am{"AM"}
+                        am{"prijepodne"}
                         evening1{"navečer"}
                         midnight{"ponoć"}
                         morning1{"ujutro"}
                         night1{"po noći"}
                         noon{"podne"}
-                        pm{"PM"}
+                        pm{"popodne"}
                     }
                     narrow{
                         afternoon1{"poslijepodne"}
@@ -649,71 +593,16 @@ bs{
                     "p. n. e.",
                     "n. e.",
                 }
-                abbreviated%variant{
-                    "p.n.e.",
-                    "n.e.",
-                }
-                narrow{
-                    "p.n.e.",
-                    "n.e.",
-                }
                 wide{
                     "prije nove ere",
                     "nove ere",
                 }
                 wide%variant{
-                    "P.n.e.",
-                    "Nove ere",
+                    "BCE",
+                    "n. e.",
                 }
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h – h B"}
-                }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm – h:mm B"}
-                    m{"h:mm – h:mm B"}
-                }
-                Gy{
-                    G{"G y – G y"}
-                    y{"G y–y"}
-                }
-                GyM{
-                    G{"GGGGG y-MM – GGGGG y-MM"}
-                    M{"GGGGG y-MM – y-MM"}
-                    y{"GGGGG y-MM – y-MM"}
-                }
-                GyMEd{
-                    G{"GGGGG y-MM-dd, E – GGGGG y-MM-dd, E"}
-                    M{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    d{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    y{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                }
-                GyMMM{
-                    G{"G y MMM – G y MMM"}
-                    M{"G y MMM–MMM"}
-                    y{"G y MMM – y MMM"}
-                }
-                GyMMMEd{
-                    G{"G y MMM d, E – G y MMM d, E"}
-                    M{"G y MMM d, E – MMM d, E"}
-                    d{"G y MMM d, E – MMM d, E"}
-                    y{"G y MMM d, E – y MMM d, E"}
-                }
-                GyMMMd{
-                    G{"G y MMM d – G y MMM d"}
-                    M{"G y MMM d – MMM d"}
-                    d{"G y MMM d–d"}
-                    y{"G y MMM d – y MMM d"}
-                }
-                GyMd{
-                    G{"GGGGG y-MM-dd – GGGGG y-MM-dd"}
-                    M{"GGGGG y-MM-dd – y-MM-dd"}
-                    d{"GGGGG y-MM-dd – y-MM-dd"}
-                    y{"GGGGG y-MM-dd – y-MM-dd"}
-                }
                 H{
                     H{"HH – HH'h'"}
                 }
@@ -818,7 +707,7 @@ bs{
                         "maj",
                         "jun",
                         "jul",
-                        "aug",
+                        "avg",
                         "sep",
                         "okt",
                         "nov",
@@ -846,7 +735,7 @@ bs{
                         "maj",
                         "juni",
                         "juli",
-                        "august",
+                        "avgust",
                         "septembar",
                         "oktobar",
                         "novembar",
@@ -862,7 +751,7 @@ bs{
                         "maj",
                         "jun",
                         "jul",
-                        "aug",
+                        "avg",
                         "sep",
                         "okt",
                         "nov",
@@ -890,7 +779,7 @@ bs{
                         "maj",
                         "juni",
                         "juli",
-                        "august",
+                        "avgust",
                         "septembar",
                         "oktobar",
                         "novembar",

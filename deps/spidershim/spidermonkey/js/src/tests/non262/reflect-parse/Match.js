@@ -78,8 +78,7 @@ var Match =
             (typeof x === "boolean") ||
             (x === null) ||
             (x === undefined) ||
-            (typeof x === "object" && x instanceof RegExp) ||
-            (typeof x === "bigint");
+            (typeof x === "object" && x instanceof RegExp);
     }
 
     function isObject(x) {
@@ -121,7 +120,6 @@ var Match =
             return true;
         case "boolean":
         case "number":
-        case "bigint":
             if (exp !== act)
                 throw new MatchError("expected " + exp + ", got " + quote(act));
             return true;
@@ -187,10 +185,7 @@ var Match =
         if (isFunction(exp))
             return matchFunction(act, exp);
 
-        if (isObject(exp))
-            return matchObject(act, exp);
-
-        throw new Error("bad pattern: " + exp.toSource());
+        return matchObject(act, exp);
     }
 
     return { Pattern: Pattern,

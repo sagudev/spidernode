@@ -33,21 +33,15 @@ var valueOfAccessed = 0;
 var thisVal = {
   get [Symbol.toPrimitive]() {
     toPrimitiveAccessed += 1;
-    return function() {
-      return '42 ';
-    };
+    return function() { return '42 '; };
   },
   get toString() {
     toStringAccessed += 1;
-    return function() {
-      return '';
-    };
+    return function() { return ''; };
   },
   get valueOf() {
     valueOfAccessed += 1;
-    return function() {
-      return '';
-    };
+    return function() { return ''; };
   },
 };
 
@@ -63,7 +57,7 @@ assert.sameValue(
 assert.sameValue(
   result,
   '42',
-  'thisVal[Symbol.toPrimitive] expected to have been called.'
+  'thisVal[Symbol.toPrimitive] expected to have been called.',
 );
 
 // Test that thisVal.toString and thisVal.valueOf have not been accessedo

@@ -5,7 +5,7 @@ function test(stdlib, foreign) {
     }
     return f;
 };
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.parent = this;
 g.eval(`
   var dbg = new Debugger();

@@ -25,7 +25,7 @@ Pattern({ source: "quad.js", start: { line: 1, column: 20 }, end: { line: 1, col
 
 // No source location
 
-assertEq("loc" in Reflect.parse("42", {loc:false}), false);
+assertEq(Reflect.parse("42", {loc:false}).loc, null);
 program([exprStmt(lit(42))]).assert(Reflect.parse("42", {loc:false}));
 
 }

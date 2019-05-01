@@ -9,48 +9,66 @@
 
 using mozilla::RefCounted;
 
-class Foo : public RefCounted<Foo> {
- public:
+class Foo : public RefCounted<Foo>
+{
+public:
   MOZ_DECLARE_REFCOUNTED_TYPENAME(Foo)
 
   Foo() : mDead(false) {}
 
   static int sNumDestroyed;
 
-  ~Foo() {
+  ~Foo()
+  {
     MOZ_ASSERT(!mDead);
     mDead = true;
     sNumDestroyed++;
   }
 
- private:
+private:
   bool mDead;
 };
 int Foo::sNumDestroyed;
 
 struct Bar : public Foo {};
 
-already_AddRefed<Foo> NewFoo() {
+already_AddRefed<Foo>
+NewFoo()
+{
   RefPtr<Foo> f(new Foo());
   return f.forget();
 }
 
-already_AddRefed<Foo> NewBar() {
+already_AddRefed<Foo>
+NewBar()
+{
   RefPtr<Bar> bar = new Bar();
   return bar.forget();
 }
 
-void GetNewFoo(Foo** aFoo) {
+void
+GetNewFoo(Foo** aFoo)
+{
   *aFoo = new Bar();
   // Kids, don't try this at home
   (*aFoo)->AddRef();
 }
 
-void GetNewFoo(RefPtr<Foo>* aFoo) { *aFoo = new Bar(); }
+void
+GetNewFoo(RefPtr<Foo>* aFoo)
+{
+  *aFoo = new Bar();
+}
 
-already_AddRefed<Foo> GetNullFoo() { return 0; }
+already_AddRefed<Foo>
+GetNullFoo()
+{
+  return 0;
+}
 
-int main() {
+int
+main()
+{
   MOZ_RELEASE_ASSERT(0 == Foo::sNumDestroyed);
   {
     RefPtr<Foo> f = new Foo();
@@ -105,7 +123,9 @@ int main() {
   }
   MOZ_RELEASE_ASSERT(10 == Foo::sNumDestroyed);
 
-  { RefPtr<Foo> f1 = new Bar(); }
+  {
+    RefPtr<Foo> f1 = new Bar();
+  }
   MOZ_RELEASE_ASSERT(11 == Foo::sNumDestroyed);
 
   {
@@ -116,3 +136,4 @@ int main() {
 
   return 0;
 }
+

@@ -18,5 +18,5 @@ negative:
 flags: [onlyStrict]
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 var af = yield => 1;

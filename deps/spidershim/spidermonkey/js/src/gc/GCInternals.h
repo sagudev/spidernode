@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,91 +13,50 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/PodOperations.h"
 
-#include "gc/GC.h"
 #include "gc/RelocationOverlay.h"
+#include "gc/Zone.h"
 #include "vm/HelperThreads.h"
 #include "vm/Runtime.h"
 
 namespace js {
 namespace gc {
 
-class MOZ_RAII AutoCheckCanAccessAtomsDuringGC {
-#ifdef DEBUG
-  JSRuntime* runtime;
-
+/*
+ * This class should be used by any code that needs to exclusive access to the
+ * heap in order to trace through it...
+ */
+class MOZ_RAII AutoTraceSession {
  public:
-  explicit AutoCheckCanAccessAtomsDuringGC(JSRuntime* rt) : runtime(rt) {
-    // Ensure we're only used from within the GC.
-    MOZ_ASSERT(JS::RuntimeHeapIsMajorCollecting());
+  explicit AutoTraceSession(JSRuntime* rt,
+                            JS::HeapState state = JS::HeapState::Tracing);
+  ~AutoTraceSession();
 
-    // Ensure there is no off-thread parsing running.
-    MOZ_ASSERT(!rt->hasHelperThreadZones());
+  // Constructing an AutoTraceSession takes the exclusive access lock, but GC
+  // may release it during a trace session if we're not collecting the atoms
+  // zone.
+  mozilla::Maybe<AutoLockForExclusiveAccess> maybeLock;
 
-    // Set up a check to assert if we try to start an off-thread parse.
-    runtime->setOffThreadParsingBlocked(true);
-  }
-  ~AutoCheckCanAccessAtomsDuringGC() {
-    runtime->setOffThreadParsingBlocked(false);
-  }
-#else
- public:
-  explicit AutoCheckCanAccessAtomsDuringGC(JSRuntime* rt) {}
-#endif
-};
-
-// Abstract base class for exclusive heap access for tracing or GC.
-class MOZ_RAII AutoHeapSession {
- public:
-  ~AutoHeapSession();
+  AutoLockForExclusiveAccess& lock() { return maybeLock.ref(); }
 
  protected:
-  AutoHeapSession(JSRuntime* rt, JS::HeapState state);
+  JSRuntime* runtime;
 
  private:
-  AutoHeapSession(const AutoHeapSession&) = delete;
-  void operator=(const AutoHeapSession&) = delete;
+  AutoTraceSession(const AutoTraceSession&) = delete;
+  void operator=(const AutoTraceSession&) = delete;
 
-  JSRuntime* runtime;
   JS::HeapState prevState;
-  AutoGeckoProfilerEntry profilingStackFrame;
+  AutoGeckoProfilerEntry pseudoFrame;
 };
 
-class MOZ_RAII AutoGCSession : public AutoHeapSession {
+class MOZ_RAII AutoPrepareForTracing {
+  mozilla::Maybe<AutoTraceSession> session_;
+
  public:
-  explicit AutoGCSession(JSRuntime* rt, JS::HeapState state)
-      : AutoHeapSession(rt, state) {}
-
-  AutoCheckCanAccessAtomsDuringGC& checkAtomsAccess() {
-    return maybeCheckAtomsAccess.ref();
-  }
-
-  // During a GC we can check that it's not possible for anything else to be
-  // using the atoms zone.
-  mozilla::Maybe<AutoCheckCanAccessAtomsDuringGC> maybeCheckAtomsAccess;
-};
-
-class MOZ_RAII AutoTraceSession : public AutoLockAllAtoms,
-                                  public AutoHeapSession {
- public:
-  explicit AutoTraceSession(JSRuntime* rt)
-      : AutoLockAllAtoms(rt), AutoHeapSession(rt, JS::HeapState::Tracing) {}
-};
-
-struct MOZ_RAII AutoFinishGC {
-  explicit AutoFinishGC(JSContext* cx, JS::GCReason reason) {
-    FinishGC(cx, reason);
-  }
-};
-
-// This class should be used by any code that needs exclusive access to the heap
-// in order to trace through it.
-class MOZ_RAII AutoPrepareForTracing : private AutoFinishGC,
-                                       public AutoTraceSession {
- public:
-  explicit AutoPrepareForTracing(JSContext* cx)
-      : AutoFinishGC(cx, JS::GCReason::PREPARE_FOR_TRACING),
-        AutoTraceSession(cx->runtime()) {}
+  explicit AutoPrepareForTracing(JSContext* cx);
+  AutoTraceSession& session() { return session_.ref(); }
 };
 
 AbortReason IsIncrementalGCUnsafe(JSRuntime* rt);
@@ -124,18 +83,12 @@ class MOZ_RAII AutoStopVerifyingBarriers {
     // gc::Statistics phase tree. So we pause the "real" GC, if in fact one
     // is in progress.
     gcstats::PhaseKind outer = gc->stats().currentPhaseKind();
-    if (outer != gcstats::PhaseKind::NONE) {
-      gc->stats().endPhase(outer);
-    }
+    if (outer != gcstats::PhaseKind::NONE) gc->stats().endPhase(outer);
     MOZ_ASSERT(gc->stats().currentPhaseKind() == gcstats::PhaseKind::NONE);
 
-    if (restartPreVerifier) {
-      gc->startVerifyPreBarriers();
-    }
+    if (restartPreVerifier) gc->startVerifyPreBarriers();
 
-    if (outer != gcstats::PhaseKind::NONE) {
-      gc->stats().beginPhase(outer);
-    }
+    if (outer != gcstats::PhaseKind::NONE) gc->stats().beginPhase(outer);
   }
 };
 #else
@@ -161,9 +114,8 @@ struct MovingTracer : JS::CallbackTracer {
   void onBaseShapeEdge(BaseShape** basep) override;
   void onScopeEdge(Scope** basep) override;
   void onRegExpSharedEdge(RegExpShared** sharedp) override;
-  void onBigIntEdge(BigInt** bip) override;
   void onChild(const JS::GCCellPtr& thing) override {
-    MOZ_ASSERT(!thing.asCell()->isForwarded());
+    MOZ_ASSERT(!RelocationOverlay::isCellForwarded(thing.asCell()));
   }
 
 #ifdef DEBUG
@@ -179,12 +131,8 @@ struct MovingTracer : JS::CallbackTracer {
 // been tenured during a minor collection.
 struct TenureCount {
   ObjectGroup* group;
-  unsigned count;
-
-  // ObjectGroups are never nursery-allocated, and TenureCounts are only used
-  // in minor GC (not compacting GC), so prevent the analysis from
-  // complaining about TenureCounts being held live across a minor GC.
-} JS_HAZ_NON_GC_POINTER;
+  int count;
+};
 
 // Keep rough track of how many times we tenure objects in particular groups
 // during minor collections, using a fixed size hash for efficiency at the cost
@@ -193,9 +141,9 @@ struct TenureCountCache {
   static const size_t EntryShift = 4;
   static const size_t EntryCount = 1 << EntryShift;
 
-  TenureCount entries[EntryCount] = {};  // zeroes
+  TenureCount entries[EntryCount];
 
-  TenureCountCache() = default;
+  TenureCountCache() { mozilla::PodZero(this); }
 
   HashNumber hash(ObjectGroup* group) {
 #if JS_BITS_PER_WORD == 32
@@ -286,12 +234,10 @@ class MOZ_RAII AutoEmptyNursery : public AutoAssertEmptyNursery {
 
 extern void DelayCrossCompartmentGrayMarking(JSObject* src);
 
-inline bool IsOOMReason(JS::GCReason reason) {
-  return reason == JS::GCReason::LAST_DITCH ||
-         reason == JS::GCReason::MEM_PRESSURE;
+inline bool IsOOMReason(JS::gcreason::Reason reason) {
+  return reason == JS::gcreason::LAST_DITCH ||
+         reason == JS::gcreason::MEM_PRESSURE;
 }
-
-TenuredCell* AllocateCellInGC(JS::Zone* zone, AllocKind thingKind);
 
 } /* namespace gc */
 } /* namespace js */

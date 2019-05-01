@@ -1,8 +1,9 @@
 //===- FuzzerMerge.h - merging corpa ----------------------------*- C++ -* ===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 // Merging Corpora.
@@ -51,11 +52,11 @@ namespace fuzzer {
 struct MergeFileInfo {
   std::string Name;
   size_t Size = 0;
-  Vector<uint32_t> Features, Cov;
+  std::vector<uint32_t> Features;
 };
 
 struct Merger {
-  Vector<MergeFileInfo> Files;
+  std::vector<MergeFileInfo> Files;
   size_t NumFilesInFirstCorpus = 0;
   size_t FirstNotProcessedFile = 0;
   std::string LastFailure;
@@ -63,23 +64,16 @@ struct Merger {
   bool Parse(std::istream &IS, bool ParseCoverage);
   bool Parse(const std::string &Str, bool ParseCoverage);
   void ParseOrExit(std::istream &IS, bool ParseCoverage);
-  size_t Merge(const Set<uint32_t> &InitialFeatures, Set<uint32_t> *NewFeatures,
-               const Set<uint32_t> &InitialCov, Set<uint32_t> *NewCov,
-               Vector<std::string> *NewFiles);
+  void PrintSummary(std::ostream &OS);
+  std::set<uint32_t> ParseSummary(std::istream &IS);
+  size_t Merge(const std::set<uint32_t> &InitialFeatures,
+               std::vector<std::string> *NewFiles);
+  size_t Merge(std::vector<std::string> *NewFiles) {
+    return Merge(std::set<uint32_t>{}, NewFiles);
+  }
   size_t ApproximateMemoryConsumption() const;
-  Set<uint32_t> AllFeatures() const;
+  std::set<uint32_t> AllFeatures() const;
 };
-
-void CrashResistantMerge(const Vector<std::string> &Args,
-                         const Vector<SizedFile> &OldCorpus,
-                         const Vector<SizedFile> &NewCorpus,
-                         Vector<std::string> *NewFiles,
-                         const Set<uint32_t> &InitialFeatures,
-                         Set<uint32_t> *NewFeatures,
-                         const Set<uint32_t> &InitialCov,
-                         Set<uint32_t> *NewCov,
-                         const std::string &CFPath,
-                         bool Verbose);
 
 }  // namespace fuzzer
 

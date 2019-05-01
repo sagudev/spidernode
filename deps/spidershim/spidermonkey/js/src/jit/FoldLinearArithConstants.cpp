@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,9 +22,8 @@ namespace jit {
 // necessary because the Sink pass is ran before this pass.
 static void markNodesAsRecoveredOnBailout(MDefinition* def) {
   if (def->hasLiveDefUses() || !DeadIfUnused(def) ||
-      !def->canRecoverOnBailout()) {
+      !def->canRecoverOnBailout())
     return;
-  }
 
   JitSpew(JitSpew_FLAC, "mark as recovered on bailout: %s%u", def->opName(),
           def->id());
@@ -33,27 +32,21 @@ static void markNodesAsRecoveredOnBailout(MDefinition* def) {
   // Recursively mark nodes that do not have multiple uses. This loop is
   // necessary because a node could be an unused right shift zero or an
   // unused add, and both need to be marked as RecoveredOnBailout.
-  for (size_t i = 0; i < def->numOperands(); i++) {
+  for (size_t i = 0; i < def->numOperands(); i++)
     markNodesAsRecoveredOnBailout(def->getOperand(i));
-  }
 }
 
 // Fold AddIs with one variable and two or more constants into one AddI.
 static void AnalyzeAdd(TempAllocator& alloc, MAdd* add) {
-  if (add->specialization() != MIRType::Int32 || add->isRecoveredOnBailout()) {
+  if (add->specialization() != MIRType::Int32 || add->isRecoveredOnBailout())
     return;
-  }
 
-  if (!add->hasUses()) {
-    return;
-  }
+  if (!add->hasUses()) return;
 
   JitSpew(JitSpew_FLAC, "analyze add: %s%u", add->opName(), add->id());
 
   SimpleLinearSum sum = ExtractLinearSum(add);
-  if (sum.constant == 0 || !sum.term) {
-    return;
-  }
+  if (sum.constant == 0 || !sum.term) return;
 
   // Determine which operand is the constant.
   int idx = add->getOperand(0)->isConstant() ? 0 : 1;
@@ -86,22 +79,16 @@ static void AnalyzeAdd(TempAllocator& alloc, MAdd* add) {
 bool FoldLinearArithConstants(MIRGenerator* mir, MIRGraph& graph) {
   for (PostorderIterator block(graph.poBegin()); block != graph.poEnd();
        block++) {
-    if (mir->shouldCancel("Fold Linear Arithmetic Constants (main loop)")) {
+    if (mir->shouldCancel("Fold Linear Arithmetic Constants (main loop)"))
       return false;
-    }
 
     for (MInstructionIterator i = block->begin(); i != block->end(); i++) {
-      if (!graph.alloc().ensureBallast()) {
-        return false;
-      }
+      if (!graph.alloc().ensureBallast()) return false;
 
-      if (mir->shouldCancel("Fold Linear Arithmetic Constants (inner loop)")) {
+      if (mir->shouldCancel("Fold Linear Arithmetic Constants (inner loop)"))
         return false;
-      }
 
-      if (i->isAdd()) {
-        AnalyzeAdd(graph.alloc(), i->toAdd());
-      }
+      if (i->isAdd()) AnalyzeAdd(graph.alloc(), i->toAdd());
     }
   }
   return true;

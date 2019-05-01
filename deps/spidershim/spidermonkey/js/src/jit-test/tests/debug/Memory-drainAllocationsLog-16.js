@@ -1,6 +1,6 @@
 // Test drainAllocationsLog() and constructor names.
 
-const root = newGlobal({newCompartment: true});
+const root = newGlobal();
 const dbg = new Debugger();
 const wrappedRoot = dbg.addDebuggee(root);
 

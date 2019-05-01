@@ -1,6 +1,7 @@
-// |jit-test| skip-if: !('oomTest' in this)
+if (!('oomTest' in this))
+    quit();
 
-let g = newGlobal({newCompartment: true});
+let g = newGlobal();
 let dbg = new Debugger;
 let gw = dbg.addDebuggee(g);
 g.eval("function f(){}");

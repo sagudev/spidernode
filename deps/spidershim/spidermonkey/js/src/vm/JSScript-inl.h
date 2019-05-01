@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,15 +9,13 @@
 
 #include "vm/JSScript.h"
 
-#include <utility>
-
 #include "jit/BaselineJIT.h"
 #include "jit/IonAnalysis.h"
 #include "vm/EnvironmentObject.h"
 #include "vm/RegExpObject.h"
 #include "wasm/AsmJS.h"
 
-#include "vm/Realm-inl.h"
+#include "vm/JSCompartment-inl.h"
 #include "vm/Shape-inl.h"
 
 namespace js {
@@ -26,19 +24,19 @@ ScriptCounts::ScriptCounts()
     : pcCounts_(), throwCounts_(), ionCounts_(nullptr) {}
 
 ScriptCounts::ScriptCounts(PCCountsVector&& jumpTargets)
-    : pcCounts_(std::move(jumpTargets)), throwCounts_(), ionCounts_(nullptr) {}
+    : pcCounts_(Move(jumpTargets)), throwCounts_(), ionCounts_(nullptr) {}
 
 ScriptCounts::ScriptCounts(ScriptCounts&& src)
-    : pcCounts_(std::move(src.pcCounts_)),
-      throwCounts_(std::move(src.throwCounts_)),
-      ionCounts_(std::move(src.ionCounts_)) {
+    : pcCounts_(Move(src.pcCounts_)),
+      throwCounts_(Move(src.throwCounts_)),
+      ionCounts_(Move(src.ionCounts_)) {
   src.ionCounts_ = nullptr;
 }
 
 ScriptCounts& ScriptCounts::operator=(ScriptCounts&& src) {
-  pcCounts_ = std::move(src.pcCounts_);
-  throwCounts_ = std::move(src.throwCounts_);
-  ionCounts_ = std::move(src.ionCounts_);
+  pcCounts_ = Move(src.pcCounts_);
+  throwCounts_ = Move(src.throwCounts_);
+  ionCounts_ = Move(src.ionCounts_);
   src.ionCounts_ = nullptr;
   return *this;
 }
@@ -51,8 +49,7 @@ ScriptAndCounts::ScriptAndCounts(JSScript* script)
 }
 
 ScriptAndCounts::ScriptAndCounts(ScriptAndCounts&& sac)
-    : script(std::move(sac.script)),
-      scriptCounts(std::move(sac.scriptCounts)) {}
+    : script(Move(sac.script)), scriptCounts(Move(sac.scriptCounts)) {}
 
 void SetFrameArgumentsObject(JSContext* cx, AbstractFramePtr frame,
                              HandleScript script, JSObject* argsobj);
@@ -60,9 +57,8 @@ void SetFrameArgumentsObject(JSContext* cx, AbstractFramePtr frame,
 /* static */ inline JSFunction* LazyScript::functionDelazifying(
     JSContext* cx, Handle<LazyScript*> script) {
   RootedFunction fun(cx, script->function_);
-  if (script->function_ && !JSFunction::getOrCreateScript(cx, fun)) {
+  if (script->function_ && !JSFunction::getOrCreateScript(cx, fun))
     return nullptr;
-  }
   return script->function_;
 }
 
@@ -74,9 +70,8 @@ inline JSFunction* JSScript::functionDelazifying() const {
     fun->setUnlazifiedScript(const_cast<JSScript*>(this));
     // If this script has a LazyScript, make sure the LazyScript has a
     // reference to the script when delazifying its canonical function.
-    if (lazyScript && !lazyScript->maybeScript()) {
+    if (lazyScript && !lazyScript->maybeScript())
       lazyScript->initScript(const_cast<JSScript*>(this));
-    }
   }
   return fun;
 }
@@ -84,9 +79,7 @@ inline JSFunction* JSScript::functionDelazifying() const {
 inline void JSScript::ensureNonLazyCanonicalFunction() {
   // Infallibly delazify the canonical script.
   JSFunction* fun = function();
-  if (fun && fun->isInterpretedLazy()) {
-    functionDelazifying();
-  }
+  if (fun && fun->isInterpretedLazy()) functionDelazifying();
 }
 
 inline JSFunction* JSScript::getFunction(size_t index) {
@@ -95,10 +88,6 @@ inline JSFunction* JSScript::getFunction(size_t index) {
   JSFunction* fun = &obj->as<JSFunction>();
   MOZ_ASSERT_IF(fun->isNative(), IsAsmJSModuleNative(fun->native()));
   return fun;
-}
-
-inline JSFunction* JSScript::getFunction(jsbytecode* pc) {
-  return getFunction(GET_UINT32_INDEX(pc));
 }
 
 inline js::RegExpObject* JSScript::getRegExp(size_t index) {
@@ -117,15 +106,10 @@ inline js::RegExpObject* JSScript::getRegExp(jsbytecode* pc) {
 
 inline js::GlobalObject& JSScript::global() const {
   /*
-   * A JSScript always marks its realm's global so we can assert it's non-null
-   * here. We don't need a read barrier here for the same reason
-   * JSObject::nonCCWGlobal doesn't need one.
+   * A JSScript always marks its compartment's global (via bindings) so we
+   * can assert that maybeGlobal is non-null here.
    */
-  return *realm()->unsafeUnbarrieredMaybeGlobal();
-}
-
-inline bool JSScript::hasGlobal(const js::GlobalObject* global) const {
-  return global == realm()->unsafeUnbarrieredMaybeGlobal();
+  return *compartment()->maybeGlobal();
 }
 
 inline js::LexicalScope* JSScript::maybeNamedLambdaScope() const {
@@ -145,25 +129,23 @@ inline js::LexicalScope* JSScript::maybeNamedLambdaScope() const {
 inline js::Shape* JSScript::initialEnvironmentShape() const {
   js::Scope* scope = bodyScope();
   if (scope->is<js::FunctionScope>()) {
-    if (js::Shape* envShape = scope->environmentShape()) {
-      return envShape;
-    }
-    if (js::Scope* namedLambdaScope = maybeNamedLambdaScope()) {
+    if (js::Shape* envShape = scope->environmentShape()) return envShape;
+    if (js::Scope* namedLambdaScope = maybeNamedLambdaScope())
       return namedLambdaScope->environmentShape();
-    }
   } else if (scope->is<js::EvalScope>()) {
     return scope->environmentShape();
   }
   return nullptr;
 }
 
-inline JSPrincipals* JSScript::principals() { return realm()->principals(); }
+inline JSPrincipals* JSScript::principals() {
+  return compartment()->principals();
+}
 
 inline void JSScript::setBaselineScript(
     JSRuntime* rt, js::jit::BaselineScript* baselineScript) {
-  if (hasBaselineScript()) {
+  if (hasBaselineScript())
     js::jit::BaselineScript::writeBarrierPre(zone(), baseline);
-  }
   MOZ_ASSERT(!ion || ion == ION_DISABLED_SCRIPT);
   baseline = baselineScript;
   resetWarmUpResetCounter();
@@ -171,19 +153,12 @@ inline void JSScript::setBaselineScript(
 }
 
 inline bool JSScript::ensureHasAnalyzedArgsUsage(JSContext* cx) {
-  if (analyzedArgsUsage()) {
-    return true;
-  }
+  if (analyzedArgsUsage()) return true;
   return js::jit::AnalyzeArgumentsUsage(cx, this);
 }
 
 inline bool JSScript::isDebuggee() const {
-  return realm_->debuggerObservesAllExecution() || hasDebugScript();
-}
-
-inline js::jit::ICScript* JSScript::icScript() const {
-  MOZ_ASSERT(hasICScript());
-  return types_->icScript();
+  return compartment_->debuggerObservesAllExecution() || hasDebugScript_;
 }
 
 #endif /* vm_JSScript_inl_h */

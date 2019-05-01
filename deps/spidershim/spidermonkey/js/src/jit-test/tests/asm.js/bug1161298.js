@@ -1,6 +1,7 @@
-// |jit-test| skip-if: !this.SharedArrayBuffer
-
 // The length exceeds INT32_MAX and should be rejected.
+
+if (!this.SharedArrayBuffer)
+    quit(0);
 
 var failed = false;
 try {

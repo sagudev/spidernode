@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,13 +9,10 @@
 
 #include "vm/ArrayObject.h"
 
-#include "gc/Allocator.h"
 #include "gc/GCTrace.h"
 #include "vm/StringType.h"
 
 #include "vm/JSObject-inl.h"
-#include "vm/ObjectGroup-inl.h"
-#include "vm/ObjectOperations-inl.h"  // js::GetElement
 #include "vm/TypeInference-inl.h"
 
 namespace js {
@@ -43,29 +40,23 @@ inline void ArrayObject::setLength(JSContext* cx, uint32_t length) {
   MOZ_ASSERT_IF(clasp->hasFinalize(), heap == gc::TenuredHeap);
   MOZ_ASSERT_IF(group->hasUnanalyzedPreliminaryObjects(),
                 heap == js::gc::TenuredHeap);
-  MOZ_ASSERT_IF(group->shouldPreTenureDontCheckGeneration(),
-                heap == gc::TenuredHeap);
 
   // Arrays can use their fixed slots to store elements, so can't have shapes
   // which allow named properties to be stored in the fixed slots.
   MOZ_ASSERT(shape->numFixedSlots() == 0);
 
   size_t nDynamicSlots = dynamicSlotsCount(0, shape->slotSpan(), clasp);
-  JSObject* obj = js::AllocateObject(cx, kind, nDynamicSlots, heap, clasp);
-  if (!obj) {
-    return nullptr;
-  }
+  JSObject* obj = js::Allocate<JSObject>(cx, kind, nDynamicSlots, heap, clasp);
+  if (!obj) return nullptr;
 
   ArrayObject* aobj = static_cast<ArrayObject*>(obj);
   aobj->initGroup(group);
   aobj->initShape(shape);
   // NOTE: Dynamic slots are created internally by Allocate<JSObject>.
-  if (!nDynamicSlots) {
-    aobj->initSlots(nullptr);
-  }
+  if (!nDynamicSlots) aobj->initSlots(nullptr);
 
   MOZ_ASSERT(clasp->shouldDelayMetadataBuilder());
-  cx->realm()->setObjectPendingMetadata(cx, aobj);
+  cx->compartment()->setObjectPendingMetadata(cx, aobj);
 
   return aobj;
 }
@@ -73,11 +64,9 @@ inline void ArrayObject::setLength(JSContext* cx, uint32_t length) {
 /* static */ inline ArrayObject* ArrayObject::finishCreateArray(
     ArrayObject* obj, HandleShape shape, AutoSetNewObjectMetadata& metadata) {
   size_t span = shape->slotSpan();
-  if (span) {
-    obj->initializeSlotRange(0, span);
-  }
+  if (span) obj->initializeSlotRange(0, span);
 
-  gc::gcTracer.traceCreateObject(obj);
+  gc::TraceCreateObject(obj);
 
   return obj;
 }
@@ -88,9 +77,7 @@ inline void ArrayObject::setLength(JSContext* cx, uint32_t length) {
     AutoSetNewObjectMetadata& metadata) {
   ArrayObject* obj =
       createArrayInternal(cx, kind, heap, shape, group, metadata);
-  if (!obj) {
-    return nullptr;
-  }
+  if (!obj) return nullptr;
 
   uint32_t capacity =
       gc::GetGCKindSlots(kind) - ObjectElements::VALUES_PER_HEADER;
@@ -118,9 +105,7 @@ inline void ArrayObject::setLength(JSContext* cx, uint32_t length) {
   RootedObjectGroup group(cx, sharedElementsOwner->group());
   ArrayObject* obj =
       createArrayInternal(cx, kind, heap, shape, group, metadata);
-  if (!obj) {
-    return nullptr;
-  }
+  if (!obj) return nullptr;
 
   obj->elements_ = sharedElementsOwner->getDenseElementsAllowCopyOnWrite();
 

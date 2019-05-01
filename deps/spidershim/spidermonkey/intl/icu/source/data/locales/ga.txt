@@ -12,23 +12,18 @@ ga{
     }
     ExemplarCharacters{"[a á b c d e é f g h i í l m n o ó p r s t u ú]"}
     ExemplarCharactersNumbers{"[\\- , . % ‰ + 0 1 2 3 4 5 6 7 8 9]"}
-    ExemplarCharactersPunctuation{
-        "[\\- ‐ – — , ; \\: ! ? . … ' ‘ ’ \u0022 “ ” ( ) \\[ \\] § @ * / \\& # † ‡ ′ "
-        "″]"
-    }
     MoreInformation{"?"}
     NumberElements{
         default{"latn"}
         latn{
             miscPatterns{
-                approximately{"~{0}"}
                 atLeast{"{0}+"}
-                atMost{"≤{0}"}
                 range{"{0}–{1}"}
             }
             patterns{
                 accountingFormat{"¤#,##0.00;(¤#,##0.00)"}
                 currencyFormat{"¤#,##0.00"}
+                decimalFormat{"#,##0.###"}
                 percentFormat{"#,##0%"}
                 scientificFormat{"#E0"}
             }
@@ -295,11 +290,15 @@ ga{
                 }
             }
             symbols{
+                decimal{"."}
                 exponential{"E"}
+                group{","}
                 infinity{"∞"}
+                minusSign{"-"}
                 nan{"NaN"}
                 perMille{"‰"}
                 percentSign{"%"}
+                plusSign{"+"}
                 superscriptingExponent{"×"}
                 timeSeparator{":"}
             }
@@ -320,7 +319,7 @@ ga{
         minimumGroupingDigits{"1"}
         native{"latn"}
     }
-    Version{"2.1.48.17"}
+    Version{"2.1.37.5"}
     calendar{
         buddhist{
             DateTimePatterns{
@@ -532,53 +531,6 @@ ga{
                 yyyyQQQQ{"QQQQ y G"}
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h – h B"}
-                }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm – h:mm B"}
-                    m{"h:mm – h:mm B"}
-                }
-                Gy{
-                    G{"G y – G y"}
-                    y{"G y–y"}
-                }
-                GyM{
-                    G{"GGGGG y-MM – GGGGG y-MM"}
-                    M{"GGGGG y-MM – y-MM"}
-                    y{"GGGGG y-MM – y-MM"}
-                }
-                GyMEd{
-                    G{"GGGGG y-MM-dd, E – GGGGG y-MM-dd, E"}
-                    M{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    d{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    y{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                }
-                GyMMM{
-                    G{"G y MMM – G y MMM"}
-                    M{"G y MMM–MMM"}
-                    y{"G y MMM – y MMM"}
-                }
-                GyMMMEd{
-                    G{"G y MMM d, E – G y MMM d, E"}
-                    M{"G y MMM d, E – MMM d, E"}
-                    d{"G y MMM d, E – MMM d, E"}
-                    y{"G y MMM d, E – y MMM d, E"}
-                }
-                GyMMMd{
-                    G{"G y MMM d – G y MMM d"}
-                    M{"G y MMM d – MMM d"}
-                    d{"G y MMM d–d"}
-                    y{"G y MMM d – y MMM d"}
-                }
-                GyMd{
-                    G{"GGGGG y-MM-dd – GGGGG y-MM-dd"}
-                    M{"GGGGG y-MM-dd – y-MM-dd"}
-                    d{"GGGGG y-MM-dd – y-MM-dd"}
-                    y{"GGGGG y-MM-dd – y-MM-dd"}
-                }
                 H{
                     H{"HH – HH"}
                 }
@@ -731,11 +683,11 @@ ga{
                 MMM{"LLL"}
                 MMMEd{"E d MMM"}
                 MMMMW{
-                    few{"'seachtain' 'a' W 'i' MMMM"}
-                    many{"'seachtain' 'a' W 'i' MMMM"}
-                    one{"'seachtain' 'a' W 'i' MMMM"}
-                    other{"'seachtain' 'a' W 'i' MMMM"}
-                    two{"'seachtain' 'a' W 'i' MMMM"}
+                    few{"'seachtain' 'a' W 'i' MMM"}
+                    many{"'seachtain' 'a' W 'i' MMM"}
+                    one{"'seachtain' 'a' W 'i' MMM"}
+                    other{"'seachtain' 'a' W 'i' MMM"}
+                    two{"'seachtain' 'a' W 'i' MMM"}
                 }
                 MMMMd{"d MMMM"}
                 MMMd{"d MMM"}
@@ -886,18 +838,6 @@ ga{
                 }
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h – h B"}
-                }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm – h:mm B"}
-                    m{"h:mm – h:mm B"}
-                }
-                Gy{
-                    G{"G y – G y"}
-                }
                 H{
                     H{"HH – HH"}
                 }
@@ -1131,8 +1071,8 @@ ga{
         african_scripts{"Scripteanna na hAfraice"}
         american_scripts{"Scripteanna Meiriceánacha"}
         animal{"ainmhí"}
-        animals_nature{"Ainmhithe nó an Nádúr"}
-        arrows{"saighead"}
+        animals_nature{"Ainmhithe agus an Nádúr"}
+        arrows{"Saighde"}
         body{"corp"}
         box_drawing{"Líníocht Boscaí"}
         braille{"Braille"}
@@ -1144,8 +1084,8 @@ ga{
         digits{"Digití"}
         dingbats{"Smísteoga"}
         divination_symbols{"Siombailí na Fáistine"}
-        downwards_arrows{"saighead síos"}
-        downwards_upwards_arrows{"saighead síos suas"}
+        downwards_arrows{"Saighde Síos"}
+        downwards_upwards_arrows{"Saighde Síos Suas"}
         east_asian_scripts{"Scripteanna na hÁise Thoir"}
         emoji{"Emoji"}
         european_scripts{"Scripteanna na hEorpa"}
@@ -1155,9 +1095,9 @@ ga{
         food_drink{"Bia agus Deoch"}
         format{"Formáid"}
         format_whitespace{"Formáid agus Spás Bán"}
-        full_width_form_variant{"athraitheach leithid iomláin"}
+        full_width_form_variant{"Foirmeacha Malartacha Lánleithid"}
         geometric_shapes{"Cruthanna Geoiméadracha"}
-        half_width_form_variant{"athraitheach leathleithid"}
+        half_width_form_variant{"Foirmeacha Malartacha Leathleithid"}
         han_characters{"Carachtair Han"}
         han_radicals{"Fréamhacha Han"}
         hanja{"Hanaí"}
@@ -1170,8 +1110,8 @@ ga{
         kanbun{"Kanbun"}
         kanji{"Ceansaí"}
         keycap{"caipín eochrach"}
-        leftwards_arrows{"Saighead Chlé"}
-        leftwards_rightwards_arrows{"Saighead Chlé-Dheas"}
+        leftwards_arrows{"Saighde Clé"}
+        leftwards_rightwards_arrows{"Saighde Clé-Deas"}
         letterlike_symbols{"Siombailí Cosúil le Litreacha"}
         limited_use{"Neamhfhorleathan"}
         male{"fireann"}
@@ -1182,7 +1122,7 @@ ga{
         modifier{"Mionathraitheoir"}
         musical_symbols{"Siombailí Ceoil"}
         nature{"nádúr"}
-        nonspacing{"Neamhspásáil"}
+        nonspacing{"Neamhspásáilte"}
         numbers{"Uimhreacha"}
         objects{"Nithe"}
         other{"Eile"}
@@ -1193,11 +1133,11 @@ ga{
         place{"áit"}
         plant{"planda"}
         punctuation{"Poncaíocht"}
-        rightwards_arrows{"Saighead Dheas"}
+        rightwards_arrows{"Saighde Deasa"}
         sign_standard_symbols{"Comharthaí/Siombailí Coitianta"}
-        small_form_variant{"athraithigh bheaga"}
+        small_form_variant{"Foirmeacha Beaga Malartacha"}
         smiley{"straoiseog"}
-        smileys_people{"Straoiseoga nó Daoine"}
+        smileys_people{"Straoiseoga agus Daoine"}
         south_asian_scripts{"Scripteanna na hÁise Theas"}
         southeast_asian_scripts{"Scripteanna na hÁise Thoir Theas"}
         spacing{"Spásáil"}
@@ -1206,8 +1146,8 @@ ga{
         technical_symbols{"Siombailí Teicniúla"}
         tone_marks{"Comharthaí Toin"}
         travel{"taisteal"}
-        travel_places{"Taisteal nó Áiteanna"}
-        upwards_arrows{"Saighead suas"}
+        travel_places{"Taisteal agus Áiteanna"}
+        upwards_arrows{"Saighde Suas"}
         variant_forms{"Foirmeacha Malartacha"}
         vocalic_jamo{"Seamó Guthach"}
         weather{"aimsir"}
@@ -2348,12 +2288,6 @@ ga{
             middle{"{0}, {1}"}
             start{"{0}, {1}"}
         }
-        standard-narrow{
-            2{"{0}, {1}"}
-            end{"{0}, {1}"}
-            middle{"{0}, {1}"}
-            start{"{0}, {1}"}
-        }
         standard-short{
             2{"{0} agus {1}"}
             end{"{0}, agus {1}"}
@@ -2394,13 +2328,8 @@ ga{
         general{
             lenient{
                 "[.․。︒﹒．｡]",
-                "['ʼ՚᾽᾿’＇]",
-                "[%٪﹪％]",
-                "[؉‰]",
                 "[\$﹩＄$]",
                 "[£₤]",
-                "[¥￥]",
-                "[₩￦]",
                 "[₨₹{Rp}{Rs}]",
             }
         }
@@ -2409,6 +2338,10 @@ ga{
                 "[\\-‒⁻₋−➖﹣－]",
                 "[,،٫、︐︑﹐﹑，､]",
                 "[+⁺₊➕﬩﹢＋]",
+            }
+            stricter{
+                "[,٫︐﹐，]",
+                "[.․﹒．｡]",
             }
         }
     }

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +9,7 @@
 #include "jit/CompileInfo.h"
 #include "jit/JitSpewer.h"
 #ifdef TRACK_SNAPSHOTS
-#  include "jit/LIR.h"
+#include "jit/LIR.h"
 #endif
 #include "jit/MIR.h"
 #include "jit/Recover.h"
@@ -19,8 +19,6 @@
 using namespace js;
 using namespace js::jit;
 
-// [SMDOC] IonMonkey Snapshot encoding
-//
 // Encodings:
 //   [ptr] A fixed-size pointer.
 //   [vwu] A variable-width unsigned integer.
@@ -209,12 +207,9 @@ const RValueAllocation::Layout& RValueAllocation::layoutFromMode(Mode mode) {
       static const RValueAllocation::Layout stackLayout = {
           PAYLOAD_PACKED_TAG, PAYLOAD_STACK_OFFSET, "typed value"};
 
-      if (mode >= TYPED_REG_MIN && mode <= TYPED_REG_MAX) {
-        return regLayout;
-      }
-      if (mode >= TYPED_STACK_MIN && mode <= TYPED_STACK_MAX) {
+      if (mode >= TYPED_REG_MIN && mode <= TYPED_REG_MAX) return regLayout;
+      if (mode >= TYPED_STACK_MIN && mode <= TYPED_STACK_MAX)
         return stackLayout;
-      }
     }
   }
 
@@ -309,9 +304,7 @@ void RValueAllocation::writePayload(CompactBufferWriter& writer,
 
 void RValueAllocation::writePadding(CompactBufferWriter& writer) {
   // Write 0x7f in all padding bytes.
-  while (writer.length() % ALLOCATION_TABLE_ALIGNMENT) {
-    writer.writeByte(0x7f);
-  }
+  while (writer.length() % ALLOCATION_TABLE_ALIGNMENT) writer.writeByte(0x7f);
 }
 
 void RValueAllocation::write(CompactBufferWriter& writer) const {
@@ -343,8 +336,6 @@ static const char* ValTypeToString(JSValueType type) {
       return "string";
     case JSVAL_TYPE_SYMBOL:
       return "symbol";
-    case JSVAL_TYPE_BIGINT:
-      return "BigInt";
     case JSVAL_TYPE_BOOLEAN:
       return "boolean";
     case JSVAL_TYPE_OBJECT:
@@ -383,17 +374,11 @@ void RValueAllocation::dump(GenericPrinter& out) const {
   const Layout& layout = layoutFromMode(mode());
   out.printf("%s", layout.name);
 
-  if (layout.type1 != PAYLOAD_NONE) {
-    out.printf(" (");
-  }
+  if (layout.type1 != PAYLOAD_NONE) out.printf(" (");
   dumpPayload(out, layout.type1, arg1_);
-  if (layout.type2 != PAYLOAD_NONE) {
-    out.printf(", ");
-  }
+  if (layout.type2 != PAYLOAD_NONE) out.printf(", ");
   dumpPayload(out, layout.type2, arg2_);
-  if (layout.type1 != PAYLOAD_NONE) {
-    out.printf(")");
-  }
+  if (layout.type1 != PAYLOAD_NONE) out.printf(")");
 }
 
 SnapshotReader::SnapshotReader(const uint8_t* snapshots, uint32_t offset,
@@ -402,9 +387,7 @@ SnapshotReader::SnapshotReader(const uint8_t* snapshots, uint32_t offset,
       allocReader_(snapshots + listSize, snapshots + listSize + RVATableSize),
       allocTable_(snapshots + listSize),
       allocRead_(0) {
-  if (!snapshots) {
-    return;
-  }
+  if (!snapshots) return;
   JitSpew(JitSpew_IonSnapshots, "Creating snapshot reader");
   readSnapshotHeader();
 }
@@ -487,11 +470,12 @@ RValueAllocation SnapshotReader::readAllocation() {
   return RValueAllocation::read(allocReader_);
 }
 
-SnapshotWriter::SnapshotWriter()
-    // Based on the measurements made in Bug 962555 comment 20, this length
-    // should be enough to prevent the reallocation of the hash table for at
-    // least half of the compilations.
-    : allocMap_(32) {}
+bool SnapshotWriter::init() {
+  // Based on the measurements made in Bug 962555 comment 20, this should be
+  // enough to prevent the reallocation of the hash table for at least half of
+  // the compilations.
+  return allocMap_.init(32);
+}
 
 RecoverReader::RecoverReader(SnapshotReader& snapshot, const uint8_t* recovers,
                              uint32_t size)
@@ -499,9 +483,7 @@ RecoverReader::RecoverReader(SnapshotReader& snapshot, const uint8_t* recovers,
       numInstructions_(0),
       numInstructionsRead_(0),
       resumeAfter_(false) {
-  if (!recovers) {
-    return;
-  }
+  if (!recovers) return;
   reader_ =
       CompactBufferReader(recovers + snapshot.recoverOffset(), recovers + size);
   readRecoverHeader();
@@ -513,9 +495,7 @@ RecoverReader::RecoverReader(const RecoverReader& rr)
       numInstructions_(rr.numInstructions_),
       numInstructionsRead_(rr.numInstructionsRead_),
       resumeAfter_(rr.resumeAfter_) {
-  if (reader_.currentPosition()) {
-    rr.instruction()->cloneInto(&rawData_);
-  }
+  if (reader_.currentPosition()) rr.instruction()->cloneInto(&rawData_);
 }
 
 RecoverReader& RecoverReader::operator=(const RecoverReader& rr) {
@@ -523,9 +503,7 @@ RecoverReader& RecoverReader::operator=(const RecoverReader& rr) {
   numInstructions_ = rr.numInstructions_;
   numInstructionsRead_ = rr.numInstructionsRead_;
   resumeAfter_ = rr.resumeAfter_;
-  if (reader_.currentPosition()) {
-    rr.instruction()->cloneInto(&rawData_);
-  }
+  if (reader_.currentPosition()) rr.instruction()->cloneInto(&rawData_);
   return *this;
 }
 
@@ -578,6 +556,8 @@ void SnapshotWriter::trackSnapshot(uint32_t pcOpcode, uint32_t mirOpcode,
 #endif
 
 bool SnapshotWriter::add(const RValueAllocation& alloc) {
+  MOZ_ASSERT(allocMap_.initialized());
+
   uint32_t offset;
   RValueAllocMap::AddPtr p = allocMap_.lookupForAdd(alloc);
   if (!p) {
@@ -605,7 +585,7 @@ bool SnapshotWriter::add(const RValueAllocation& alloc) {
 }
 
 void SnapshotWriter::endSnapshot() {
-  // Place a sentinel for asserting on the other end.
+// Place a sentinel for asserting on the other end.
 #ifdef DEBUG
   writer_.writeSigned(-1);
 #endif
@@ -635,9 +615,7 @@ RecoverOffset RecoverWriter::startRecover(uint32_t instructionCount,
 }
 
 void RecoverWriter::writeInstruction(const MNode* rp) {
-  if (!rp->writeRecoverData(writer_)) {
-    writer_.setOOM();
-  }
+  if (!rp->writeRecoverData(writer_)) writer_.setOOM();
   instructionsWritten_++;
 }
 

@@ -1,5 +1,5 @@
 // |jit-test| error:foo
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.parent = this;
 g.eval("(" + function() {
     var dbg = new Debugger(parent);

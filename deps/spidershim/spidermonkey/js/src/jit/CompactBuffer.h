@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,9 +38,7 @@ class CompactBufferReader {
       byte = readByte();
       val |= (uint32_t(byte) >> 1) << shift;
       shift += 7;
-      if (!(byte & 1)) {
-        return val;
-      }
+      if (!(byte & 1)) return val;
     }
   }
 
@@ -75,12 +73,8 @@ class CompactBufferReader {
     bool isNegative = !!(b & (1 << 0));
     bool more = !!(b & (1 << 1));
     int32_t result = b >> 2;
-    if (more) {
-      result |= readUnsigned() << 6;
-    }
-    if (isNegative) {
-      return -result;
-    }
+    if (more) result |= readUnsigned() << 6;
+    if (isNegative) return -result;
     return result;
   }
 
@@ -100,7 +94,7 @@ class CompactBufferReader {
   void seek(const uint8_t* start, uint32_t offset) {
     buffer_ = start + offset;
     MOZ_ASSERT(start < end_);
-    MOZ_ASSERT(buffer_ <= end_);
+    MOZ_ASSERT(buffer_ < end_);
   }
 
   const uint8_t* currentPosition() const { return buffer_; }
@@ -123,9 +117,7 @@ class CompactBufferWriter {
   }
   void writeByteAt(uint32_t pos, uint32_t byte) {
     MOZ_ASSERT(byte <= 0xFF);
-    if (!oom()) {
-      buffer_[pos] = byte;
-    }
+    if (!oom()) buffer_[pos] = byte;
   }
   void writeUnsigned(uint32_t value) {
     do {
@@ -152,9 +144,7 @@ class CompactBufferWriter {
 
     // Write out the rest of the bytes, if needed.
     value >>= 6;
-    if (value == 0) {
-      return;
-    }
+    if (value == 0) return;
     writeUnsigned(value);
   }
   void writeFixedUint32_t(uint32_t value) {
@@ -171,9 +161,7 @@ class CompactBufferWriter {
     // Must be at 4-byte boundary
     MOZ_ASSERT_IF(!oom(), length() % sizeof(uint32_t) == 0);
     writeFixedUint32_t(0);
-    if (oom()) {
-      return;
-    }
+    if (oom()) return;
     uint8_t* endPtr = buffer() + length();
     reinterpret_cast<uint32_t*>(endPtr)[-1] = value;
   }

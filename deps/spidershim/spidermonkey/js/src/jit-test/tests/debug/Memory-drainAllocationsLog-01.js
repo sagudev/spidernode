@@ -1,6 +1,6 @@
 // Test basic usage of drainAllocationsLog()
 
-const root = newGlobal({newCompartment: true});
+const root = newGlobal();
 const dbg = new Debugger();
 const wrappedRoot = dbg.addDebuggee(root)
 dbg.memory.trackingAllocationSites = true;

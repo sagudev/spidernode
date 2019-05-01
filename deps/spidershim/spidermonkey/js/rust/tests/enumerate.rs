@@ -7,14 +7,14 @@ extern crate js;
 
 use js::glue::RUST_JSID_IS_STRING;
 use js::glue::RUST_JSID_TO_STRING;
-use js::jsapi::root::JS::RealmOptions;
+use js::jsapi::root::JS::CompartmentOptions;
 use js::jsapi::root::js::GetPropertyKeys;
 use js::jsapi::root::JSITER_OWNONLY;
 use js::jsapi::root::JS_NewGlobalObject;
 use js::jsapi::root::JS_StringEqualsAscii;
 use js::jsapi::root::JS::OnNewGlobalHookOption;
 use js::jsval::UndefinedValue;
-use js::rust::RootedIdVectorWrapper;
+use js::rust::IdVector;
 use js::rust::Runtime;
 use js::rust::SIMPLE_GLOBAL_CLASS;
 use std::ptr;
@@ -28,7 +28,7 @@ fn enumerate() {
         rooted!(in(cx) let global =
             JS_NewGlobalObject(cx, &SIMPLE_GLOBAL_CLASS, ptr::null_mut(),
                                OnNewGlobalHookOption::FireOnNewGlobalHook,
-                               &RealmOptions::default())
+                               &CompartmentOptions::default())
         );
 
         rooted!(in(cx) let mut rval = UndefinedValue());
@@ -37,8 +37,8 @@ fn enumerate() {
         assert!(rval.is_object());
 
         rooted!(in(cx) let object = rval.to_object());
-        let ids = RootedIdVectorWrapper::new(cx);
-        assert!(GetPropertyKeys(cx, object.handle(), JSITER_OWNONLY, ids.handle_mut()));
+        let ids = IdVector::new(cx);
+        assert!(GetPropertyKeys(cx, object.handle(), JSITER_OWNONLY, ids.get()));
 
         assert_eq!(ids.len(), 1);
         rooted!(in(cx) let id = ids[0]);

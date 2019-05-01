@@ -34,7 +34,7 @@ var bitOfCode = `debugger;                    // +0
                     }                         // +4
                  }`;                          // +5
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = Debugger(g);
 
 g.eval("function nothing() { }\n");

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -103,7 +103,7 @@ inline const char* GPReg64Name(RegisterID reg) {
                                       "%rbp",
                                       "%rsi",
                                       "%rdi"
-#  ifdef JS_CODEGEN_X64
+#ifdef JS_CODEGEN_X64
                                       ,
                                       "%r8",
                                       "%r9",
@@ -113,7 +113,7 @@ inline const char* GPReg64Name(RegisterID reg) {
                                       "%r13",
                                       "%r14",
                                       "%r15"
-#  endif
+#endif
   };
   MOZ_ASSERT(size_t(reg) < mozilla::ArrayLength(names));
   return names[reg];

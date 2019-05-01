@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,27 +41,24 @@ void MacroAssembler::moveDoubleToGPR64(FloatRegister src, Register64 dest) {
 }
 
 void MacroAssembler::moveGPR64ToDouble(Register64 src, FloatRegister dest) {
+  ScratchDoubleScope scratch(*this);
+
   if (Assembler::HasSSE41()) {
     vmovd(src.low, dest);
     vpinsrd(1, src.high, dest, dest);
   } else {
-    ScratchDoubleScope fpscratch(*this);
     vmovd(src.low, dest);
-    vmovd(src.high, fpscratch);
-    vunpcklps(fpscratch, dest, dest);
+    vmovd(src.high, ScratchDoubleReg);
+    vunpcklps(ScratchDoubleReg, dest, dest);
   }
 }
 
 void MacroAssembler::move64To32(Register64 src, Register dest) {
-  if (src.low != dest) {
-    movl(src.low, dest);
-  }
+  if (src.low != dest) movl(src.low, dest);
 }
 
 void MacroAssembler::move32To64ZeroExtend(Register src, Register64 dest) {
-  if (src != dest.low) {
-    movl(src, dest.low);
-  }
+  if (src != dest.low) movl(src, dest.low);
   movl(Imm32(0), dest.high);
 }
 
@@ -82,17 +79,8 @@ void MacroAssembler::move16To64SignExtend(Register src, Register64 dest) {
 void MacroAssembler::move32To64SignExtend(Register src, Register64 dest) {
   MOZ_ASSERT(dest.low == eax);
   MOZ_ASSERT(dest.high == edx);
-  if (src != eax) {
-    movl(src, eax);
-  }
+  if (src != eax) movl(src, eax);
   masm.cdq();
-}
-
-// ===============================================================
-// Load instructions
-
-void MacroAssembler::load32SignExtendToPtr(const Address& src, Register dest) {
-  load32(src, dest);
 }
 
 // ===============================================================
@@ -103,30 +91,18 @@ void MacroAssembler::andPtr(Register src, Register dest) { andl(src, dest); }
 void MacroAssembler::andPtr(Imm32 imm, Register dest) { andl(imm, dest); }
 
 void MacroAssembler::and64(Imm64 imm, Register64 dest) {
-  if (imm.low().value != int32_t(0xFFFFFFFF)) {
-    andl(imm.low(), dest.low);
-  }
-  if (imm.hi().value != int32_t(0xFFFFFFFF)) {
-    andl(imm.hi(), dest.high);
-  }
+  if (imm.low().value != int32_t(0xFFFFFFFF)) andl(imm.low(), dest.low);
+  if (imm.hi().value != int32_t(0xFFFFFFFF)) andl(imm.hi(), dest.high);
 }
 
 void MacroAssembler::or64(Imm64 imm, Register64 dest) {
-  if (imm.low().value != 0) {
-    orl(imm.low(), dest.low);
-  }
-  if (imm.hi().value != 0) {
-    orl(imm.hi(), dest.high);
-  }
+  if (imm.low().value != 0) orl(imm.low(), dest.low);
+  if (imm.hi().value != 0) orl(imm.hi(), dest.high);
 }
 
 void MacroAssembler::xor64(Imm64 imm, Register64 dest) {
-  if (imm.low().value != 0) {
-    xorl(imm.low(), dest.low);
-  }
-  if (imm.hi().value != 0) {
-    xorl(imm.hi(), dest.high);
-  }
+  if (imm.low().value != 0) xorl(imm.low(), dest.low);
+  if (imm.hi().value != 0) xorl(imm.hi(), dest.high);
 }
 
 void MacroAssembler::orPtr(Register src, Register dest) { orl(src, dest); }
@@ -196,9 +172,7 @@ void MacroAssembler::add64(Imm64 imm, Register64 dest) {
 
 void MacroAssembler::addConstantDouble(double d, FloatRegister dest) {
   Double* dbl = getDouble(d);
-  if (!dbl) {
-    return;
-  }
+  if (!dbl) return;
   masm.vaddsd_mr(nullptr, dest.encoding(), dest.encoding());
   propagateOOM(dbl->uses.append(CodeOffset(masm.size())));
 }
@@ -262,11 +236,10 @@ void MacroAssembler::mul64(Imm64 imm, const Register64& dest) {
   addl(edx, dest.high);
 
   // HIGH(dest) += LOW(LOW(dest) * HIGH(imm));
-  if (((imm.value >> 32) & 0xFFFFFFFFL) == 5) {
+  if (((imm.value >> 32) & 0xFFFFFFFFL) == 5)
     leal(Operand(dest.low, dest.low, TimesFour), edx);
-  } else {
+  else
     MOZ_CRASH("Unsupported imm");
-  }
   addl(edx, dest.high);
 
   // LOW(dest) = eax;
@@ -342,8 +315,6 @@ void MacroAssembler::neg64(Register64 reg) {
   adcl(Imm32(0), reg.high);
   negl(reg.high);
 }
-
-void MacroAssembler::negPtr(Register reg) { negl(reg); }
 
 // ===============================================================
 // Shift functions
@@ -509,9 +480,7 @@ void MacroAssembler::rotateLeft64(Imm32 count, Register64 src, Register64 dest,
     shldl(Imm32(amount & 0x1f), temp, dest.low);
   }
 
-  if (!!(amount & 0x20)) {
-    xchgl(dest.high, dest.low);
-  }
+  if (!!(amount & 0x20)) xchgl(dest.high, dest.low);
 }
 
 void MacroAssembler::rotateRight64(Imm32 count, Register64 src, Register64 dest,
@@ -525,9 +494,7 @@ void MacroAssembler::rotateRight64(Imm32 count, Register64 src, Register64 dest,
     shrdl(Imm32(amount & 0x1f), temp, dest.low);
   }
 
-  if (!!(amount & 0x20)) {
-    xchgl(dest.high, dest.low);
-  }
+  if (!!(amount & 0x20)) xchgl(dest.high, dest.low);
 }
 
 // ===============================================================
@@ -628,16 +595,12 @@ void MacroAssembler::branch64(Condition cond, Register64 lhs, Imm64 val,
     case Assembler::Equal:
       branch32(Assembler::NotEqual, lhs.low, val.low(), fail);
       branch32(Assembler::Equal, lhs.high, val.hi(), success);
-      if (!fallthrough) {
-        jump(fail);
-      }
+      if (!fallthrough) jump(fail);
       break;
     case Assembler::NotEqual:
       branch32(Assembler::NotEqual, lhs.low, val.low(), success);
       branch32(Assembler::NotEqual, lhs.high, val.hi(), success);
-      if (!fallthrough) {
-        jump(fail);
-      }
+      if (!fallthrough) jump(fail);
       break;
     case Assembler::LessThan:
     case Assembler::LessThanOrEqual:
@@ -657,9 +620,7 @@ void MacroAssembler::branch64(Condition cond, Register64 lhs, Imm64 val,
       j(cond2, fail);
       cmp32(lhs.low, val.low());
       j(cond3, success);
-      if (!fallthrough) {
-        jump(fail);
-      }
+      if (!fallthrough) jump(fail);
       break;
     }
     default:
@@ -667,9 +628,7 @@ void MacroAssembler::branch64(Condition cond, Register64 lhs, Imm64 val,
       break;
   }
 
-  if (fallthrough) {
-    bind(fail);
-  }
+  if (fallthrough) bind(fail);
 }
 
 void MacroAssembler::branch64(Condition cond, Register64 lhs, Register64 rhs,
@@ -686,16 +645,12 @@ void MacroAssembler::branch64(Condition cond, Register64 lhs, Register64 rhs,
     case Assembler::Equal:
       branch32(Assembler::NotEqual, lhs.low, rhs.low, fail);
       branch32(Assembler::Equal, lhs.high, rhs.high, success);
-      if (!fallthrough) {
-        jump(fail);
-      }
+      if (!fallthrough) jump(fail);
       break;
     case Assembler::NotEqual:
       branch32(Assembler::NotEqual, lhs.low, rhs.low, success);
       branch32(Assembler::NotEqual, lhs.high, rhs.high, success);
-      if (!fallthrough) {
-        jump(fail);
-      }
+      if (!fallthrough) jump(fail);
       break;
     case Assembler::LessThan:
     case Assembler::LessThanOrEqual:
@@ -715,9 +670,7 @@ void MacroAssembler::branch64(Condition cond, Register64 lhs, Register64 rhs,
       j(cond2, fail);
       cmp32(lhs.low, rhs.low);
       j(cond3, success);
-      if (!fallthrough) {
-        jump(fail);
-      }
+      if (!fallthrough) jump(fail);
       break;
     }
     default:
@@ -725,9 +678,7 @@ void MacroAssembler::branch64(Condition cond, Register64 lhs, Register64 rhs,
       break;
   }
 
-  if (fallthrough) {
-    bind(fail);
-  }
+  if (fallthrough) bind(fail);
 }
 
 void MacroAssembler::branch64(Condition cond, const Address& lhs, Imm64 val,
@@ -737,11 +688,10 @@ void MacroAssembler::branch64(Condition cond, const Address& lhs, Imm64 val,
 
   Label done;
 
-  if (cond == Assembler::Equal) {
+  if (cond == Assembler::Equal)
     branch32(Assembler::NotEqual, lhs, val.firstHalf(), &done);
-  } else {
+  else
     branch32(Assembler::NotEqual, lhs, val.firstHalf(), label);
-  }
   branch32(cond, Address(lhs.base, lhs.offset + sizeof(uint32_t)),
            val.secondHalf(), label);
 
@@ -759,11 +709,10 @@ void MacroAssembler::branch64(Condition cond, const Address& lhs,
   Label done;
 
   load32(rhs, scratch);
-  if (cond == Assembler::Equal) {
+  if (cond == Assembler::Equal)
     branch32(Assembler::NotEqual, lhs, scratch, &done);
-  } else {
+  else
     branch32(Assembler::NotEqual, lhs, scratch, label);
-  }
 
   load32(Address(rhs.base, rhs.offset + sizeof(uint32_t)), scratch);
   branch32(cond, Address(lhs.base, lhs.offset + sizeof(uint32_t)), scratch,
@@ -872,11 +821,10 @@ void MacroAssembler::branchTestMagic(Condition cond, const Address& valaddr,
   MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
 
   Label notMagic;
-  if (cond == Assembler::Equal) {
+  if (cond == Assembler::Equal)
     branchTestMagic(Assembler::NotEqual, valaddr, &notMagic);
-  } else {
+  else
     branchTestMagic(Assembler::NotEqual, valaddr, label);
-  }
 
   branch32(cond, ToPayload(valaddr), Imm32(why), label);
   bind(&notMagic);
@@ -1025,6 +973,27 @@ void MacroAssembler::truncateDoubleToUInt64(Address src, Address dest,
   bind(&done);
 }
 
+// ========================================================================
+// wasm support
+
+template <class L>
+void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
+                                     Register boundsCheckLimit, L label) {
+  cmp32(index, boundsCheckLimit);
+  j(cond, label);
+  if (JitOptions.spectreIndexMasking)
+    cmovCCl(cond, Operand(boundsCheckLimit), index);
+}
+
+template <class L>
+void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
+                                     Address boundsCheckLimit, L label) {
+  cmp32(index, Operand(boundsCheckLimit));
+  j(cond, label);
+  if (JitOptions.spectreIndexMasking)
+    cmovCCl(cond, Operand(boundsCheckLimit), index);
+}
+
 //}}} check_macroassembler_style
 // ===============================================================
 
@@ -1060,9 +1029,7 @@ void MacroAssemblerX86::unboxValue(const ValueOperand& src, AnyRegister dest,
     unboxDouble(src, dest.fpu());
     bind(&end);
   } else {
-    if (src.payloadReg() != dest.gpr()) {
-      movl(src.payloadReg(), dest.gpr());
-    }
+    if (src.payloadReg() != dest.gpr()) movl(src.payloadReg(), dest.gpr());
   }
 }
 
@@ -1080,11 +1047,10 @@ void MacroAssemblerX86::loadInt32OrDouble(const T& src, FloatRegister dest) {
 template <typename T>
 void MacroAssemblerX86::loadUnboxedValue(const T& src, MIRType type,
                                          AnyRegister dest) {
-  if (dest.isFloat()) {
+  if (dest.isFloat())
     loadInt32OrDouble(src, dest.fpu());
-  } else {
+  else
     movl(Operand(src), dest.gpr());
-  }
 }
 
 // If source is a double, load it into dest. If source is int32,

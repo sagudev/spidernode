@@ -7,10 +7,11 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "MFBT")
 
+TEST_DIRS += ['tests']
+
 Library('mfbt')
 
 EXPORTS.mozilla = [
-    'Algorithm.h',
     'Alignment.h',
     'AllocPolicy.h',
     'AlreadyAddRefed.h',
@@ -21,7 +22,6 @@ EXPORTS.mozilla = [
     'Attributes.h',
     'BinarySearch.h',
     'BloomFilter.h',
-    'Buffer.h',
     'BufferList.h',
     'Casting.h',
     'ChaosMode.h',
@@ -29,7 +29,6 @@ EXPORTS.mozilla = [
     'CheckedInt.h',
     'Compiler.h',
     'Compression.h',
-    'DbgMacro.h',
     'DebugOnly.h',
     'decimal/Decimal.h',
     'DefineEnum.h',
@@ -42,10 +41,9 @@ EXPORTS.mozilla = [
     'FastBernoulliTrial.h',
     'FloatingPoint.h',
     'FStream.h',
-    'FunctionTypeTraits.h',
     'GuardObjects.h',
     'HashFunctions.h',
-    'HashTable.h',
+    'IndexSequence.h',
     'IntegerPrintfMacros.h',
     'IntegerRange.h',
     'IntegerTypeTraits.h',
@@ -60,7 +58,6 @@ EXPORTS.mozilla = [
     'MemoryChecking.h',
     'MemoryReporting.h',
     'Move.h',
-    'NonDereferenceable.h',
     'NotNull.h',
     'NullPtr.h',
     'Opaque.h',
@@ -69,11 +66,9 @@ EXPORTS.mozilla = [
     'Path.h',
     'PodOperations.h',
     'Poison.h',
-    'RandomNum.h',
     'Range.h',
     'RangedArray.h',
     'RangedPtr.h',
-    'RecordReplay.h',
     'ReentrancyGuard.h',
     'RefCounted.h',
     'RefCountType.h',
@@ -87,12 +82,10 @@ EXPORTS.mozilla = [
     'ScopeExit.h',
     'SegmentedVector.h',
     'SHA1.h',
-    'SharedLibrary.h',
     'SmallPointerArray.h',
     'Span.h',
     'SplayTree.h',
     'Sprintf.h',
-    'SPSCQueue.h',
     'StaticAnalysisFunctions.h',
     'TaggedAnonymousMemory.h',
     'TemplateLib.h',
@@ -107,7 +100,6 @@ EXPORTS.mozilla = [
     'UniquePtr.h',
     'UniquePtrExtensions.h',
     'Unused.h',
-    'Utf8.h',
     'Variant.h',
     'Vector.h',
     'WeakPtr.h',
@@ -148,22 +140,10 @@ UNIFIED_SOURCES += [
     'HashFunctions.cpp',
     'JSONWriter.cpp',
     'Poison.cpp',
-    'RandomNum.cpp',
     'SHA1.cpp',
     'TaggedAnonymousMemory.cpp',
     'Unused.cpp',
-    'Utf8.cpp',
 ]
-
-if CONFIG['MOZ_BUILD_APP'] not in ('memory', 'tools/crashreporter'):
-    # RecordReplay.cpp uses files from js/
-    UNIFIED_SOURCES += [
-        'RecordReplay.cpp',
-    ]
-
-    # Building MFBT tests adds a large overhead when building
-    # tools/crashreporter.
-    TEST_DIRS += ['tests']
 
 DEFINES['IMPL_MFBT'] = True
 

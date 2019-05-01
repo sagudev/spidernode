@@ -30,10 +30,7 @@ if CONFIG['MOZ_DEBUG']:
 if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-frtti']
 elif CONFIG['OS_TARGET'] == 'WINNT':
-    # Remove the -GR- flag so we don't get a bunch of warning spam.
-    COMPILE_FLAGS['OS_CXXFLAGS'] = [
-        f for f in COMPILE_FLAGS['OS_CXXFLAGS'] if f != '-GR-'
-    ] + ['-GR']
+    CXXFLAGS += ['-GR']
 
 DisableStlWrapping()
 AllowCompilerWarnings()
@@ -48,4 +45,15 @@ if CONFIG['CC_TYPE'] == 'clang-cl':
     CXXFLAGS += [
         '-Wno-macro-redefined',
         '-Wno-microsoft-include',
+    ]
+
+if CONFIG['CC_TYPE'] == 'msvc':
+    CFLAGS += [
+        '-wd4005', # 'WIN32_LEAN_AND_MEAN' : macro redefinition
+        '-wd4996', # The compiler encountered a deprecated declaration.
+    ]
+    CXXFLAGS += [
+        '-wd4005', # 'WIN32_LEAN_AND_MEAN' : macro redefinition
+        '-wd4333', # '>>' : right shift by too large amount, data loss
+        '-wd4996', # The compiler encountered a deprecated declaration.
     ]

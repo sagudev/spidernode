@@ -26,7 +26,6 @@ from tempfile import mkdtemp
 
 BASE_SUBSTS = [
     ('PYTHON', mozpath.normsep(sys.executable)),
-    ('MOZ_UI_LOCALE', 'en-US'),
 ]
 
 
@@ -43,9 +42,7 @@ class TestBuild(unittest.TestCase):
 
     @contextmanager
     def do_test_backend(self, *backends, **kwargs):
-        # Create the objdir in the srcdir to ensure that they share
-        # the same drive on Windows.
-        topobjdir = mkdtemp(dir=buildconfig.topsrcdir)
+        topobjdir = mkdtemp()
         try:
             config = ConfigEnvironment(buildconfig.topsrcdir, topobjdir,
                                        **kwargs)
@@ -148,8 +145,8 @@ class TestBuild(unittest.TestCase):
 
     def validate(self, config):
         self.maxDiff = None
-        test_path = os.sep.join(('$SRCDIR', 'python', 'mozbuild', 'mozbuild',
-                                 'test', 'backend', 'data', 'build')) + os.sep
+        test_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 'data', 'build') + os.sep
 
         # We want unicode instances out of the files, because having plain str
         # makes assertEqual diff output in case of error extra verbose because

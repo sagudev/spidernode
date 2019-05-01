@@ -1,7 +1,9 @@
-// |jit-test| exitstatus: 6; skip-if: !wasmIsSupported()
+// |jit-test| exitstatus: 6;
 
 // Don't include wasm.js in timeout tests: when wasm isn't supported, it will
 // quit(0) which will cause the test to fail.
+if (!wasmIsSupported())
+    quit(6);
 
 var code = wasmTextToBinary(`(module
     (func (export "iloop")

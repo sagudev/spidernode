@@ -1,12 +1,7 @@
 #!/usr/bin/env python
 # Adapted from https://github.com/tc39/test262/blob/master/tools/generation/test/run.py
 
-import shutil
-import subprocess
-import contextlib
-import tempfile
-import os
-import unittest
+import shutil, subprocess, contextlib, tempfile, sys, os, unittest
 
 testDir = os.path.dirname(os.path.relpath(__file__))
 OUT_DIR = os.path.join(testDir, 'out')
@@ -15,7 +10,6 @@ ex = os.path.join(testDir, '..', 'test262-export.py')
 importExec = os.path.join(testDir, '..', 'test262-update.py')
 test262Url = 'git://github.com/tc39/test262.git'
 
-
 @contextlib.contextmanager
 def TemporaryDirectory():
     tmpDir = tempfile.mkdtemp()
@@ -23,7 +17,6 @@ def TemporaryDirectory():
         yield tmpDir
     finally:
         shutil.rmtree(tmpDir)
-
 
 class TestExport(unittest.TestCase):
     maxDiff = None
@@ -58,7 +51,7 @@ class TestExport(unittest.TestCase):
                 ['git', '-C', cloneDir, 'mv',
                     'test/language/export/escaped-default.js',
                     'test/language/export/escaped-foobarbaz.js',
-                 ]
+                ]
             )
             # Copy fixtures files
             fixturesDir = os.path.join(testDir, 'fixtures', 'import', 'files')
@@ -135,7 +128,6 @@ class TestExport(unittest.TestCase):
             os.path.join(testDir, 'expected', 'import', 'output.txt'),
             folder
         )
-
 
 if __name__ == '__main__':
     unittest.main()

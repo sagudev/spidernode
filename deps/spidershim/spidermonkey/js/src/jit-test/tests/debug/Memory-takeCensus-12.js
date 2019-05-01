@@ -1,6 +1,6 @@
 // Sanity test that we can accumulate matching individuals in a bucket.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 
 var bucket = { by: "bucket" };

@@ -219,7 +219,7 @@ class FileAvoidWrite(BytesIO):
         BytesIO.__init__(self)
         self.name = filename
         self._capture_diff = capture_diff
-        self._write_to_file = not dry_run
+        self._dry_run = dry_run
         self.diff = None
         self.mode = mode
 
@@ -227,9 +227,6 @@ class FileAvoidWrite(BytesIO):
         if isinstance(buf, unicode):
             buf = buf.encode('utf-8')
         BytesIO.write(self, buf)
-
-    def avoid_writing_to_file(self):
-        self._write_to_file = False
 
     def close(self):
         """Stop accepting writes, compare file contents, and rewrite if needed.
@@ -262,7 +259,7 @@ class FileAvoidWrite(BytesIO):
             finally:
                 existing.close()
 
-        if self._write_to_file:
+        if not self._dry_run:
             ensureParentDir(self.name)
             # Maintain 'b' if specified.  'U' only applies to modes starting with
             # 'r', so it is dropped.
@@ -834,9 +831,9 @@ class LockFile(object):
                     # (but we need to let some other process close the file
                     # first).
                     time.sleep(0.1)
-                else:
-                    # Re-raise unknown errors
-                    raise
+            else:
+                # Re-raise unknown errors
+                raise
 
 
 def lock_file(lockfile, max_wait = 600):

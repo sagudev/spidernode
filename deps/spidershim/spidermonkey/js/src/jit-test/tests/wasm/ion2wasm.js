@@ -3,8 +3,8 @@ var INNER_ITERATIONS = 100;
 
 let instance = wasmEvalText(`(module
     (func (export "add") (result i32) (param i32) (param i32)
-     local.get 0
-     local.get 1
+     get_local 0
+     get_local 1
      i32.add
     )
 
@@ -17,19 +17,19 @@ let instance = wasmEvalText(`(module
     (global $g (mut i32) (i32.const 0))
 
     (func (export "set_global_one") (param i32)
-     local.get 0
-     global.set $g
+     get_local 0
+     set_global $g
     )
 
     (func (export "set_global_two") (param i32) (param i32)
-     local.get 0
-     local.get 1
+     get_local 0
+     get_local 1
      i32.add
-     global.set $g
+     set_global $g
     )
 
     (func (export "glob") (result i32)
-     global.get $g
+     get_global $g
     )
 )`).exports;
 

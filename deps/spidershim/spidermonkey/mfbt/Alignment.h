@@ -24,12 +24,6 @@ class AlignmentFinder {
   struct Aligner {
     char mChar;
     T mT;
-
-    // Aligner may be used to check alignment of types with deleted dtors. This
-    // results in such specializations having implicitly deleted dtors, which
-    // causes fatal warnings on MSVC (see bug 1481005). As we don't create
-    // Aligners, we can avoid this warning by explicitly deleting the dtor.
-    ~Aligner() = delete;
   };
 
  public:
@@ -68,12 +62,12 @@ struct AlignasHelper {
  */
 
 #if defined(__GNUC__)
-#  define MOZ_ALIGNED_DECL(_type, _align) _type __attribute__((aligned(_align)))
+#define MOZ_ALIGNED_DECL(_type, _align) _type __attribute__((aligned(_align)))
 #elif defined(_MSC_VER)
-#  define MOZ_ALIGNED_DECL(_type, _align) __declspec(align(_align)) _type
+#define MOZ_ALIGNED_DECL(_type, _align) __declspec(align(_align)) _type
 #else
-#  warning "We don't know how to align variables on this compiler."
-#  define MOZ_ALIGNED_DECL(_type, _align) _type
+#warning "We don't know how to align variables on this compiler."
+#define MOZ_ALIGNED_DECL(_type, _align) _type
 #endif
 
 /*

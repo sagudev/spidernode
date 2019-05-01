@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -57,12 +57,12 @@ class Fifo {
       : front_(alloc), rear_(alloc) {}
 
   Fifo(Fifo&& rhs)
-      : front_(std::move(rhs.front_)), rear_(std::move(rhs.rear_)) {}
+      : front_(mozilla::Move(rhs.front_)), rear_(mozilla::Move(rhs.rear_)) {}
 
   Fifo& operator=(Fifo&& rhs) {
     MOZ_ASSERT(&rhs != this, "self-move disallowed");
     this->~Fifo();
-    new (this) Fifo(std::move(rhs));
+    new (this) Fifo(mozilla::Move(rhs));
     return *this;
   }
 
@@ -79,41 +79,11 @@ class Fifo {
     return front_.empty();
   }
 
-  // Iterator from oldest to yongest element.
-  struct ConstIterator {
-    const Fifo& self_;
-    size_t idx_;
-
-    ConstIterator(const Fifo& self, size_t idx) : self_(self), idx_(idx) {}
-
-    ConstIterator& operator++() {
-      ++idx_;
-      return *this;
-    }
-
-    const T& operator*() const {
-      // Iterate front in reverse, then rear.
-      size_t split = self_.front_.length();
-      return (idx_ < split) ? self_.front_[(split - 1) - idx_]
-                            : self_.rear_[idx_ - split];
-    }
-
-    bool operator!=(const ConstIterator& other) const {
-      return (&self_ != &other.self_) || (idx_ != other.idx_);
-    }
-  };
-
-  ConstIterator begin() const { return ConstIterator(*this, 0); }
-
-  ConstIterator end() const { return ConstIterator(*this, length()); }
-
   // Push an element to the back of the queue. This method can take either a
   // |const T&| or a |T&&|.
   template <typename U>
   MOZ_MUST_USE bool pushBack(U&& u) {
-    if (!rear_.append(std::forward<U>(u))) {
-      return false;
-    }
+    if (!rear_.append(mozilla::Forward<U>(u))) return false;
     fixup();
     return true;
   }
@@ -121,9 +91,7 @@ class Fifo {
   // Construct a T in-place at the back of the queue.
   template <typename... Args>
   MOZ_MUST_USE bool emplaceBack(Args&&... args) {
-    if (!rear_.emplaceBack(std::forward<Args>(args)...)) {
-      return false;
-    }
+    if (!rear_.emplaceBack(mozilla::Forward<Args>(args)...)) return false;
     fixup();
     return true;
   }
@@ -165,14 +133,6 @@ class Fifo {
     size_t erased = EraseIf(front_, pred);
     erased += EraseIf(rear_, pred);
     return erased;
-  }
-
-  size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
-    return front_.sizeOfExcludingThis(mallocSizeOf) +
-           rear_.sizeOfExcludingThis(mallocSizeOf);
-  }
-  size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
-    return mallocSizeOf(this) + sizeOfExcludingThis(mallocSizeOf);
   }
 };
 

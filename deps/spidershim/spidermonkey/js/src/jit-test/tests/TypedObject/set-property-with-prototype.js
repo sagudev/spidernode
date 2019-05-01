@@ -1,3 +1,7 @@
+
+if (typeof TypedObject === "undefined")
+    quit();
+
 // Test the behavior of property sets on typed objects when they are a
 // prototype or their prototype has a setter.
 var TO = TypedObject;

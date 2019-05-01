@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,6 +12,7 @@
 
 #include <stdarg.h>
 
+#include "jit/C1Spewer.h"
 #include "jit/JSONSpewer.h"
 
 #include "js/RootingAPI.h"
@@ -39,6 +40,8 @@ namespace jit {
   _(Sink)                                  \
   /* Information during Range analysis */  \
   _(Range)                                 \
+  /* Information during loop unrolling */  \
+  _(Unrolling)                             \
   /* Information during LICM */            \
   _(LICM)                                  \
   /* Info about fold linear constants */   \
@@ -120,13 +123,17 @@ class TempAllocator;
 
 // The JitSpewer is only available on debug builds.
 // None of the global functions have effect on non-debug builds.
+static const int NULL_ID = -1;
+
 #ifdef JS_JITSPEW
 
 // Class made to hold the MIR and LIR graphs of an Wasm / Ion compilation.
 class GraphSpewer {
  private:
   MIRGraph* graph_;
+  LSprinter c1Printer_;
   LSprinter jsonPrinter_;
+  C1Spewer c1Spewer_;
   JSONSpewer jsonSpewer_;
 
  public:
@@ -135,17 +142,14 @@ class GraphSpewer {
   bool isSpewing() const { return graph_; }
   void init(MIRGraph* graph, JSScript* function);
   void beginFunction(JSScript* function);
-  void beginWasmFunction(unsigned funcIndex);
   void spewPass(const char* pass);
   void spewPass(const char* pass, BacktrackingAllocator* ra);
   void endFunction();
 
-  void dump(Fprinter& json);
+  void dump(Fprinter& c1, Fprinter& json);
 };
 
 void SpewBeginFunction(MIRGenerator* mir, JSScript* function);
-void SpewBeginWasmFunction(MIRGenerator* mir, unsigned funcIndex);
-
 class AutoSpewEndFunction {
  private:
   MIRGenerator* mir_;
@@ -205,8 +209,6 @@ class GraphSpewer {
 };
 
 static inline void SpewBeginFunction(MIRGenerator* mir, JSScript* function) {}
-static inline void SpewBeginWasmFunction(MIRGenerator* mir,
-                                         unsigned funcIndex) {}
 
 class AutoSpewEndFunction {
  public:
@@ -231,13 +233,13 @@ class JitSpewIndent {
 static inline void JitSpewCheckArguments(JitSpewChannel channel,
                                          const char* fmt) {}
 
-#  define JitSpewCheckExpandedArgs(channel, fmt, ...) \
-    JitSpewCheckArguments(channel, fmt)
-#  define JitSpewCheckExpandedArgs_(ArgList) \
-    JitSpewCheckExpandedArgs ArgList /* Fix MSVC issue */
-#  define JitSpew(...) JitSpewCheckExpandedArgs_((__VA_ARGS__))
-#  define JitSpewStart(...) JitSpewCheckExpandedArgs_((__VA_ARGS__))
-#  define JitSpewCont(...) JitSpewCheckExpandedArgs_((__VA_ARGS__))
+#define JitSpewCheckExpandedArgs(channel, fmt, ...) \
+  JitSpewCheckArguments(channel, fmt)
+#define JitSpewCheckExpandedArgs_(ArgList) \
+  JitSpewCheckExpandedArgs ArgList /* Fix MSVC issue */
+#define JitSpew(...) JitSpewCheckExpandedArgs_((__VA_ARGS__))
+#define JitSpewStart(...) JitSpewCheckExpandedArgs_((__VA_ARGS__))
+#define JitSpewCont(...) JitSpewCheckExpandedArgs_((__VA_ARGS__))
 
 static inline void JitSpewFin(JitSpewChannel channel) {}
 
@@ -255,6 +257,22 @@ static inline void EnableIonDebugSyncLogging() {}
 static inline void EnableIonDebugAsyncLogging() {}
 
 #endif /* JS_JITSPEW */
+
+template <JitSpewChannel Channel>
+class AutoDisableSpew {
+  mozilla::DebugOnly<bool> enabled_;
+
+ public:
+  AutoDisableSpew() : enabled_(JitSpewEnabled(Channel)) {
+    DisableChannel(Channel);
+  }
+
+  ~AutoDisableSpew() {
+#ifdef JS_JITSPEW
+    if (enabled_) EnableChannel(Channel);
+#endif
+  }
+};
 
 }  // namespace jit
 }  // namespace js

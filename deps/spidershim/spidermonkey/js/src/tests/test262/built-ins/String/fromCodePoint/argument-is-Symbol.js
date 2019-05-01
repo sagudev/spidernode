@@ -15,7 +15,7 @@ info: |
     a. Let next be codePoints[nextIndex].
     b. Let nextCP be ToNumber(next).
     c. ReturnIfAbrupt(nextCP).
-features: [Symbol, String.fromCodePoint]
+features: [Symbol]
 ---*/
 
 assert.throws(TypeError, function() {

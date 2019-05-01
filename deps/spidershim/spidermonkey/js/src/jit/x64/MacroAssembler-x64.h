@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +10,6 @@
 #include "jit/JitFrames.h"
 #include "jit/MoveResolver.h"
 #include "jit/x86-shared/MacroAssembler-x86-shared.h"
-#include "js/HeapAPI.h"
 
 namespace js {
 namespace jit {
@@ -86,9 +85,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   void writeDataRelocation(const Value& val) {
     if (val.isGCThing()) {
       gc::Cell* cell = val.toGCThing();
-      if (cell && gc::IsInsideNursery(cell)) {
-        embedsNurseryPointers_ = true;
-      }
+      if (cell && gc::IsInsideNursery(cell)) embedsNurseryPointers_ = true;
       dataRelocations_.writeUnsigned(masm.currentOffset());
     }
   }
@@ -152,20 +149,6 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
       movl(Imm32(Upper32Of(GetShiftedTag(type))), ToUpper32(Operand(dest)));
     } else {
       ScratchRegisterScope scratch(asMasm());
-#ifdef NIGHTLY_BUILD
-      // Bug 1485209 - Diagnostic assert for constructing Values with
-      // nullptr or misaligned (eg poisoned) JSObject/JSString pointers.
-      if (type == JSVAL_TYPE_OBJECT || type == JSVAL_TYPE_STRING) {
-        Label crash, ok;
-        testPtr(reg, Imm32(js::gc::CellAlignMask));
-        j(Assembler::NonZero, &crash);
-        testPtr(reg, reg);
-        j(Assembler::NonZero, &ok);
-        bind(&crash);
-        breakpoint();
-        bind(&ok);
-      }
-#endif
       boxValue(type, reg, scratch);
       movq(scratch, Operand(dest));
     }
@@ -198,9 +181,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   void tagValue(JSValueType type, Register payload, ValueOperand dest) {
     ScratchRegisterScope scratch(asMasm());
     MOZ_ASSERT(dest.valueReg() != scratch);
-    if (payload != dest.valueReg()) {
-      movq(payload, dest.valueReg());
-    }
+    if (payload != dest.valueReg()) movq(payload, dest.valueReg());
     mov(ImmShiftedTag(type), scratch);
     orq(scratch, dest.valueReg());
   }
@@ -253,11 +234,6 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   Condition testSymbol(Condition cond, Register tag) {
     MOZ_ASSERT(cond == Equal || cond == NotEqual);
     cmp32(tag, ImmTag(JSVAL_TAG_SYMBOL));
-    return cond;
-  }
-  Condition testBigInt(Condition cond, Register tag) {
-    MOZ_ASSERT(cond == Equal || cond == NotEqual);
-    cmp32(tag, ImmTag(JSVAL_TAG_BIGINT));
     return cond;
   }
   Condition testObject(Condition cond, Register tag) {
@@ -335,11 +311,6 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
     splitTag(src, scratch);
     return testSymbol(cond, scratch);
   }
-  Condition testBigInt(Condition cond, const ValueOperand& src) {
-    ScratchRegisterScope scratch(asMasm());
-    splitTag(src, scratch);
-    return testBigInt(cond, scratch);
-  }
   Condition testObject(Condition cond, const ValueOperand& src) {
     ScratchRegisterScope scratch(asMasm());
     splitTag(src, scratch);
@@ -393,11 +364,6 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
     splitTag(src, scratch);
     return testSymbol(cond, scratch);
   }
-  Condition testBigInt(Condition cond, const Address& src) {
-    ScratchRegisterScope scratch(asMasm());
-    splitTag(src, scratch);
-    return testBigInt(cond, scratch);
-  }
   Condition testObject(Condition cond, const Address& src) {
     ScratchRegisterScope scratch(asMasm());
     splitTag(src, scratch);
@@ -443,11 +409,6 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
     ScratchRegisterScope scratch(asMasm());
     splitTag(src, scratch);
     return testSymbol(cond, scratch);
-  }
-  Condition testBigInt(Condition cond, const BaseIndex& src) {
-    ScratchRegisterScope scratch(asMasm());
-    splitTag(src, scratch);
-    return testBigInt(cond, scratch);
   }
   Condition testInt32(Condition cond, const BaseIndex& src) {
     ScratchRegisterScope scratch(asMasm());
@@ -541,10 +502,21 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   // Common interface.
   /////////////////////////////////////////////////////////////////
 
-  CodeOffsetJump jumpWithPatch(RepatchLabel* label) {
+  CodeOffsetJump jumpWithPatch(RepatchLabel* label,
+                               Label* documentation = nullptr) {
     JmpSrc src = jmpSrc(label);
-    return CodeOffsetJump(size(),
-                          addPatchableJump(src, RelocationKind::HARDCODED));
+    return CodeOffsetJump(size(), addPatchableJump(src, Relocation::HARDCODED));
+  }
+
+  CodeOffsetJump jumpWithPatch(RepatchLabel* label, Condition cond,
+                               Label* documentation = nullptr) {
+    JmpSrc src = jSrc(cond, label);
+    return CodeOffsetJump(size(), addPatchableJump(src, Relocation::HARDCODED));
+  }
+
+  CodeOffsetJump backedgeJump(RepatchLabel* label,
+                              Label* documentation = nullptr) {
+    return jumpWithPatch(label);
   }
 
   void movePtr(Register src, Register dest) { movq(src, dest); }
@@ -651,9 +623,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   }
 
   void splitTag(Register src, Register dest) {
-    if (src != dest) {
-      movq(src, dest);
-    }
+    if (src != dest) movq(src, dest);
     shrq(Imm32(JSVAL_TAG_SHIFT), dest);
   }
   void splitTag(const ValueOperand& operand, Register dest) {
@@ -787,9 +757,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
       mov(ImmWord(JSVAL_TYPE_TO_SHIFTED_TAG(type)), scratch);
       // If src is already a register, then src and dest are the same
       // thing and we don't need to move anything into dest.
-      if (src.kind() != Operand::REG) {
-        movq(src, dest);
-      }
+      if (src.kind() != Operand::REG) movq(src, dest);
       xorq(scratch, dest);
     } else {
       mov(ImmWord(JSVAL_TYPE_TO_SHIFTED_TAG(type)), dest);
@@ -818,13 +786,6 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   }
   void unboxSymbol(const Operand& src, Register dest) {
     unboxNonDouble(src, dest, JSVAL_TYPE_SYMBOL);
-  }
-
-  void unboxBigInt(const ValueOperand& src, Register dest) {
-    unboxNonDouble(src, dest, JSVAL_TYPE_BIGINT);
-  }
-  void unboxBigInt(const Operand& src, Register dest) {
-    unboxNonDouble(src, dest, JSVAL_TYPE_BIGINT);
   }
 
   void unboxObject(const ValueOperand& src, Register dest) {
@@ -860,44 +821,43 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   // Extended unboxing API. If the payload is already in a register, returns
   // that register. Otherwise, provides a move to the given scratch register,
   // and returns that.
-  MOZ_MUST_USE Register extractObject(const Address& address,
-                                      Register scratch) {
+  Register extractObject(const Address& address, Register scratch) {
     MOZ_ASSERT(scratch != ScratchReg);
     unboxObject(address, scratch);
     return scratch;
   }
-  MOZ_MUST_USE Register extractObject(const ValueOperand& value,
-                                      Register scratch) {
+  Register extractObject(const ValueOperand& value, Register scratch) {
     MOZ_ASSERT(scratch != ScratchReg);
     unboxObject(value, scratch);
     return scratch;
   }
-  MOZ_MUST_USE Register extractSymbol(const ValueOperand& value,
-                                      Register scratch) {
+  Register extractString(const ValueOperand& value, Register scratch) {
+    MOZ_ASSERT(scratch != ScratchReg);
+    unboxString(value, scratch);
+    return scratch;
+  }
+  Register extractSymbol(const ValueOperand& value, Register scratch) {
     MOZ_ASSERT(scratch != ScratchReg);
     unboxSymbol(value, scratch);
     return scratch;
   }
-  MOZ_MUST_USE Register extractInt32(const ValueOperand& value,
-                                     Register scratch) {
+  Register extractInt32(const ValueOperand& value, Register scratch) {
     MOZ_ASSERT(scratch != ScratchReg);
     unboxInt32(value, scratch);
     return scratch;
   }
-  MOZ_MUST_USE Register extractBoolean(const ValueOperand& value,
-                                       Register scratch) {
+  Register extractBoolean(const ValueOperand& value, Register scratch) {
     MOZ_ASSERT(scratch != ScratchReg);
     unboxBoolean(value, scratch);
     return scratch;
   }
-  MOZ_MUST_USE Register extractTag(const Address& address, Register scratch) {
+  Register extractTag(const Address& address, Register scratch) {
     MOZ_ASSERT(scratch != ScratchReg);
     loadPtr(address, scratch);
     splitTag(scratch, scratch);
     return scratch;
   }
-  MOZ_MUST_USE Register extractTag(const ValueOperand& value,
-                                   Register scratch) {
+  Register extractTag(const ValueOperand& value, Register scratch) {
     MOZ_ASSERT(scratch != ScratchReg);
     splitTag(value, scratch);
     return scratch;
@@ -947,26 +907,18 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
     cmp32(Operand(scratch, JSString::offsetOfLength()), Imm32(0));
     return truthy ? Assembler::NotEqual : Assembler::Equal;
   }
-  Condition testBigIntTruthy(bool truthy, const ValueOperand& value) {
-    ScratchRegisterScope scratch(asMasm());
-    unboxBigInt(value, scratch);
-    cmpPtr(Operand(scratch, BigInt::offsetOfLengthSignAndReservedBits()),
-           ImmWord(0));
-    return truthy ? Assembler::NotEqual : Assembler::Equal;
-  }
 
   template <typename T>
   inline void loadInt32OrDouble(const T& src, FloatRegister dest);
 
   template <typename T>
   void loadUnboxedValue(const T& src, MIRType type, AnyRegister dest) {
-    if (dest.isFloat()) {
+    if (dest.isFloat())
       loadInt32OrDouble(src, dest.fpu());
-    } else if (type == MIRType::ObjectOrNull) {
+    else if (type == MIRType::ObjectOrNull)
       unboxObjectOrNull(src, dest.gpr());
-    } else {
+    else
       unboxNonDouble(Operand(src), dest.gpr(), ValueTypeFromMIRType(type));
-    }
   }
 
   template <typename T>

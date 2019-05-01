@@ -3,7 +3,7 @@
 // for-of should close iterator even if the exception is once caught by the
 // debugger.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.parent = this;
 g.eval("new Debugger(parent).onExceptionUnwind = function () { };");
 // jsfunfuzz-generated

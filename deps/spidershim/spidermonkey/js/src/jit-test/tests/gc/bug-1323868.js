@@ -1,5 +1,6 @@
-// |jit-test| allow-oom; skip-if: helperThreadCount() === 0
-
+// |jit-test| allow-oom
+if (helperThreadCount() == 0)
+    quit();
 gczeal(0);
 startgc(8301);
 offThreadCompileScript("(({a,b,c}))");

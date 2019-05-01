@@ -380,10 +380,6 @@ zu{
         }
         MRO{
             "MRO",
-            "i-Mauritanian Ouguiya (1973–2017)",
-        }
-        MRU{
-            "MRU",
             "i-Mauritanian Ouguiya",
         }
         MUR{
@@ -532,10 +528,6 @@ zu{
         }
         STD{
             "STD",
-            "i-São Tomé kanye ne-Príncipe Dobra (1977–2017)",
-        }
-        STN{
-            "STN",
             "i-São Tomé kanye ne-Príncipe Dobra",
         }
         SYP{
@@ -604,10 +596,6 @@ zu{
         }
         VEF{
             "VEF",
-            "i-Venezuelan Bolívar (2008–2018)",
-        }
-        VES{
-            "VES",
             "i-Venezuelan Bolívar",
         }
         VND{
@@ -639,7 +627,7 @@ zu{
             "i-CFP Franc",
         }
         XXX{
-            "¤",
+            "XXX",
             "imali engaziwa",
         }
         YER{
@@ -660,26 +648,103 @@ zu{
         }
     }
     Currencies%narrow{
+        AOA{"Kz"}
+        ARS{"$"}
+        AUD{"$"}
+        BAM{"KM"}
+        BBD{"$"}
+        BDT{"৳"}
+        BMD{"$"}
+        BND{"$"}
+        BOB{"Bs"}
         BRL{"R$"}
+        BSD{"$"}
+        BWP{"P"}
         BYN{"P."}
+        BZD{"$"}
+        CAD{"$"}
+        CLP{"$"}
         CNY{"¥"}
+        COP{"$"}
+        CRC{"₡"}
+        CUC{"$"}
+        CUP{"$"}
+        CZK{"Kč"}
         DKK{"Kr"}
+        DOP{"$"}
+        EGP{"E£"}
         EUR{"€"}
+        FJD{"$"}
+        FKP{"£"}
         GBP{"£"}
+        GEL{"₾"}
+        GIP{"£"}
+        GNF{"FG"}
+        GTQ{"Q"}
+        GYD{"$"}
+        HKD{"$"}
+        HNL{"L"}
         HRK{"Kn"}
+        HUF{"Ft"}
+        IDR{"Rp"}
+        ILS{"₪"}
         INR{"₹"}
         ISK{"Kr"}
+        JMD{"$"}
         JPY{"¥"}
+        KHR{"៛"}
+        KMF{"CF"}
+        KPW{"₩"}
+        KRW{"₩"}
+        KYD{"$"}
+        KZT{"₸"}
+        LAK{"₭"}
+        LBP{"L£"}
+        LKR{"Rs"}
+        LRD{"$"}
+        MGA{"Ar"}
+        MMK{"K"}
+        MNT{"₮"}
+        MUR{"Rs"}
+        MXN{"$"}
+        MYR{"RM"}
+        NAD{"$"}
+        NGN{"₦"}
+        NIO{"C$"}
         NOK{"Kr"}
+        NPR{"Rs"}
+        NZD{"$"}
+        PHP{"₱"}
+        PKR{"Rs"}
         PLN{"Zł"}
+        PYG{"₲"}
         RUB{"₽"}
+        RWF{"RF"}
+        SBD{"$"}
         SEK{"Kr"}
-        STN{"Db"}
+        SGD{"$"}
+        SHP{"£"}
+        SRD{"$"}
+        SSP{"£"}
+        STD{"Db"}
+        SYP{"£"}
+        THB{"฿"}
+        TOP{"T$"}
+        TRY{"₺"}
+        TTD{"$"}
         TWD{"NT$"}
+        UAH{"₴"}
         USD{"$"}
+        UYU{"$"}
+        VEF{"Bs"}
+        VND{"₫"}
+        XCD{"$"}
+        ZAR{"R"}
+        ZMW{"ZK"}
     }
     Currencies%variant{
         GEL{"₾"}
+        TRY{"TL"}
     }
     CurrencyPlurals{
         AED{
@@ -1047,10 +1112,6 @@ zu{
             other{"i-Macanese Pataca"}
         }
         MRO{
-            one{"i-Mauritanian Ouguiya (1973–2017)"}
-            other{"i-Mauritanian Ouguiya (1973–2017)"}
-        }
-        MRU{
             one{"i-Mauritanian Ouguiya"}
             other{"i-Mauritanian Ouguiya"}
         }
@@ -1199,10 +1260,6 @@ zu{
             other{"i-South Sudanese Pound"}
         }
         STD{
-            one{"i-São Tomé kanye ne-Príncipe Dobra (1977–2017)"}
-            other{"i-São Tomé kanye ne-Príncipe Dobra (1977–2017)"}
-        }
-        STN{
             one{"i-São Tomé kanye ne-Príncipe Dobra"}
             other{"i-São Tomé kanye ne-Príncipe Dobra"}
         }
@@ -1271,10 +1328,6 @@ zu{
             other{"i-Uzbekistan Som"}
         }
         VEF{
-            one{"i-Venezuelan Bolívar (2008–2018)"}
-            other{"i-Venezuelan Bolívar (2008–2018)"}
-        }
-        VES{
             one{"i-Venezuelan Bolívar"}
             other{"i-Venezuelan Bolívar"}
         }
@@ -1327,5 +1380,5 @@ zu{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"2.1.48.17"}
+    Version{"2.1.37.1"}
 }

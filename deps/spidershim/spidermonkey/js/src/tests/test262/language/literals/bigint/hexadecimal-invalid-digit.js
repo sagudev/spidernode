@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty('BigInt')) error:SyntaxError -- BigInt is not enabled unconditionally
+// |reftest| skip error:SyntaxError -- BigInt is not supported
 // Copyright (C) 2017 Robin Templeton. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -22,6 +22,6 @@ negative:
 features: [BigInt]
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 0xgn;

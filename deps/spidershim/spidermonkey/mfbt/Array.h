@@ -14,7 +14,6 @@
 #include "mozilla/Move.h"
 #include "mozilla/ReverseIterator.h"
 
-#include <ostream>
 #include <stddef.h>
 
 namespace mozilla {
@@ -27,8 +26,7 @@ class Array {
   Array() {}
 
   template <typename... Args>
-  MOZ_IMPLICIT constexpr Array(Args&&... aArgs)
-      : mArr{std::forward<Args>(aArgs)...} {
+  MOZ_IMPLICIT Array(Args&&... aArgs) : mArr{mozilla::Forward<Args>(aArgs)...} {
     static_assert(sizeof...(aArgs) == Length,
                   "The number of arguments should be equal to the template "
                   "parameter Length");
@@ -88,13 +86,6 @@ class Array<T, 0> {
     MOZ_CRASH("indexing into zero-length array");
   }
 };
-
-// MOZ_DBG support
-
-template <typename T, size_t Length>
-std::ostream& operator<<(std::ostream& aOut, const Array<T, Length>& aArray) {
-  return aOut << MakeSpan(aArray);
-}
 
 } /* namespace mozilla */
 

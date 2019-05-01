@@ -28,14 +28,13 @@ kk{
         default{"latn"}
         latn{
             miscPatterns{
-                approximately{"~{0}"}
                 atLeast{"{0}+"}
-                atMost{"≤{0}"}
                 range{"{0}–{1}"}
             }
             patterns{
                 accountingFormat{"#,##0.00 ¤"}
                 currencyFormat{"#,##0.00 ¤"}
+                decimalFormat{"#,##0.###"}
                 percentFormat{"#,##0%"}
                 scientificFormat{"#E0"}
             }
@@ -198,10 +197,13 @@ kk{
                 exponential{"E"}
                 group{" "}
                 infinity{"∞"}
+                minusSign{"-"}
                 nan{"сан емес"}
                 perMille{"‰"}
                 percentSign{"%"}
+                plusSign{"+"}
                 superscriptingExponent{"×"}
+                timeSeparator{":"}
             }
         }
         minimalPairs{
@@ -214,9 +216,10 @@ kk{
                 other{"Себетте {0} Х бар. Олар сіздікі ме?"}
             }
         }
+        minimumGroupingDigits{"1"}
         native{"latn"}
     }
-    Version{"2.1.48.17"}
+    Version{"2.1.37.5"}
     calendar{
         generic{
             DateTimePatterns{
@@ -235,12 +238,12 @@ kk{
                 "{1} {0}",
             }
             availableFormats{
-                Bh{"B h"}
-                Bhm{"B h:mm"}
-                Bhms{"B h:mm:ss"}
+                Bh{"h B"}
+                Bhm{"h:mm B"}
+                Bhms{"h:mm:ss B"}
                 E{"ccc"}
-                EBhm{"E B h:mm"}
-                EBhms{"E B h:mm:ss"}
+                EBhm{"E h:mm B"}
+                EBhms{"E h:mm:ss B"}
                 EHm{"E HH:mm"}
                 EHms{"E HH:mm:ss"}
                 Ed{"d, E"}
@@ -278,53 +281,6 @@ kk{
                 yyyyQQQQ{"G y 'ж'. QQQQ"}
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h – h B"}
-                }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm – h:mm B"}
-                    m{"h:mm – h:mm B"}
-                }
-                Gy{
-                    G{"G y – G y"}
-                    y{"G y–y"}
-                }
-                GyM{
-                    G{"GGGGG y-MM – GGGGG y-MM"}
-                    M{"GGGGG y-MM – y-MM"}
-                    y{"GGGGG y-MM – y-MM"}
-                }
-                GyMEd{
-                    G{"GGGGG y-MM-dd, E – GGGGG y-MM-dd, E"}
-                    M{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    d{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    y{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                }
-                GyMMM{
-                    G{"G y MMM – G y MMM"}
-                    M{"G y MMM–MMM"}
-                    y{"G y MMM – y MMM"}
-                }
-                GyMMMEd{
-                    G{"G y 'ж'. d MMM, E – G y 'ж'. d MMM, E"}
-                    M{"G y 'ж'. d MMM, E – d MMM, E"}
-                    d{"G y 'ж'. d MMM, E – d MMM, E"}
-                    y{"G y 'ж'. d MMM, E – y 'ж'. d MMM, E"}
-                }
-                GyMMMd{
-                    G{"G y 'ж'. d MMM – G y 'ж'. d MMM"}
-                    M{"G y 'ж'. d MMM – d MMM"}
-                    d{"G y 'ж'. d–d MMM"}
-                    y{"G y 'ж'. d MMM – y 'ж'. d MMM"}
-                }
-                GyMd{
-                    G{"GGGGG y-MM-dd – GGGGG y-MM-dd"}
-                    M{"GGGGG y-MM-dd – y-MM-dd"}
-                    d{"GGGGG y-MM-dd – y-MM-dd"}
-                    y{"GGGGG y-MM-dd – y-MM-dd"}
-                }
                 H{
                     H{"HH–HH"}
                 }
@@ -473,8 +429,8 @@ kk{
                 MMM{"LLL"}
                 MMMEd{"d MMM, E"}
                 MMMMW{
-                    one{"MMMM 'айының' W-'аптасы'"}
-                    other{"MMMM 'айының' W-'аптасы'"}
+                    one{"MMM 'айының' W-'аптасы'"}
+                    other{"MMM 'айының' W-'аптасы'"}
                 }
                 MMMMd{"d MMMM"}
                 MMMd{"d MMM"}
@@ -504,13 +460,13 @@ kk{
             dayNames{
                 format{
                     abbreviated{
-                        "жс",
-                        "дс",
-                        "сс",
-                        "ср",
-                        "бс",
-                        "жм",
-                        "сб",
+                        "Жс",
+                        "Дс",
+                        "Сс",
+                        "Ср",
+                        "Бс",
+                        "Жм",
+                        "Сб",
                     }
                     narrow{
                         "Ж",
@@ -522,13 +478,13 @@ kk{
                         "С",
                     }
                     short{
-                        "жс",
-                        "дс",
-                        "сс",
-                        "ср",
-                        "бс",
-                        "жм",
-                        "сб",
+                        "Жс",
+                        "Дс",
+                        "Сс",
+                        "Ср",
+                        "Бс",
+                        "Жм",
+                        "Сб",
                     }
                     wide{
                         "жексенбі",
@@ -542,13 +498,13 @@ kk{
                 }
                 stand-alone{
                     abbreviated{
-                        "жс",
-                        "дс",
-                        "сс",
-                        "ср",
-                        "бс",
-                        "жм",
-                        "сб",
+                        "Жс",
+                        "Дс",
+                        "Сс",
+                        "Ср",
+                        "Бс",
+                        "Жм",
+                        "Сб",
                     }
                     narrow{
                         "Ж",
@@ -560,22 +516,22 @@ kk{
                         "С",
                     }
                     short{
-                        "жс",
-                        "дс",
-                        "сс",
-                        "ср",
-                        "бс",
-                        "жм",
-                        "сб",
+                        "Жс",
+                        "Дс",
+                        "Сс",
+                        "Ср",
+                        "Бс",
+                        "Жм",
+                        "Сб",
                     }
                     wide{
-                        "жексенбі",
-                        "дүйсенбі",
-                        "сейсенбі",
-                        "сәрсенбі",
-                        "бейсенбі",
-                        "жұма",
-                        "сенбі",
+                        "Жексенбі",
+                        "Дүйсенбі",
+                        "Сейсенбі",
+                        "Сәрсенбі",
+                        "Бейсенбі",
+                        "Жұма",
+                        "Сенбі",
                     }
                 }
             }
@@ -650,57 +606,10 @@ kk{
                 }
                 wide%variant{
                     "біздің заманымызға дейін",
-                    "Біздің заманымыз",
+                    "CE",
                 }
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h – h B"}
-                }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm – h:mm B"}
-                    m{"h:mm – h:mm B"}
-                }
-                Gy{
-                    G{"G y – G y"}
-                    y{"G y–y"}
-                }
-                GyM{
-                    G{"GGGGG y-MM – GGGGG y-MM"}
-                    M{"GGGGG y-MM – y-MM"}
-                    y{"GGGGG y-MM – y-MM"}
-                }
-                GyMEd{
-                    G{"GGGGG y-MM-dd, E – GGGGG y-MM-dd, E"}
-                    M{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    d{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                    y{"GGGGG y-MM-dd, E – y-MM-dd, E"}
-                }
-                GyMMM{
-                    G{"G y MMM – G y MMM"}
-                    M{"G y MMM–MMM"}
-                    y{"G y MMM – y MMM"}
-                }
-                GyMMMEd{
-                    G{"G y 'ж'. d MMM, E – G y 'ж'. d MMM, E"}
-                    M{"G y 'ж'. d MMM, E – d MMM, E"}
-                    d{"G y 'ж'. d MMM, E – d MMM, E"}
-                    y{"G y 'ж'. d MMM, E – y 'ж'. d MMM, E"}
-                }
-                GyMMMd{
-                    G{"G y 'ж'. d MMM – G y 'ж'. d MMM"}
-                    M{"G y 'ж'. d MMM – d MMM"}
-                    d{"G y 'ж'. d–d MMM"}
-                    y{"G y 'ж'. d MMM – y 'ж'. d MMM"}
-                }
-                GyMd{
-                    G{"GGGGG y-MM-dd – GGGGG y-MM-dd"}
-                    M{"GGGGG y-MM-dd – y-MM-dd"}
-                    d{"GGGGG y-MM-dd – y-MM-dd"}
-                    y{"GGGGG y-MM-dd – y-MM-dd"}
-                }
                 H{
                     H{"HH–HH"}
                 }
@@ -842,18 +751,18 @@ kk{
                 }
                 stand-alone{
                     abbreviated{
-                        "қаң.",
-                        "ақп.",
-                        "нау.",
-                        "сәу.",
-                        "мам.",
-                        "мау.",
-                        "шіл.",
-                        "там.",
-                        "қыр.",
-                        "қаз.",
-                        "қар.",
-                        "жел.",
+                        "Қаң.",
+                        "Ақп.",
+                        "Нау.",
+                        "Сәу.",
+                        "Мам.",
+                        "Мау.",
+                        "Шіл.",
+                        "Там.",
+                        "Қыр.",
+                        "Қаз.",
+                        "Қар.",
+                        "Жел.",
                     }
                     narrow{
                         "Қ",
@@ -930,92 +839,92 @@ kk{
         }
     }
     characterLabel{
-        activities{"әрекет"}
+        activities{"Спорт"}
         african_scripts{"Африка жазулары"}
         american_scripts{"Америка жазулары"}
         animal{"жануар"}
-        animals_nature{"жануар немесе табиғат"}
-        arrows{"көрсеткі"}
+        animals_nature{"Жануарлар және табиғат"}
+        arrows{"Көрсеткілер"}
         body{"дене"}
-        box_drawing{"псевдографика"}
+        box_drawing{"Псевдографика"}
         braille{"Брайль жазуы"}
         building{"ғимарат"}
-        bullets_stars{"тізім маркерлері/жұлдыздар"}
-        consonantal_jamo{"дауыссыз чамо"}
-        currency_symbols{"валюта таңбалары"}
-        dash_connector{"сызықша/байланыс"}
-        digits{"цифрлар"}
-        dingbats{"дингбаттар"}
-        divination_symbols{"оккульттық таңбалар"}
-        downwards_arrows{"төмен бағытталған көрсеткілер"}
-        downwards_upwards_arrows{"төмен және жоғары бағытталған көрсеткілер"}
+        bullets_stars{"Маркерлер/жұлдызшалар"}
+        consonantal_jamo{"Дауыссыз чамо"}
+        currency_symbols{"Валюта таңбалары"}
+        dash_connector{"Тире/байланыс"}
+        digits{"Цифрлар"}
+        dingbats{"Дингбаттар"}
+        divination_symbols{"Оккульттық таңбалар"}
+        downwards_arrows{"Төмен қарайғы көрсеткілер"}
+        downwards_upwards_arrows{"Төмен және жоғарғы қарайғы көрсеткілер"}
         east_asian_scripts{"Шығыс Азия жазулары"}
-        emoji{"эмодзи"}
+        emoji{"Эмодзи"}
         european_scripts{"Еуропа жазулары"}
         female{"әйел"}
         flag{"ту"}
-        flags{"тулар"}
-        food_drink{"тамақ пен сусын"}
-        format{"форматтау"}
-        format_whitespace{"форматтау және бос орын"}
-        full_width_form_variant{"толық енді форма нұсқалары"}
-        geometric_shapes{"геометриялық фигуралар"}
-        half_width_form_variant{"жарты енді форма нұсқалары"}
-        han_characters{"қытай иероглифтері"}
-        han_radicals{"иероглиф кілттері"}
-        hanja{"ханча"}
-        hanzi_simplified{"қытай иероглифтері (жеңілдетілген)"}
-        hanzi_traditional{"қытай иероглифтері (дәстүрлі)"}
+        flags{"Тулар"}
+        food_drink{"Тамақ пен сусын"}
+        format{"Пішім"}
+        format_whitespace{"Пішім және бос орын"}
+        full_width_form_variant{"Толық енді форма нұсқалары"}
+        geometric_shapes{"Геометриялық пішіндер"}
+        half_width_form_variant{"Жартылай енді форма нұсқалары"}
+        han_characters{"Қытай иероглифтері"}
+        han_radicals{"Иероглиф кілттері"}
+        hanja{"Ханча"}
+        hanzi_simplified{"Қытай иероглифтері (жеңілдетілген)"}
+        hanzi_traditional{"Қытай иероглифтері (дәстүрлі)"}
         heart{"жүрек"}
-        historic_scripts{"көне жазулар"}
-        ideographic_desc_characters{"иероглифтерді сипаттау таңбалары"}
-        japanese_kana{"жапондық қана жазуы"}
-        kanbun{"камбун"}
-        kanji{"кандзи"}
+        historic_scripts{"Көне жазулар"}
+        ideographic_desc_characters{"Иероглифтерді сипаттау таңбалары"}
+        japanese_kana{"Жапондық кана жазуы"}
+        kanbun{"Камбун"}
+        kanji{"Канджи"}
         keycap{"перне"}
-        leftwards_arrows{"солға бағытталған көрсеткілер"}
-        leftwards_rightwards_arrows{"солға және оңға бағытталған көрсеткілер"}
-        letterlike_symbols{"әріптік таңбалар"}
-        limited_use{"қолданысы шектеулі"}
-        male{"еркек"}
-        math_symbols{"математикалық таңбалар"}
+        leftwards_arrows{"Солға қарайғы көрсеткілер"}
+        leftwards_rightwards_arrows{"Солға және оңға қарайғы көрсеткілер"}
+        letterlike_symbols{"Әріптік таңбалар"}
+        limited_use{"Шектеулі қолданыс таңбалары"}
+        male{"ер"}
+        math_symbols{"Математикалық таңбалар"}
         middle_eastern_scripts{"Таяу Шығыс жазулары"}
-        miscellaneous{"әр түрлі"}
-        modern_scripts{"қазіргі заман жазулары"}
-        modifier{"модификатор"}
-        musical_symbols{"музыкалық таңбалар"}
+        miscellaneous{"Әр түрлі"}
+        modern_scripts{"Қазіргі заман жазулары"}
+        modifier{"Модификатор"}
+        musical_symbols{"Музыкалық таңбалар"}
         nature{"табиғат"}
-        nonspacing{"бос орынсыз"}
-        numbers{"сандар"}
-        objects{"нысандар"}
-        other{"басқа"}
-        paired{"жұптасқан"}
+        nonspacing{"Бос орынсыз таңбалар"}
+        numbers{"Сандар"}
+        objects{"Нысандар"}
+        other{"Басқа"}
+        paired{"Жұптасқан таңбалар"}
         person{"адам"}
-        phonetic_alphabet{"фонетикалық әліпби"}
-        pictographs{"пиктограммалар"}
+        phonetic_alphabet{"Фонетикалық әліпби"}
+        pictographs{"Пиктограмма"}
         place{"орын"}
         plant{"өсімдік"}
-        punctuation{"тыныс белгілері"}
-        rightwards_arrows{"оңға бағытталған көрсеткілер"}
-        sign_standard_symbols{"белгілер/стандартты таңбалар"}
-        small_form_variant{"кіші форма нұсқалары"}
+        punctuation{"Тыныс белгілері"}
+        rightwards_arrows{"Оңға қарайғы көрсеткілер"}
+        sign_standard_symbols{"Белгілер/стандартты таңбалар"}
+        small_form_variant{"Кіші форма нұсқалары"}
         smiley{"смайл"}
-        smileys_people{"смайлдар мен адамдар"}
+        smileys_people{"Смайлдар мен адамдар"}
         south_asian_scripts{"Оңтүстік Азия жазулары"}
         southeast_asian_scripts{"Оңтүстік-Шығыс Азия жазулары"}
-        spacing{"бос орын"}
+        spacing{"Бос орындар"}
         sport{"спорт"}
-        symbols{"таңбалар"}
-        technical_symbols{"техникалық таңбалар"}
-        tone_marks{"екпін белгілері"}
+        symbols{"Таңбалар"}
+        technical_symbols{"Техникалық таңбалар"}
+        tone_marks{"Екпін белгілері"}
         travel{"саяхат"}
-        travel_places{"саяхат және орындар"}
-        upwards_arrows{"жоғары бағытталған көрсеткілер"}
-        variant_forms{"өзгермелі формалар"}
-        vocalic_jamo{"дауысты чамо"}
+        travel_places{"Саяхат"}
+        upwards_arrows{"Жоғары қарайғы көрсеткілер"}
+        variant_forms{"Құбылмалы формалар"}
+        vocalic_jamo{"Дауысты чамо"}
         weather{"ауа райы"}
         western_asian_scripts{"Батыс Азия жазулары"}
-        whitespace{"бос орын"}
+        whitespace{"Бос орын"}
     }
     delimiters{
         alternateQuotationEnd{"”"}
@@ -1833,12 +1742,6 @@ kk{
             middle{"{0}, {1}"}
             start{"{0}, {1}"}
         }
-        standard-narrow{
-            2{"{0} және {1}"}
-            end{"{0}, {1}"}
-            middle{"{0}, {1}"}
-            start{"{0}, {1}"}
-        }
         standard-short{
             2{"{0} және {1}"}
             end{"{0}, {1}"}
@@ -1868,37 +1771,5 @@ kk{
         UK{"Ағылшын"}
         US{"Америкалық"}
         metric{"Метрлік"}
-    }
-    parse{
-        date{
-            lenient{
-                "[\\--/]",
-                "[\\:∶︓﹕：]",
-            }
-        }
-        general{
-            lenient{
-                "[.․。︒﹒．｡]",
-                "['ʼ՚᾽᾿’＇]",
-                "[%٪﹪％]",
-                "[؉‰]",
-                "[\$﹩＄]",
-                "[£₤￡]",
-                "[¥￥]",
-                "[₩￦]",
-                "[₨₹{Rp}{Rs}]",
-            }
-        }
-        number{
-            lenient{
-                "[\\-‐‒–⁻₋−➖﹣－]",
-                "[,،٫、︐︑﹐﹑，､]",
-                "[+⁺₊➕﬩﹢＋]",
-            }
-            stricter{
-                "[,٫︐﹐，]",
-                "[.․﹒．｡]",
-            }
-        }
     }
 }

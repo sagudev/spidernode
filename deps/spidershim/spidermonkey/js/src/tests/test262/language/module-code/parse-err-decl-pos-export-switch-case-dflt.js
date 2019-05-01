@@ -10,6 +10,6 @@ negative:
 flags: [module]
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 switch(0) { case 1: export default null; default: }

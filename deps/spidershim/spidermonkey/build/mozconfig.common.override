@@ -9,7 +9,3 @@
 # to override anything done previously.
 #
 # The common expected usage is for try builds with nondefault options.
-
-if test -n "$USE_ARTIFACT"; then
-. "$topsrcdir/build/mozconfig.artifact"
-fi

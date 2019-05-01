@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +7,6 @@
 #ifndef ds_InlineTable_h
 #define ds_InlineTable_h
 
-#include "mozilla/Maybe.h"
 #include "mozilla/Move.h"
 
 #include "js/AllocPolicy.h"
@@ -19,7 +18,7 @@ namespace detail {
 
 template <typename InlineEntry, typename Entry, typename Table,
           typename HashPolicy, typename AllocPolicy, size_t InlineEntries>
-class InlineTable : private AllocPolicy {
+class InlineTable {
  private:
   using TablePtr = typename Table::Ptr;
   using TableAddPtr = typename Table::AddPtr;
@@ -64,13 +63,16 @@ class InlineTable : private AllocPolicy {
   MOZ_MUST_USE bool switchToTable() {
     MOZ_ASSERT(inlNext_ == InlineEntries);
 
-    table_.clear();
+    if (table_.initialized()) {
+      table_.clear();
+    } else {
+      if (!table_.init(count())) return false;
+      MOZ_ASSERT(table_.initialized());
+    }
 
     InlineEntry* end = inlineEnd();
     for (InlineEntry* it = inlineStart(); it != end; ++it) {
-      if (it->key && !it->moveTo(table_)) {
-        return false;
-      }
+      if (it->key && !it->moveTo(table_)) return false;
     }
 
     inlNext_ = InlineEntries + 1;
@@ -81,9 +83,7 @@ class InlineTable : private AllocPolicy {
 
   MOZ_NEVER_INLINE
   MOZ_MUST_USE bool switchAndAdd(const InlineEntry& entry) {
-    if (!switchToTable()) {
-      return false;
-    }
+    if (!switchToTable()) return false;
 
     return entry.putNew(table_);
   }
@@ -92,7 +92,7 @@ class InlineTable : private AllocPolicy {
   static const size_t SizeOfInlineEntries = sizeof(InlineEntry) * InlineEntries;
 
   explicit InlineTable(AllocPolicy a = AllocPolicy())
-      : AllocPolicy(a), inlNext_(0), inlCount_(0), table_(a) {}
+      : inlNext_(0), inlCount_(0), table_(a) {}
 
   class Ptr {
     friend class InlineTable;
@@ -132,12 +132,8 @@ class InlineTable : private AllocPolicy {
 
     bool operator==(const Ptr& other) const {
       MOZ_ASSERT(found() && other.found());
-      if (isInlinePtr_ != other.isInlinePtr_) {
-        return false;
-      }
-      if (isInlinePtr_) {
-        return inlPtr_ == other.inlPtr_;
-      }
+      if (isInlinePtr_ != other.isInlinePtr_) return false;
+      if (isInlinePtr_) return inlPtr_ == other.inlPtr_;
       return tablePtr_ == other.tablePtr_;
     }
 
@@ -187,12 +183,8 @@ class InlineTable : private AllocPolicy {
 
     bool operator==(const AddPtr& other) const {
       MOZ_ASSERT(found() && other.found());
-      if (isInlinePtr_ != other.isInlinePtr_) {
-        return false;
-      }
-      if (isInlinePtr_) {
-        return inlAddPtr_ == other.inlAddPtr_;
-      }
+      if (isInlinePtr_ != other.isInlinePtr_) return false;
+      if (isInlinePtr_) return inlAddPtr_ == other.inlAddPtr_;
       return tableAddPtr_ == other.tableAddPtr_;
     }
 
@@ -222,15 +214,11 @@ class InlineTable : private AllocPolicy {
   Ptr lookup(const Lookup& l) {
     MOZ_ASSERT(keyNonZero(l));
 
-    if (usingTable()) {
-      return Ptr(table_.lookup(l));
-    }
+    if (usingTable()) return Ptr(table_.lookup(l));
 
     InlineEntry* end = inlineEnd();
     for (InlineEntry* it = inlineStart(); it != end; ++it) {
-      if (it->key && HashPolicy::match(it->key, l)) {
-        return Ptr(it);
-      }
+      if (it->key && HashPolicy::match(it->key, l)) return Ptr(it);
     }
 
     return Ptr(nullptr);
@@ -240,15 +228,11 @@ class InlineTable : private AllocPolicy {
   AddPtr lookupForAdd(const Lookup& l) {
     MOZ_ASSERT(keyNonZero(l));
 
-    if (usingTable()) {
-      return AddPtr(table_.lookupForAdd(l));
-    }
+    if (usingTable()) return AddPtr(table_.lookupForAdd(l));
 
     InlineEntry* end = inlineEnd();
     for (InlineEntry* it = inlineStart(); it != end; ++it) {
-      if (it->key && HashPolicy::match(it->key, l)) {
-        return AddPtr(it, true);
-      }
+      if (it->key && HashPolicy::match(it->key, l)) return AddPtr(it, true);
     }
 
     // The add pointer that's returned here may indicate the limit entry of
@@ -269,28 +253,22 @@ class InlineTable : private AllocPolicy {
 
       // Switching to table mode before we add this pointer.
       if (addPtr == inlineStart() + InlineEntries) {
-        if (!switchToTable()) {
-          return false;
-        }
-        return table_.putNew(std::forward<KeyInput>(key),
-                             std::forward<Args>(args)...);
+        if (!switchToTable()) return false;
+        return table_.putNew(mozilla::Forward<KeyInput>(key),
+                             mozilla::Forward<Args>(args)...);
       }
 
       MOZ_ASSERT(!p.found());
       MOZ_ASSERT(uintptr_t(inlineEnd()) == uintptr_t(p.inlAddPtr_));
-
-      if (!this->checkSimulatedOOM()) {
-        return false;
-      }
-
-      addPtr->update(std::forward<KeyInput>(key), std::forward<Args>(args)...);
+      addPtr->update(mozilla::Forward<KeyInput>(key),
+                     mozilla::Forward<Args>(args)...);
       ++inlCount_;
       ++inlNext_;
       return true;
     }
 
-    return table_.add(p.tableAddPtr_, std::forward<KeyInput>(key),
-                      std::forward<Args>(args)...);
+    return table_.add(p.tableAddPtr_, mozilla::Forward<KeyInput>(key),
+                      mozilla::Forward<Args>(args)...);
   }
 
   void remove(Ptr& p) {
@@ -302,36 +280,31 @@ class InlineTable : private AllocPolicy {
       --inlCount_;
       return;
     }
-    MOZ_ASSERT(usingTable());
+    MOZ_ASSERT(table_.initialized() && usingTable());
     table_.remove(p.tablePtr_);
   }
 
   void remove(const Lookup& l) {
-    if (Ptr p = lookup(l)) {
-      remove(p);
-    }
+    if (Ptr p = lookup(l)) remove(p);
   }
 
   class Range {
     friend class InlineTable;
 
    protected:
-    mozilla::Maybe<TableRange> tableRange_;  // `Nothing` if `isInline_==true`
+    TableRange tableRange_;
     InlineEntry* cur_;
     InlineEntry* end_;
     bool isInline_;
 
     explicit Range(TableRange r)
-        : tableRange_(mozilla::Some(r)),
-          cur_(nullptr),
-          end_(nullptr),
-          isInline_(false) {
+        : cur_(nullptr), end_(nullptr), isInline_(false) {
+      tableRange_ = r;
       MOZ_ASSERT(!isInlineRange());
     }
 
     Range(const InlineEntry* begin, const InlineEntry* end)
-        : tableRange_(mozilla::Nothing()),
-          cur_(const_cast<InlineEntry*>(begin)),
+        : cur_(const_cast<InlineEntry*>(begin)),
           end_(const_cast<InlineEntry*>(end)),
           isInline_(true) {
       advancePastNulls(cur_);
@@ -351,9 +324,7 @@ class InlineTable : private AllocPolicy {
 
     void advancePastNulls(InlineEntry* begin) {
       InlineEntry* newCur = begin;
-      while (newCur < end_ && nullptr == newCur->key) {
-        ++newCur;
-      }
+      while (newCur < end_ && nullptr == newCur->key) ++newCur;
       MOZ_ASSERT(uintptr_t(newCur) <= uintptr_t(end_));
       cur_ = newCur;
     }
@@ -365,24 +336,21 @@ class InlineTable : private AllocPolicy {
 
    public:
     bool empty() const {
-      return isInlineRange() ? cur_ == end_ : tableRange_->empty();
+      return isInlineRange() ? cur_ == end_ : tableRange_.empty();
     }
 
     Entry front() {
       MOZ_ASSERT(!empty());
-      if (isInlineRange()) {
-        return Entry(cur_);
-      }
-      return Entry(&tableRange_->front());
+      if (isInlineRange()) return Entry(cur_);
+      return Entry(&tableRange_.front());
     }
 
     void popFront() {
       MOZ_ASSERT(!empty());
-      if (isInlineRange()) {
+      if (isInlineRange())
         bumpCurPtr();
-      } else {
-        tableRange_->popFront();
-      }
+      else
+        tableRange_.popFront();
     }
   };
 
@@ -412,12 +380,12 @@ class InlineMap {
 
     template <typename KeyInput, typename ValueInput>
     void update(KeyInput&& key, ValueInput&& value) {
-      this->key = std::forward<KeyInput>(key);
-      this->value = std::forward<ValueInput>(value);
+      this->key = mozilla::Forward<KeyInput>(key);
+      this->value = mozilla::Forward<ValueInput>(value);
     }
 
     MOZ_MUST_USE bool moveTo(Map& map) {
-      return map.putNew(std::move(key), std::move(value));
+      return map.putNew(mozilla::Move(key), mozilla::Move(value));
     }
   };
 
@@ -438,17 +406,13 @@ class InlineMap {
 
     const Key& key() const {
       MOZ_ASSERT(!!mapEntry_ != !!inlineEntry_);
-      if (mapEntry_) {
-        return mapEntry_->key();
-      }
+      if (mapEntry_) return mapEntry_->key();
       return inlineEntry_->key;
     }
 
     Value& value() {
       MOZ_ASSERT(!!mapEntry_ != !!inlineEntry_);
-      if (mapEntry_) {
-        return mapEntry_->value();
-      }
+      if (mapEntry_) return mapEntry_->value();
       return inlineEntry_->value;
     }
   };
@@ -491,18 +455,19 @@ class InlineMap {
   template <typename KeyInput, typename ValueInput>
   MOZ_ALWAYS_INLINE MOZ_MUST_USE bool add(AddPtr& p, KeyInput&& key,
                                           ValueInput&& value) {
-    return impl_.add(p, std::forward<KeyInput>(key),
-                     std::forward<ValueInput>(value));
+    return impl_.add(p, mozilla::Forward<KeyInput>(key),
+                     mozilla::Forward<ValueInput>(value));
   }
 
   template <typename KeyInput, typename ValueInput>
   MOZ_MUST_USE bool put(KeyInput&& key, ValueInput&& value) {
     AddPtr p = lookupForAdd(key);
     if (p) {
-      p->value() = std::forward<ValueInput>(value);
+      p->value() = mozilla::Forward<ValueInput>(value);
       return true;
     }
-    return add(p, std::forward<KeyInput>(key), std::forward<ValueInput>(value));
+    return add(p, mozilla::Forward<KeyInput>(key),
+               mozilla::Forward<ValueInput>(value));
   }
 
   void remove(Ptr& p) { impl_.remove(p); }
@@ -527,10 +492,12 @@ class InlineSet {
 
     template <typename TInput>
     void update(TInput&& key) {
-      this->key = std::forward<TInput>(key);
+      this->key = mozilla::Forward<TInput>(key);
     }
 
-    MOZ_MUST_USE bool moveTo(Set& set) { return set.putNew(std::move(key)); }
+    MOZ_MUST_USE bool moveTo(Set& set) {
+      return set.putNew(mozilla::Move(key));
+    }
   };
 
   class Entry {
@@ -550,9 +517,7 @@ class InlineSet {
 
     operator T() const {
       MOZ_ASSERT(!!setEntry_ != !!inlineEntry_);
-      if (setEntry_) {
-        return *setEntry_;
-      }
+      if (setEntry_) return *setEntry_;
       return inlineEntry_->key;
     }
   };
@@ -594,13 +559,13 @@ class InlineSet {
 
   template <typename TInput>
   MOZ_ALWAYS_INLINE MOZ_MUST_USE bool add(AddPtr& p, TInput&& key) {
-    return impl_.add(p, std::forward<TInput>(key));
+    return impl_.add(p, mozilla::Forward<TInput>(key));
   }
 
   template <typename TInput>
   MOZ_MUST_USE bool put(TInput&& key) {
     AddPtr p = lookupForAdd(key);
-    return p ? true : add(p, std::forward<TInput>(key));
+    return p ? true : add(p, mozilla::Forward<TInput>(key));
   }
 
   void remove(Ptr& p) { impl_.remove(p); }

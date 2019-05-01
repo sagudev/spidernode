@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,9 +8,9 @@
 
 #include "gc/GC.h"
 #include "jit/Ion.h"
-#include "jit/JitRealm.h"
+#include "jit/JitCompartment.h"
 
-#include "vm/Realm-inl.h"
+#include "vm/JSCompartment-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -19,13 +19,12 @@ JSRuntime* CompileRuntime::runtime() {
   return reinterpret_cast<JSRuntime*>(this);
 }
 
-/* static */
-CompileRuntime* CompileRuntime::get(JSRuntime* rt) {
+/* static */ CompileRuntime* CompileRuntime::get(JSRuntime* rt) {
   return reinterpret_cast<CompileRuntime*>(rt);
 }
 
 #ifdef JS_GC_ZEAL
-const uint32_t* CompileRuntime::addressOfGCZealModeBits() {
+const void* CompileRuntime::addressOfGCZealModeBits() {
   return runtime()->gc.addressOfZealModeBits();
 }
 #endif
@@ -66,24 +65,8 @@ const WellKnownSymbols& CompileRuntime::wellKnownSymbols() {
   return *runtime()->wellKnownSymbols;
 }
 
-const void* CompileRuntime::mainContextPtr() {
-  return runtime()->mainContextFromAnyThread();
-}
-
-uint32_t* CompileRuntime::addressOfTenuredAllocCount() {
-  return runtime()->mainContextFromAnyThread()->addressOfTenuredAllocCount();
-}
-
-const void* CompileRuntime::addressOfJitStackLimit() {
-  return runtime()->mainContextFromAnyThread()->addressOfJitStackLimit();
-}
-
-const void* CompileRuntime::addressOfInterruptBits() {
-  return runtime()->mainContextFromAnyThread()->addressOfInterruptBits();
-}
-
-const void* CompileRuntime::addressOfZone() {
-  return runtime()->mainContextFromAnyThread()->addressOfZone();
+const void* CompileRuntime::addressOfActiveJSContext() {
+  return runtime()->addressOfActiveContext();
 }
 
 #ifdef DEBUG
@@ -100,8 +83,7 @@ bool CompileRuntime::runtimeMatches(JSRuntime* rt) { return rt == runtime(); }
 
 Zone* CompileZone::zone() { return reinterpret_cast<Zone*>(this); }
 
-/* static */
-CompileZone* CompileZone::get(Zone* zone) {
+/* static */ CompileZone* CompileZone::get(Zone* zone) {
   return reinterpret_cast<CompileZone*>(zone);
 }
 
@@ -113,23 +95,27 @@ bool CompileZone::isAtomsZone() { return zone()->isAtomsZone(); }
 
 #ifdef DEBUG
 const void* CompileZone::addressOfIonBailAfter() {
-  return zone()->runtimeFromAnyThread()->jitRuntime()->addressOfIonBailAfter();
+  return zone()->group()->addressOfIonBailAfter();
 }
 #endif
 
-const uint32_t* CompileZone::addressOfNeedsIncrementalBarrier() {
+const void* CompileZone::addressOfJSContext() {
+  return zone()->group()->addressOfOwnerContext();
+}
+
+const void* CompileZone::addressOfNeedsIncrementalBarrier() {
   return zone()->addressOfNeedsIncrementalBarrier();
 }
 
-gc::FreeSpan** CompileZone::addressOfFreeList(gc::AllocKind allocKind) {
+const void* CompileZone::addressOfFreeList(gc::AllocKind allocKind) {
   return zone()->arenas.addressOfFreeList(allocKind);
 }
 
-void* CompileZone::addressOfNurseryPosition() {
+const void* CompileZone::addressOfNurseryPosition() {
   return zone()->runtimeFromAnyThread()->gc.addressOfNurseryPosition();
 }
 
-void* CompileZone::addressOfStringNurseryPosition() {
+const void* CompileZone::addressOfStringNurseryPosition() {
   // Objects and strings share a nursery, for now at least.
   return zone()->runtimeFromAnyThread()->gc.addressOfNurseryPosition();
 }
@@ -139,68 +125,56 @@ const void* CompileZone::addressOfNurseryCurrentEnd() {
 }
 
 const void* CompileZone::addressOfStringNurseryCurrentEnd() {
-  // Although objects and strings share a nursery (and this may change)
-  // there is still a separate string end address.  The only time it
-  // is different from the regular end address, is when nursery strings are
-  // disabled (it will be NULL).
-  //
-  // This function returns _a pointer to_ that end address.
   return zone()->runtimeFromAnyThread()->gc.addressOfStringNurseryCurrentEnd();
 }
 
-uint32_t* CompileZone::addressOfNurseryAllocCount() {
-  return zone()->runtimeFromAnyThread()->gc.addressOfNurseryAllocCount();
-}
-
 bool CompileZone::canNurseryAllocateStrings() {
-  return nurseryExists() &&
-         zone()->runtimeFromAnyThread()->gc.nursery().canAllocateStrings() &&
+  return nurseryExists() && zone()->group()->nursery().canAllocateStrings() &&
          zone()->allocNurseryStrings;
 }
 
 bool CompileZone::nurseryExists() {
-  return zone()->runtimeFromAnyThread()->gc.nursery().exists();
+  return zone()->group()->nursery().exists();
 }
 
 void CompileZone::setMinorGCShouldCancelIonCompilations() {
   MOZ_ASSERT(CurrentThreadCanAccessZone(zone()));
-  JSRuntime* rt = zone()->runtimeFromMainThread();
-  rt->gc.storeBuffer().setShouldCancelIonCompilations();
+  zone()->group()->storeBuffer().setShouldCancelIonCompilations();
 }
 
-JS::Realm* CompileRealm::realm() { return reinterpret_cast<JS::Realm*>(this); }
-
-/* static */
-CompileRealm* CompileRealm::get(JS::Realm* realm) {
-  return reinterpret_cast<CompileRealm*>(realm);
+JSCompartment* CompileCompartment::compartment() {
+  return reinterpret_cast<JSCompartment*>(this);
 }
 
-CompileZone* CompileRealm::zone() { return CompileZone::get(realm()->zone()); }
-
-CompileRuntime* CompileRealm::runtime() {
-  return CompileRuntime::get(realm()->runtimeFromAnyThread());
+/* static */ CompileCompartment* CompileCompartment::get(JSCompartment* comp) {
+  return reinterpret_cast<CompileCompartment*>(comp);
 }
 
-const mozilla::non_crypto::XorShift128PlusRNG*
-CompileRealm::addressOfRandomNumberGenerator() {
-  return realm()->addressOfRandomNumberGenerator();
+CompileZone* CompileCompartment::zone() {
+  return CompileZone::get(compartment()->zone());
 }
 
-const JitRealm* CompileRealm::jitRealm() { return realm()->jitRealm(); }
+CompileRuntime* CompileCompartment::runtime() {
+  return CompileRuntime::get(compartment()->runtimeFromAnyThread());
+}
 
-const GlobalObject* CompileRealm::maybeGlobal() {
+const void* CompileCompartment::addressOfRandomNumberGenerator() {
+  return compartment()->randomNumberGenerator.ptr();
+}
+
+const JitCompartment* CompileCompartment::jitCompartment() {
+  return compartment()->jitCompartment();
+}
+
+const GlobalObject* CompileCompartment::maybeGlobal() {
   // This uses unsafeUnbarrieredMaybeGlobal() so as not to trigger the read
   // barrier on the global from off thread.  This is safe because we
   // abort Ion compilation when we GC.
-  return realm()->unsafeUnbarrieredMaybeGlobal();
+  return compartment()->unsafeUnbarrieredMaybeGlobal();
 }
 
-const uint32_t* CompileRealm::addressOfGlobalWriteBarriered() {
-  return &realm()->globalWriteBarriered;
-}
-
-bool CompileRealm::hasAllocationMetadataBuilder() {
-  return realm()->hasAllocationMetadataBuilder();
+bool CompileCompartment::hasAllocationMetadataBuilder() {
+  return compartment()->hasAllocationMetadataBuilder();
 }
 
 // Note: This function is thread-safe because setSingletonAsValue sets a boolean
@@ -210,8 +184,8 @@ bool CompileRealm::hasAllocationMetadataBuilder() {
 // clone a singleton instead of using the value which is baked in the JSScript,
 // and this would be an unfortunate allocation, but this will not change the
 // semantics of the JavaScript code which is executed.
-void CompileRealm::setSingletonsAsValues() {
-  realm()->behaviors().setSingletonsAsValues();
+void CompileCompartment::setSingletonsAsValues() {
+  compartment()->behaviors().setSingletonsAsValues();
 }
 
 JitCompileOptions::JitCompileOptions()
@@ -220,7 +194,7 @@ JitCompileOptions::JitCompileOptions()
       offThreadCompilationAvailable_(false) {}
 
 JitCompileOptions::JitCompileOptions(JSContext* cx) {
-  cloneSingletons_ = cx->realm()->creationOptions().cloneSingletons();
+  cloneSingletons_ = cx->compartment()->creationOptions().cloneSingletons();
   profilerSlowAssertionsEnabled_ =
       cx->runtime()->geckoProfiler().enabled() &&
       cx->runtime()->geckoProfiler().slowAssertionsEnabled();

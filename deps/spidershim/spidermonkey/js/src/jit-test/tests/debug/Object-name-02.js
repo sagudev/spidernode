@@ -1,6 +1,6 @@
 // The .name of a non-function object is undefined.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var hits = 0;
 var dbg = new Debugger(g);
 dbg.onDebuggerStatement = function (frame) {

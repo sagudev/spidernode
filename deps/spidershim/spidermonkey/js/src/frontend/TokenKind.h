@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef frontend_TokenKind_h
 #define frontend_TokenKind_h
-
-#include <stdint.h>
 
 /*
  * List of token kinds and their ranges.
@@ -66,17 +64,15 @@
   MACRO(Dec, "'--'")        /* decrement */                                 \
   MACRO(Dot, "'.'")         /* member operator */                           \
   MACRO(TripleDot, "'...'") /* rest arguments and spread operator */        \
-  MACRO(LeftBracket, "'['")                                                 \
-  MACRO(RightBracket, "']'")                                                \
-  MACRO(LeftCurly, "'{'")                                                   \
-  MACRO(RightCurly, "'}'")                                                  \
-  MACRO(LeftParen, "'('")                                                   \
-  MACRO(RightParen, "')'")                                                  \
+  MACRO(Lb, "'['")                                                          \
+  MACRO(Rb, "']'")                                                          \
+  MACRO(Lc, "'{'")                                                          \
+  MACRO(Rc, "'}'")                                                          \
+  MACRO(Lp, "'('")                                                          \
+  MACRO(Rp, "')'")                                                          \
   MACRO(Name, "identifier")                                                 \
-  MACRO(PrivateName, "private identifier")                                  \
   MACRO(Number, "numeric literal")                                          \
   MACRO(String, "string literal")                                           \
-  MACRO(BigInt, "bigint literal")                                           \
                                                                             \
   /* start of template literal with substitutions */                        \
   MACRO(TemplateHead, "'${'")                                               \
@@ -129,7 +125,6 @@
   MACRO(From, "'from'")                                                     \
   MACRO(Get, "'get'")                                                       \
   MACRO(Let, "'let'")                                                       \
-  MACRO(Meta, "'meta'")                                                     \
   MACRO(Of, "'of'")                                                         \
   MACRO(Set, "'set'")                                                       \
   MACRO(Static, "'static'")                                                 \
@@ -158,7 +153,7 @@
    */                                                                       \
   /*                                                                        \
    * Binary operators tokens, Or thru Pow. These must be in the same        \
-   * order as F(Or) and friends in FOR_EACH_PARSE_NODE_KIND in ParseNode.h. \
+   * order as F(OR) and friends in FOR_EACH_PARSE_NODE_KIND in ParseNode.h. \
    */                                                                       \
   MACRO(Pipeline, "'|>'")                                                   \
   RANGE(BinOpFirst, Pipeline)                                               \
@@ -240,7 +235,7 @@ namespace frontend {
 
 // Values of this type are used to index into arrays such as isExprEnding[],
 // so the first value must be zero.
-enum class TokenKind : uint8_t {
+enum class TokenKind {
 #define EMIT_ENUM(name, desc) name,
 #define EMIT_ENUM_RANGE(name, value) name = value,
   FOR_EACH_TOKEN_KIND_WITH_RANGE(EMIT_ENUM, EMIT_ENUM_RANGE)
@@ -303,8 +298,8 @@ inline MOZ_MUST_USE bool TokenKindIsReservedWord(TokenKind tt) {
 }
 
 inline MOZ_MUST_USE bool TokenKindIsPossibleIdentifier(TokenKind tt) {
-  return tt == TokenKind::Name || tt == TokenKind::PrivateName ||
-         TokenKindIsContextualKeyword(tt) || TokenKindIsStrictReservedWord(tt);
+  return tt == TokenKind::Name || TokenKindIsContextualKeyword(tt) ||
+         TokenKindIsStrictReservedWord(tt);
 }
 
 inline MOZ_MUST_USE bool TokenKindIsPossibleIdentifierName(TokenKind tt) {

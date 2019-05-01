@@ -1,6 +1,6 @@
 // obj.defineProperty with vague descriptors works like Object.defineProperty
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger;
 var gw = dbg.addDebuggee(g);
 

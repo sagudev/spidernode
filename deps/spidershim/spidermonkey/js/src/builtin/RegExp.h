@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,7 +31,8 @@ MOZ_MUST_USE bool ExecuteRegExpLegacy(JSContext* cx, RegExpStatics* res,
                                       size_t* lastIndex, bool test,
                                       MutableHandleValue rval);
 
-// Translation from MatchPairs to a JS array in regexp_exec()'s output format.
+/* Translation from MatchPairs to a JS array in regexp_exec()'s output format.
+ */
 MOZ_MUST_USE bool CreateRegExpMatchResult(JSContext* cx, HandleString input,
                                           const MatchPairs& matches,
                                           MutableHandleValue rval);
@@ -39,8 +40,7 @@ MOZ_MUST_USE bool CreateRegExpMatchResult(JSContext* cx, HandleString input,
 extern MOZ_MUST_USE bool RegExpMatcher(JSContext* cx, unsigned argc, Value* vp);
 
 extern MOZ_MUST_USE bool RegExpMatcherRaw(JSContext* cx, HandleObject regexp,
-                                          HandleString input,
-                                          int32_t maybeLastIndex,
+                                          HandleString input, int32_t lastIndex,
                                           MatchPairs* maybeMatches,
                                           MutableHandleValue output);
 

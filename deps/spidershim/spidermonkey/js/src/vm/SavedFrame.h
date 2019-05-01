@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +23,6 @@ class SavedFrame : public NativeObject {
 
  public:
   static const Class class_;
-  static const Class protoClass_;
   static const JSPropertySpec protoAccessors[];
   static const JSFunctionSpec protoFunctions[];
   static const JSFunctionSpec staticFunctions[];
@@ -31,7 +30,6 @@ class SavedFrame : public NativeObject {
   // Prototype methods and properties to be exposed to JS.
   static bool construct(JSContext* cx, unsigned argc, Value* vp);
   static bool sourceProperty(JSContext* cx, unsigned argc, Value* vp);
-  static bool sourceIdProperty(JSContext* cx, unsigned argc, Value* vp);
   static bool lineProperty(JSContext* cx, unsigned argc, Value* vp);
   static bool columnProperty(JSContext* cx, unsigned argc, Value* vp);
   static bool functionDisplayNameProperty(JSContext* cx, unsigned argc,
@@ -45,7 +43,6 @@ class SavedFrame : public NativeObject {
 
   // Convenient getters for SavedFrame's reserved slots for use from C++.
   JSAtom* getSource();
-  uint32_t getSourceId();
   uint32_t getLine();
   uint32_t getColumn();
   JSAtom* getFunctionDisplayName();
@@ -53,11 +50,6 @@ class SavedFrame : public NativeObject {
   SavedFrame* getParent() const;
   JSPrincipals* getPrincipals();
   bool isSelfHosted(JSContext* cx);
-  bool isWasm();
-
-  // When isWasm():
-  uint32_t wasmFuncIndex();
-  uint32_t wasmBytecodeOffset();
 
   // Iterator for use with C++11 range based for loops, eg:
   //
@@ -103,6 +95,17 @@ class SavedFrame : public NativeObject {
     RootedIterator end() { return RootedIterator(); }
   };
 
+  static bool isSavedFrameAndNotProto(JSObject& obj) {
+    return obj.is<SavedFrame>() &&
+           !obj.as<SavedFrame>().getReservedSlot(JSSLOT_SOURCE).isNull();
+  }
+
+  static bool isSavedFrameOrWrapperAndNotProto(JSObject& obj) {
+    auto unwrapped = CheckedUnwrap(&obj);
+    if (!unwrapped) return false;
+    return isSavedFrameAndNotProto(*unwrapped);
+  }
+
   struct Lookup;
   struct HashPolicy;
 
@@ -110,14 +113,27 @@ class SavedFrame : public NativeObject {
                         SystemAllocPolicy>
       Set;
 
+  class AutoLookupVector;
+
+  class MOZ_STACK_CLASS HandleLookup {
+    friend class AutoLookupVector;
+
+    Lookup& lookup;
+
+    explicit HandleLookup(Lookup& lookup) : lookup(lookup) {}
+
+   public:
+    inline Lookup& get() { return lookup; }
+    inline Lookup* operator->() { return &lookup; }
+  };
+
  private:
   static SavedFrame* create(JSContext* cx);
   static MOZ_MUST_USE bool finishSavedFrameInit(JSContext* cx,
                                                 HandleObject ctor,
                                                 HandleObject proto);
-  void initFromLookup(JSContext* cx, Handle<Lookup> lookup);
+  void initFromLookup(JSContext* cx, HandleLookup lookup);
   void initSource(JSAtom* source);
-  void initSourceId(uint32_t id);
   void initLine(uint32_t line);
   void initColumn(uint32_t column);
   void initFunctionDisplayName(JSAtom* maybeName);
@@ -129,7 +145,6 @@ class SavedFrame : public NativeObject {
   enum {
     // The reserved slots in the SavedFrame class.
     JSSLOT_SOURCE,
-    JSSLOT_SOURCEID,
     JSSLOT_LINE,
     JSSLOT_COLUMN,
     JSSLOT_FUNCTIONDISPLAYNAME,
@@ -156,25 +171,17 @@ struct SavedFrame::HashPolicy {
   static void rekey(Key& key, const Key& newKey);
 };
 
-}  // namespace js
-
-namespace mozilla {
-
 template <>
-struct FallibleHashMethods<js::SavedFrame::HashPolicy> {
+struct FallibleHashMethods<SavedFrame::HashPolicy> {
   template <typename Lookup>
   static bool hasHash(Lookup&& l) {
-    return js::SavedFrame::HashPolicy::hasHash(std::forward<Lookup>(l));
+    return SavedFrame::HashPolicy::hasHash(mozilla::Forward<Lookup>(l));
   }
   template <typename Lookup>
   static bool ensureHash(Lookup&& l) {
-    return js::SavedFrame::HashPolicy::ensureHash(std::forward<Lookup>(l));
+    return SavedFrame::HashPolicy::ensureHash(mozilla::Forward<Lookup>(l));
   }
 };
-
-}  // namespace mozilla
-
-namespace js {
 
 // Assert that if the given object is not null, that it must be either a
 // SavedFrame object or wrapper (Xray or CCW) around a SavedFrame object.
@@ -250,8 +257,6 @@ class ConcreteStackFrame<SavedFrame> : public BaseStackFrame {
     return AtomOrTwoByteChars(source);
   }
 
-  uint32_t sourceId() const override { return get().getSourceId(); }
-
   AtomOrTwoByteChars functionDisplayName() const override {
     auto name = get().getFunctionDisplayName();
     return AtomOrTwoByteChars(name);
@@ -261,9 +266,7 @@ class ConcreteStackFrame<SavedFrame> : public BaseStackFrame {
     JSObject* prev = &get();
     JSObject* next = prev;
     js::TraceRoot(trc, &next, "ConcreteStackFrame<SavedFrame>::ptr");
-    if (next != prev) {
-      ptr = next;
-    }
+    if (next != prev) ptr = next;
   }
 
   bool isSelfHosted(JSContext* cx) const override {

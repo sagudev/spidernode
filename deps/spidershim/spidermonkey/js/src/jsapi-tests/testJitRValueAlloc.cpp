@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -68,7 +68,6 @@ BEGIN_TEST(testJitRValueAlloc_TypedReg) {
   /* _(JSVAL_TYPE_MAGIC) */     \
   _(JSVAL_TYPE_STRING)          \
   _(JSVAL_TYPE_SYMBOL)          \
-  _(JSVAL_TYPE_BIGINT)          \
   /* _(JSVAL_TYPE_NULL) */      \
   _(JSVAL_TYPE_OBJECT)
 
@@ -96,7 +95,6 @@ BEGIN_TEST(testJitRValueAlloc_TypedStack) {
   /* _(JSVAL_TYPE_MAGIC) */     \
   _(JSVAL_TYPE_STRING)          \
   _(JSVAL_TYPE_SYMBOL)          \
-  _(JSVAL_TYPE_BIGINT)          \
   /* _(JSVAL_TYPE_NULL) */      \
   _(JSVAL_TYPE_OBJECT)
 
@@ -118,9 +116,7 @@ BEGIN_TEST(testJitRValueAlloc_UntypedRegReg) {
   RValueAllocation s;
   for (uint32_t i = 0; i < Registers::Total; i++) {
     for (uint32_t j = 0; j < Registers::Total; j++) {
-      if (i == j) {
-        continue;
-      }
+      if (i == j) continue;
       s = RValueAllocation::Untyped(Register::FromCode(i),
                                     Register::FromCode(j));
       MOZ_ASSERT(s == Read(s));

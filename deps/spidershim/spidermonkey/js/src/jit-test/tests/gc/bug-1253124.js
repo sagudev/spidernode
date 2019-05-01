@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !('oomTest' in this)
+if (!('oomTest' in this))
+    quit();
 
 for (let i = 0; i < 10; i++)
     toPrimitive = Date.prototype[Symbol.toPrimitive];

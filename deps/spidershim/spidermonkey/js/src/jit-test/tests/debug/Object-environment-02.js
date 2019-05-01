@@ -1,6 +1,6 @@
 // The .environment of a function Debugger.Object is an Environment object.
 
-var g = newGlobal({newCompartment: true})
+var g = newGlobal()
 var dbg = new Debugger;
 var gDO = dbg.addDebuggee(g);
 

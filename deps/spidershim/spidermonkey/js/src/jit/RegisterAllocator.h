@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -73,9 +73,7 @@ struct AllocationIntegrityState {
     BlockInfo() {}
     BlockInfo(const BlockInfo& o) {
       AutoEnterOOMUnsafeRegion oomUnsafe;
-      if (!phis.appendAll(o.phis)) {
-        oomUnsafe.crash("BlockInfo::BlockInfo");
-      }
+      if (!phis.appendAll(o.phis)) oomUnsafe.crash("BlockInfo::BlockInfo");
     }
   };
   Vector<BlockInfo, 0, SystemAllocPolicy> blocks;
@@ -201,9 +199,7 @@ class InstructionDataMap {
   InstructionDataMap() : insData_() {}
 
   MOZ_MUST_USE bool init(MIRGenerator* gen, uint32_t numInstructions) {
-    if (!insData_.init(gen->alloc(), numInstructions)) {
-      return false;
-    }
+    if (!insData_.init(gen->alloc(), numInstructions)) return false;
     memset(&insData_[0], 0, sizeof(LNode*) * numInstructions);
     return true;
   }
@@ -215,15 +211,6 @@ class InstructionDataMap {
   LNode*& operator[](uint32_t ins) { return insData_[ins]; }
   LNode* const& operator[](uint32_t ins) const { return insData_[ins]; }
 };
-
-inline void TakeJitRegisters(bool isProfiling, AllocatableRegisterSet* set) {
-#if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64) || \
-    defined(JS_CODEGEN_ARM64)
-  if (isProfiling) {
-    set->take(AnyRegister(FramePointer));
-  }
-#endif
-}
 
 // Common superclass for register allocators.
 class RegisterAllocator {
@@ -249,7 +236,11 @@ class RegisterAllocator {
     if (mir->compilingWasm()) {
       takeWasmRegisters(allRegisters_);
     } else {
-      TakeJitRegisters(mir->instrumentedProfiling(), &allRegisters_);
+#if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64) || \
+    defined(JS_CODEGEN_ARM64)
+      if (mir->instrumentedProfiling())
+        allRegisters_.take(AnyRegister(FramePointer));
+#endif
     }
   }
 
@@ -302,9 +293,7 @@ class RegisterAllocator {
     // safepoint information for the instruction may be incorrect.
     while (true) {
       LNode* next = insData[ins->id() + 1];
-      if (!next->isOsiPoint()) {
-        break;
-      }
+      if (!next->isOsiPoint()) break;
       ins = next;
     }
 

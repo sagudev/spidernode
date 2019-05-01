@@ -1,4 +1,3 @@
-// GENERATED, DO NOT EDIT
 // file: testAtomics.js
 // Copyright (C) 2017 Mozilla Corporation. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
@@ -17,21 +16,20 @@ description: |
  */
 function testWithAtomicsOutOfBoundsIndices(f) {
   var bad_indices = [
-    function(view) { return -1; },
-    function(view) { return view.length; },
-    function(view) { return view.length * 2; },
-    function(view) { return Number.POSITIVE_INFINITY; },
-    function(view) { return Number.NEGATIVE_INFINITY; },
-    function(view) { return { valueOf: function() { return 125; } }; },
-    function(view) { return { toString: function() { return '125'; }, valueOf: false }; }, // non-callable valueOf triggers invocation of toString
+    (view) => -1,
+    (view) => view.length,
+    (view) => view.length*2,
+    (view) => Number.POSITIVE_INFINITY,
+    (view) => Number.NEGATIVE_INFINITY,
+    (view) => ({ valueOf: () => 125 }),
+    (view) => ({ toString: () => '125', valueOf: false }) // non-callable valueOf triggers invocation of toString
   ];
 
-  for (var i = 0; i < bad_indices.length; ++i) {
-    var IdxGen = bad_indices[i];
+  for (let IdxGen of bad_indices) {
     try {
       f(IdxGen);
     } catch (e) {
-      e.message += ' (Testing with index gen ' + IdxGen + '.)';
+      e.message += " (Testing with index gen " + IdxGen + ".)";
       throw e;
     }
   }
@@ -48,25 +46,24 @@ function testWithAtomicsOutOfBoundsIndices(f) {
 function testWithAtomicsInBoundsIndices(f) {
   // Most of these are eventually coerced to +0 by ToIndex.
   var good_indices = [
-    function(view) { return 0/-1; },
-    function(view) { return '-0'; },
-    function(view) { return undefined; },
-    function(view) { return NaN; },
-    function(view) { return 0.5; },
-    function(view) { return '0.5'; },
-    function(view) { return -0.9; },
-    function(view) { return { password: 'qumquat' }; },
-    function(view) { return view.length - 1; },
-    function(view) { return { valueOf: function() { return 0; } }; },
-    function(view) { return { toString: function() { return '0'; }, valueOf: false }; }, // non-callable valueOf triggers invocation of toString
+    (view) => 0/-1,
+    (view) => '-0',
+    (view) => undefined,
+    (view) => NaN,
+    (view) => 0.5,
+    (view) => '0.5',
+    (view) => -0.9,
+    (view) => ({ password: "qumquat" }),
+    (view) => view.length - 1,
+    (view) => ({ valueOf: () => 0 }),
+    (view) => ({ toString: () => '0', valueOf: false }) // non-callable valueOf triggers invocation of toString
   ];
 
-  for (var i = 0; i < good_indices.length; ++i) {
-    var IdxGen = good_indices[i];
+  for (let IdxGen of good_indices) {
     try {
       f(IdxGen);
     } catch (e) {
-      e.message += ' (Testing with index gen ' + IdxGen + '.)';
+      e.message += " (Testing with index gen " + IdxGen + ".)";
       throw e;
     }
   }
@@ -89,17 +86,21 @@ function testWithAtomicsNonViewValues(f) {
     10,
     3.14,
     new Number(4),
-    'Hi there',
+    "Hi there",
     new Date,
     /a*utomaton/g,
-    { password: 'qumquat' },
+    { password: "qumquat" },
     new DataView(new ArrayBuffer(10)),
     new ArrayBuffer(128),
     new SharedArrayBuffer(128),
-    new Error('Ouch'),
+    new Error("Ouch"),
     [1,1,2,3,5,8],
-    function(x) { return -x; },
-    Symbol('halleluja'),
+    ((x) => -x),
+    new Map(),
+    new Set(),
+    new WeakMap(),
+    new WeakSet(),
+    Symbol("halleluja"),
     // TODO: Proxy?
     Object,
     Int32Array,
@@ -108,17 +109,15 @@ function testWithAtomicsNonViewValues(f) {
     Atomics
   ];
 
-  for (var i = 0; i < values.length; ++i) {
-    var nonView = values[i];
+  for (let nonView of values) {
     try {
       f(nonView);
     } catch (e) {
-      e.message += ' (Testing with non-view value ' + nonView + '.)';
+      e.message += " (Testing with non-view value " + nonView + ".)";
       throw e;
     }
   }
 }
-
 
 // file: testTypedArray.js
 // Copyright (C) 2015 André Bargull. All rights reserved.
@@ -142,9 +141,6 @@ var typedArrayConstructors = [
   Uint8Array,
   Uint8ClampedArray
 ];
-
-var floatArrayConstructors = typedArrayConstructors.slice(0, 2);
-var intArrayConstructors = typedArrayConstructors.slice(2, 7);
 
 /**
  * The %TypedArray% intrinsic constructor function.

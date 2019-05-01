@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,9 +17,6 @@
 #include "builtin/intl/ScopedICUObject.h"
 #include "builtin/intl/SharedIntlData.h"
 #include "gc/FreeOp.h"
-#include "js/CharacterEncoding.h"
-#include "js/PropertySpec.h"
-#include "js/StableStringChars.h"
 #include "js/TypeDecls.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
@@ -29,8 +26,6 @@
 #include "vm/JSObject-inl.h"
 
 using namespace js;
-
-using JS::AutoStableStringChars;
 
 using js::intl::GetAvailableLocales;
 using js::intl::IcuLocale;
@@ -81,22 +76,16 @@ static bool Collator(JSContext* cx, const CallArgs& args) {
 
   // Steps 2-5 (Inlined 9.1.14, OrdinaryCreateFromConstructor).
   RootedObject proto(cx);
-  if (!GetPrototypeFromBuiltinConstructor(cx, args, JSProto_Null, &proto)) {
-    return false;
-  }
+  if (!GetPrototypeFromBuiltinConstructor(cx, args, &proto)) return false;
 
   if (!proto) {
     proto = GlobalObject::getOrCreateCollatorPrototype(cx, cx->global());
-    if (!proto) {
-      return false;
-    }
+    if (!proto) return false;
   }
 
   Rooted<CollatorObject*> collator(
       cx, NewObjectWithGivenProto<CollatorObject>(cx, proto));
-  if (!collator) {
-    return false;
-  }
+  if (!collator) return false;
 
   collator->setReservedSlot(CollatorObject::INTERNALS_SLOT, NullValue());
   collator->setReservedSlot(CollatorObject::UCOLLATOR_SLOT,
@@ -107,9 +96,8 @@ static bool Collator(JSContext* cx, const CallArgs& args) {
 
   // Step 6.
   if (!intl::InitializeObject(cx, collator, cx->names().InitializeCollator,
-                              locales, options)) {
+                              locales, options))
     return false;
-  }
 
   args.rval().setObject(*collator);
   return true;
@@ -129,53 +117,39 @@ bool js::intl_Collator(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 void js::CollatorObject::finalize(FreeOp* fop, JSObject* obj) {
-  MOZ_ASSERT(fop->onMainThread());
+  MOZ_ASSERT(fop->onActiveCooperatingThread());
 
   const Value& slot =
       obj->as<CollatorObject>().getReservedSlot(CollatorObject::UCOLLATOR_SLOT);
-  if (UCollator* coll = static_cast<UCollator*>(slot.toPrivate())) {
+  if (UCollator* coll = static_cast<UCollator*>(slot.toPrivate()))
     ucol_close(coll);
-  }
 }
 
 JSObject* js::CreateCollatorPrototype(JSContext* cx, HandleObject Intl,
                                       Handle<GlobalObject*> global) {
   RootedFunction ctor(cx, GlobalObject::createConstructor(
                               cx, &Collator, cx->names().Collator, 0));
-  if (!ctor) {
-    return nullptr;
-  }
+  if (!ctor) return nullptr;
 
   RootedObject proto(
       cx, GlobalObject::createBlankPrototype<PlainObject>(cx, global));
-  if (!proto) {
-    return nullptr;
-  }
+  if (!proto) return nullptr;
 
-  if (!LinkConstructorAndPrototype(cx, ctor, proto)) {
-    return nullptr;
-  }
+  if (!LinkConstructorAndPrototype(cx, ctor, proto)) return nullptr;
 
   // 10.2.2
-  if (!JS_DefineFunctions(cx, ctor, collator_static_methods)) {
-    return nullptr;
-  }
+  if (!JS_DefineFunctions(cx, ctor, collator_static_methods)) return nullptr;
 
   // 10.3.5
-  if (!JS_DefineFunctions(cx, proto, collator_methods)) {
-    return nullptr;
-  }
+  if (!JS_DefineFunctions(cx, proto, collator_methods)) return nullptr;
 
   // 10.3.2 and 10.3.3
-  if (!JS_DefineProperties(cx, proto, collator_properties)) {
-    return nullptr;
-  }
+  if (!JS_DefineProperties(cx, proto, collator_properties)) return nullptr;
 
   // 8.1
   RootedValue ctorValue(cx, ObjectValue(*ctor));
-  if (!DefineDataProperty(cx, Intl, cx->names().Collator, ctorValue, 0)) {
+  if (!DefineDataProperty(cx, Intl, cx->names().Collator, ctorValue, 0))
     return nullptr;
-  }
 
   return proto;
 }
@@ -186,10 +160,8 @@ bool js::intl_Collator_availableLocales(JSContext* cx, unsigned argc,
   MOZ_ASSERT(args.length() == 0);
 
   RootedValue result(cx);
-  if (!GetAvailableLocales(cx, ucol_countAvailable, ucol_getAvailable,
-                           &result)) {
+  if (!GetAvailableLocales(cx, ucol_countAvailable, ucol_getAvailable, &result))
     return false;
-  }
   args.rval().set(result);
   return true;
 }
@@ -199,13 +171,11 @@ bool js::intl_availableCollations(JSContext* cx, unsigned argc, Value* vp) {
   MOZ_ASSERT(args.length() == 1);
   MOZ_ASSERT(args[0].isString());
 
-  UniqueChars locale = intl::EncodeLocale(cx, args[0].toString());
-  if (!locale) {
-    return false;
-  }
+  JSAutoByteString locale(cx, args[0].toString());
+  if (!locale) return false;
   UErrorCode status = U_ZERO_ERROR;
   UEnumeration* values =
-      ucol_getKeywordValuesForLocale("co", locale.get(), false, &status);
+      ucol_getKeywordValuesForLocale("co", locale.ptr(), false, &status);
   if (U_FAILURE(status)) {
     ReportInternalError(cx);
     return false;
@@ -219,17 +189,14 @@ bool js::intl_availableCollations(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   RootedObject collations(cx, NewDenseEmptyArray(cx));
-  if (!collations) {
-    return false;
-  }
+  if (!collations) return false;
 
   uint32_t index = 0;
 
   // The first element of the collations array must be |null| per
   // ES2017 Intl, 10.2.3 Internal Slots.
-  if (!DefineDataElement(cx, collations, index++, NullHandleValue)) {
+  if (!DefineDataElement(cx, collations, index++, NullHandleValue))
     return false;
-  }
 
   RootedValue element(cx);
   for (uint32_t i = 0; i < count; i++) {
@@ -244,25 +211,15 @@ bool js::intl_availableCollations(JSContext* cx, unsigned argc, Value* vp) {
     // any [[sortLocaleData]][locale].co and [[searchLocaleData]][locale].co
     // array."
     if (StringsAreEqual(collation, "standard") ||
-        StringsAreEqual(collation, "search")) {
+        StringsAreEqual(collation, "search"))
       continue;
-    }
 
     // ICU returns old-style keyword values; map them to BCP 47 equivalents.
-    collation = uloc_toUnicodeLocaleType("co", collation);
-    if (!collation) {
-      ReportInternalError(cx);
-      return false;
-    }
-
-    JSString* jscollation = NewStringCopyZ<CanGC>(cx, collation);
-    if (!jscollation) {
-      return false;
-    }
+    JSString* jscollation =
+        JS_NewStringCopyZ(cx, uloc_toUnicodeLocaleType("co", collation));
+    if (!jscollation) return false;
     element = StringValue(jscollation);
-    if (!DefineDataElement(cx, collations, index++, element)) {
-      return false;
-    }
+    if (!DefineDataElement(cx, collations, index++, element)) return false;
   }
 
   args.rval().setObject(*collations);
@@ -278,17 +235,12 @@ static UCollator* NewUCollator(JSContext* cx,
   RootedValue value(cx);
 
   RootedObject internals(cx, intl::GetInternalsObject(cx, collator));
-  if (!internals) {
-    return nullptr;
-  }
+  if (!internals) return nullptr;
 
-  if (!GetProperty(cx, internals, internals, cx->names().locale, &value)) {
+  if (!GetProperty(cx, internals, internals, cx->names().locale, &value))
     return nullptr;
-  }
-  UniqueChars locale = intl::EncodeLocale(cx, value.toString());
-  if (!locale) {
-    return nullptr;
-  }
+  JSAutoByteString locale(cx, value.toString());
+  if (!locale) return nullptr;
 
   // UCollator options with default values.
   UColAttributeValue uStrength = UCOL_DEFAULT;
@@ -299,27 +251,23 @@ static UCollator* NewUCollator(JSContext* cx,
   UColAttributeValue uNormalization = UCOL_ON;
   UColAttributeValue uCaseFirst = UCOL_DEFAULT;
 
-  if (!GetProperty(cx, internals, internals, cx->names().usage, &value)) {
+  if (!GetProperty(cx, internals, internals, cx->names().usage, &value))
     return nullptr;
-  }
 
   {
     JSLinearString* usage = value.toString()->ensureLinear(cx);
-    if (!usage) {
-      return nullptr;
-    }
+    if (!usage) return nullptr;
     if (StringEqualsAscii(usage, "search")) {
       // ICU expects search as a Unicode locale extension on locale.
       // Unicode locale extensions must occur before private use extensions.
-      const char* oldLocale = locale.get();
+      const char* oldLocale = locale.ptr();
       const char* p;
       size_t index;
       size_t localeLen = strlen(oldLocale);
-      if ((p = strstr(oldLocale, "-x-"))) {
+      if ((p = strstr(oldLocale, "-x-")))
         index = p - oldLocale;
-      } else {
+      else
         index = localeLen;
-      }
 
       const char* insert;
       if ((p = strstr(oldLocale, "-u-")) &&
@@ -331,14 +279,13 @@ static UCollator* NewUCollator(JSContext* cx,
       }
       size_t insertLen = strlen(insert);
       char* newLocale = cx->pod_malloc<char>(localeLen + insertLen + 1);
-      if (!newLocale) {
-        return nullptr;
-      }
+      if (!newLocale) return nullptr;
       memcpy(newLocale, oldLocale, index);
       memcpy(newLocale + index, insert, insertLen);
       memcpy(newLocale + index + insertLen, oldLocale + index,
              localeLen - index + 1);  // '\0'
-      locale = JS::UniqueChars(newLocale);
+      locale.clear();
+      locale.initBytes(JS::UniqueChars(newLocale));
     } else {
       MOZ_ASSERT(StringEqualsAscii(usage, "sort"));
     }
@@ -348,15 +295,12 @@ static UCollator* NewUCollator(JSContext* cx,
   // via the Unicode locale extension and is therefore already set on
   // locale.
 
-  if (!GetProperty(cx, internals, internals, cx->names().sensitivity, &value)) {
+  if (!GetProperty(cx, internals, internals, cx->names().sensitivity, &value))
     return nullptr;
-  }
 
   {
     JSLinearString* sensitivity = value.toString()->ensureLinear(cx);
-    if (!sensitivity) {
-      return nullptr;
-    }
+    if (!sensitivity) return nullptr;
     if (StringEqualsAscii(sensitivity, "base")) {
       uStrength = UCOL_PRIMARY;
     } else if (StringEqualsAscii(sensitivity, "accent")) {
@@ -371,33 +315,24 @@ static UCollator* NewUCollator(JSContext* cx,
   }
 
   if (!GetProperty(cx, internals, internals, cx->names().ignorePunctuation,
-                   &value)) {
+                   &value))
     return nullptr;
-  }
   // According to the ICU team, UCOL_SHIFTED causes punctuation to be
   // ignored. Looking at Unicode Technical Report 35, Unicode Locale Data
   // Markup Language, "shifted" causes whitespace and punctuation to be
   // ignored - that's a bit more than asked for, but there's no way to get
   // less.
-  if (value.toBoolean()) {
-    uAlternate = UCOL_SHIFTED;
-  }
+  if (value.toBoolean()) uAlternate = UCOL_SHIFTED;
 
-  if (!GetProperty(cx, internals, internals, cx->names().numeric, &value)) {
+  if (!GetProperty(cx, internals, internals, cx->names().numeric, &value))
     return nullptr;
-  }
-  if (!value.isUndefined() && value.toBoolean()) {
-    uNumeric = UCOL_ON;
-  }
+  if (!value.isUndefined() && value.toBoolean()) uNumeric = UCOL_ON;
 
-  if (!GetProperty(cx, internals, internals, cx->names().caseFirst, &value)) {
+  if (!GetProperty(cx, internals, internals, cx->names().caseFirst, &value))
     return nullptr;
-  }
   if (!value.isUndefined()) {
     JSLinearString* caseFirst = value.toString()->ensureLinear(cx);
-    if (!caseFirst) {
-      return nullptr;
-    }
+    if (!caseFirst) return nullptr;
     if (StringEqualsAscii(caseFirst, "upper")) {
       uCaseFirst = UCOL_UPPER_FIRST;
     } else if (StringEqualsAscii(caseFirst, "lower")) {
@@ -409,7 +344,7 @@ static UCollator* NewUCollator(JSContext* cx,
   }
 
   UErrorCode status = U_ZERO_ERROR;
-  UCollator* coll = ucol_open(IcuLocale(locale.get()), &status);
+  UCollator* coll = ucol_open(IcuLocale(locale.ptr()), &status);
   if (U_FAILURE(status)) {
     ReportInternalError(cx);
     return nullptr;
@@ -442,14 +377,10 @@ static bool intl_CompareStrings(JSContext* cx, UCollator* coll,
   }
 
   AutoStableStringChars stableChars1(cx);
-  if (!stableChars1.initTwoByte(cx, str1)) {
-    return false;
-  }
+  if (!stableChars1.initTwoByte(cx, str1)) return false;
 
   AutoStableStringChars stableChars2(cx);
-  if (!stableChars2.initTwoByte(cx, str2)) {
-    return false;
-  }
+  if (!stableChars2.initTwoByte(cx, str2)) return false;
 
   mozilla::Range<const char16_t> chars1 = stableChars1.twoByteRange();
   mozilla::Range<const char16_t> chars2 = stableChars2.twoByteRange();
@@ -486,14 +417,13 @@ bool js::intl_CompareStrings(JSContext* cx, unsigned argc, Value* vp) {
                                    &args[0].toObject().as<CollatorObject>());
 
   // Obtain a cached UCollator object.
+  // XXX Does this handle Collator instances from other globals correctly?
   void* priv =
       collator->getReservedSlot(CollatorObject::UCOLLATOR_SLOT).toPrivate();
   UCollator* coll = static_cast<UCollator*>(priv);
   if (!coll) {
     coll = NewUCollator(cx, collator);
-    if (!coll) {
-      return false;
-    }
+    if (!coll) return false;
     collator->setReservedSlot(CollatorObject::UCOLLATOR_SLOT,
                               PrivateValue(coll));
   }
@@ -513,9 +443,7 @@ bool js::intl_isUpperCaseFirst(JSContext* cx, unsigned argc, Value* vp) {
 
   RootedString locale(cx, args[0].toString());
   bool isUpperFirst;
-  if (!sharedIntlData.isUpperCaseFirst(cx, locale, &isUpperFirst)) {
-    return false;
-  }
+  if (!sharedIntlData.isUpperCaseFirst(cx, locale, &isUpperFirst)) return false;
 
   args.rval().setBoolean(isUpperFirst);
   return true;

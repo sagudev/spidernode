@@ -46,6 +46,18 @@ br{
             "AON",
             "kwanza nevez Angola (1990–2000)",
         }
+        AOR{
+            "AOR",
+            "AOR",
+        }
+        ARA{
+            "ARA",
+            "ARA",
+        }
+        ARL{
+            "ARL",
+            "ARL",
+        }
         ARM{
             "ARM",
             "peso Arcʼhantina (1881–1970)",
@@ -110,6 +122,10 @@ br{
             "BEL",
             "BEL",
         }
+        BGL{
+            "BGL",
+            "BGL",
+        }
         BGM{
             "BGM",
             "lev sokialour Bulgaria",
@@ -150,9 +166,37 @@ br{
             "BOP",
             "peso Bolivia",
         }
+        BOV{
+            "BOV",
+            "BOV",
+        }
+        BRB{
+            "BRB",
+            "BRB",
+        }
+        BRC{
+            "BRC",
+            "BRC",
+        }
+        BRE{
+            "BRE",
+            "BRE",
+        }
         BRL{
             "BRL",
             "real Brazil",
+        }
+        BRN{
+            "BRN",
+            "BRN",
+        }
+        BRR{
+            "BRR",
+            "BRR",
+        }
+        BRZ{
+            "BRZ",
+            "BRZ",
         }
         BSD{
             "BSD",
@@ -230,6 +274,10 @@ br{
             "COP",
             "peso Kolombia",
         }
+        COU{
+            "COU",
+            "COU",
+        }
         CRC{
             "CRC",
             "colón Costa Rica",
@@ -237,6 +285,10 @@ br{
         CSD{
             "CSD",
             "dinar Serbia (2002–2006)",
+        }
+        CSK{
+            "CSK",
+            "CSK",
         }
         CUC{
             "CUC",
@@ -282,6 +334,14 @@ br{
             "DZD",
             "dinar Aljeria",
         }
+        ECS{
+            "ECS",
+            "ECS",
+        }
+        ECV{
+            "ECV",
+            "ECV",
+        }
         EEK{
             "EEK",
             "kurunenn Estonia",
@@ -293,6 +353,10 @@ br{
         ERN{
             "ERN",
             "nakfa Eritrea",
+        }
+        ESA{
+            "ESA",
+            "ESA",
         }
         ESB{
             "ESB",
@@ -330,9 +394,17 @@ br{
             "£ RU",
             "lur Breizh-Veur",
         }
+        GEK{
+            "GEK",
+            "GEK",
+        }
         GEL{
             "GEL",
             "lari Jorjia",
+        }
+        GHC{
+            "GHC",
+            "GHC",
         }
         GHS{
             "GHS",
@@ -365,6 +437,10 @@ br{
         GTQ{
             "GTQ",
             "quetzal Guatemala",
+        }
+        GWE{
+            "GWE",
+            "GWE",
         }
         GWP{
             "GWP",
@@ -534,6 +610,10 @@ br{
             "LUF",
             "lur Luksembourg",
         }
+        LUL{
+            "LUL",
+            "LUL",
+        }
         LVL{
             "LVL",
             "lats Latvia",
@@ -557,6 +637,10 @@ br{
         MCF{
             "MCF",
             "lur Monaco",
+        }
+        MDC{
+            "MDC",
+            "MDC",
         }
         MDL{
             "MDL",
@@ -596,10 +680,6 @@ br{
         }
         MRO{
             "MRO",
-            "ouguiya Maouritania (1973–2017)",
-        }
-        MRU{
-            "MRU",
             "ouguiya Maouritania",
         }
         MTL{
@@ -633,6 +713,10 @@ br{
         MXP{
             "MXP",
             "peso arcʼhant Mecʼhiko (1861–1992)",
+        }
+        MXV{
+            "MXV",
+            "MXV",
         }
         MYR{
             "MYR",
@@ -689,6 +773,10 @@ br{
         PAB{
             "PAB",
             "balboa Panamá",
+        }
+        PEI{
+            "PEI",
+            "PEI",
         }
         PEN{
             "PEN",
@@ -824,10 +912,6 @@ br{
         }
         STD{
             "STD",
-            "dobra São Tomé ha Príncipe (1977–2017)",
-        }
-        STN{
-            "STN",
             "dobra São Tomé ha Príncipe",
         }
         SUR{
@@ -902,6 +986,10 @@ br{
             "UAH",
             "hryvnia Ukraina",
         }
+        UAK{
+            "UAK",
+            "UAK",
+        }
         UGS{
             "UGS",
             "shilling Ouganda (1966–1987)",
@@ -913,6 +1001,18 @@ br{
         USD{
             "$ SU",
             "dollar SU",
+        }
+        USN{
+            "USN",
+            "USN",
+        }
+        USS{
+            "USS",
+            "USS",
+        }
+        UYI{
+            "UYI",
+            "UYI",
         }
         UYP{
             "UYP",
@@ -932,10 +1032,6 @@ br{
         }
         VEF{
             "VEF",
-            "bolivar Venezuela (2008–2018)",
-        }
-        VES{
-            "VES",
             "bolivar Venezuela",
         }
         VND{
@@ -1018,6 +1114,14 @@ br{
             "XPT",
             "platin",
         }
+        XRE{
+            "XRE",
+            "XRE",
+        }
+        XSU{
+            "XSU",
+            "XSU",
+        }
         XTS{
             "XTS",
             "kod moneiz amprouiñ",
@@ -1034,6 +1138,10 @@ br{
             "YER",
             "rial Yemen",
         }
+        YUD{
+            "YUD",
+            "YUD",
+        }
         YUM{
             "YUM",
             "dinar nevez Yougoslavia (1994–2002)",
@@ -1046,6 +1154,10 @@ br{
             "YUR",
             "dinar adreizhet Yougoslavia (1992–1993)",
         }
+        ZAL{
+            "ZAL",
+            "ZAL",
+        }
         ZAR{
             "ZAR",
             "rand Suafrika",
@@ -1057,6 +1169,14 @@ br{
         ZMW{
             "ZMW",
             "kwacha Zambia",
+        }
+        ZRN{
+            "ZRN",
+            "ZRN",
+        }
+        ZRZ{
+            "ZRZ",
+            "ZRZ",
         }
         ZWD{
             "ZWD",
@@ -1072,11 +1192,89 @@ br{
         }
     }
     Currencies%narrow{
+        AOA{"Kz"}
+        AUD{"$"}
+        BAM{"KM"}
+        BBD{"$"}
+        BDT{"৳"}
+        BMD{"$"}
+        BND{"$"}
+        BOB{"Bs"}
+        BSD{"$"}
+        BWP{"P"}
         BYN{"р."}
+        BZD{"$"}
+        CAD{"$"}
+        CNY{"¥"}
+        CRC{"₡"}
+        CZK{"Kč"}
+        DKK{"kr"}
         EGP{"£ E"}
+        ESP{"₧"}
+        EUR{"€"}
+        FJD{"$"}
+        FKP{"£"}
+        GBP{"£"}
+        GIP{"£"}
+        GNF{"FG"}
+        GTQ{"Q"}
+        GYD{"$"}
+        HKD{"$"}
+        HNL{"L"}
+        HRK{"kn"}
+        HUF{"Ft"}
+        IDR{"Rp"}
+        ILS{"₪"}
+        INR{"₹"}
+        ISK{"kr"}
+        JMD{"$"}
+        JPY{"¥"}
+        KHR{"៛"}
+        KPW{"₩"}
+        KRW{"₩"}
+        KYD{"$"}
+        KZT{"₸"}
+        LAK{"₭"}
         LBP{"£L"}
-        STN{"Db"}
+        LKR{"Rs"}
+        LRD{"$"}
+        LTL{"Lt"}
+        LVL{"Ls"}
+        MGA{"Ar"}
+        MMK{"K"}
+        MNT{"₮"}
+        MUR{"Rs"}
+        MYR{"RM"}
+        NAD{"$"}
+        NGN{"₦"}
+        NOK{"kr"}
+        NPR{"Rs"}
+        NZD{"$"}
+        PHP{"₱"}
+        PKR{"Rs"}
+        PLN{"zł"}
+        PYG{"₲"}
+        RUB{"₽"}
+        RUR{"р."}
+        SBD{"$"}
+        SEK{"kr"}
+        SGD{"$"}
+        SHP{"£"}
+        SRD{"$"}
+        SSP{"£"}
+        STD{"Db"}
+        SYP{"£"}
+        THB{"฿"}
         TOP{"$ T"}
+        TRY{"₺"}
+        TTD{"$"}
+        TWD{"$"}
+        UAH{"₴"}
+        USD{"$"}
+        VEF{"Bs"}
+        VND{"₫"}
+        XCD{"$"}
+        ZAR{"R"}
     }
     CurrencyPlurals{
         ADP{
@@ -2116,13 +2314,6 @@ br{
             two{"bataca Macau"}
         }
         MRO{
-            few{"ouguiya Maouritania (1973–2017)"}
-            many{"a ouguiyaoù Maouritania (1973–2017)"}
-            one{"ouguiya Maouritania (1973–2017)"}
-            other{"ouguiya Maouritania (1973–2017)"}
-            two{"ouguiya Maouritania (1973–2017)"}
-        }
-        MRU{
             few{"ouguiya Maouritania"}
             many{"a ouguiyaoù Maouritania"}
             one{"ouguiya Maouritania"}
@@ -2515,13 +2706,6 @@ br{
             two{"lur Susoudan"}
         }
         STD{
-            few{"dobra São Tomé ha Príncipe (1977–2017)"}
-            many{"a zobraoù São Tomé ha Príncipe (1977–2017)"}
-            one{"dobra São Tomé ha Príncipe (1977–2017)"}
-            other{"dobra São Tomé ha Príncipe (1977–2017)"}
-            two{"zobra São Tomé ha Príncipe (1977–2017)"}
-        }
-        STN{
             few{"dobra São Tomé ha Príncipe"}
             many{"a zobraoù São Tomé ha Príncipe"}
             one{"dobra São Tomé ha Príncipe"}
@@ -2704,13 +2888,6 @@ br{
             two{"volivar Venezuela (1871–2008)"}
         }
         VEF{
-            few{"bolivar Venezuela (2008–2018)"}
-            many{"a volivaroù Venezuela (2008–2018)"}
-            one{"bolivar Venezuela (2008–2018)"}
-            other{"bolivar Venezuela (2008–2018)"}
-            two{"volivar Venezuela (2008–2018)"}
-        }
-        VES{
             few{"bolivar Venezuela"}
             many{"a volivaroù Venezuela"}
             one{"bolivar Venezuela"}
@@ -2928,5 +3105,5 @@ br{
         other{"{0} {1}"}
         two{"{0} {1}"}
     }
-    Version{"2.1.48.86"}
+    Version{"2.1.37.1"}
 }

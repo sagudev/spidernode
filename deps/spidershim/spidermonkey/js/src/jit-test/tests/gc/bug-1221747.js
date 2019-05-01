@@ -1,4 +1,6 @@
-// |jit-test| --dump-bytecode; skip-if: !('oomTest' in this)
+// |jit-test| --dump-bytecode
+if (!('oomTest' in this))
+    quit();
 
 function f() {
     eval("(function() {})()");

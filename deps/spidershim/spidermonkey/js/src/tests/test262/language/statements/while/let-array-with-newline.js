@@ -16,7 +16,7 @@ negative:
 flags: [noStrict]
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 while (false) let
 [a] = 0;

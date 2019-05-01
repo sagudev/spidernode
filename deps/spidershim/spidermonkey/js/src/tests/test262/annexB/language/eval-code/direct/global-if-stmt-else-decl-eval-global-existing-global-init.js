@@ -2,7 +2,7 @@
 // - src/annex-b-fns/eval-global-existing-global-init.case
 // - src/annex-b-fns/eval-global/direct-if-stmt-else-decl.template
 /*---
-description: Variable binding is left in place by legacy function hoisting (IfStatement with a declaration in the second statement position in eval code)
+description: Variable binding is set to `undefined` (IfStatement with a declaration in the second statement position in eval code)
 esid: sec-functiondeclarations-in-ifstatement-statement-clauses
 es6id: B.3.4
 flags: [generated, noStrict]
@@ -21,7 +21,17 @@ info: |
 
     [...]
     i. If varEnvRec is a global Environment Record, then
-       i. Perform ? varEnvRec.CreateGlobalVarBinding(F, true).
+       i. Perform ? varEnvRec.CreateGlobalFunctionBinding(F, undefined, true).
+    [...]
+
+    8.1.1.4.18 CreateGlobalFunctionBinding
+
+    [...]
+    5. If existingProp is undefined or existingProp.[[Configurable]] is true,
+       then
+       [...]
+    6. Else,
+       a. Let desc be the PropertyDescriptor{[[Value]]: V }.
     [...]
 
 ---*/
@@ -34,20 +44,13 @@ Object.defineProperty(fnGlobalObject(), 'f', {
 
 eval(
   'var global = fnGlobalObject();\
-  assert.sameValue(f, "x", "binding is not reinitialized");\
+  assert.sameValue(f, undefined, "binding is initialized to `undefined`");\
   \
   verifyProperty(global, "f", {\
     enumerable: true,\
     writable: true,\
     configurable: false\
-  }, { restore: true });if (false) ; else function f() {  }'
+  });if (false) ; else function f() {  }'
 );
-
-assert.sameValue(typeof f, "function");
-verifyProperty(global, "f", {
-  enumerable: true,
-  writable: true,
-  configurable: false
-});
 
 reportCompare(0, 0);

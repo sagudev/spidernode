@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -97,6 +97,17 @@
   _(ObjectIs)                                      \
   _(ObjectToString)                                \
                                                    \
+  _(SimdInt32x4)                                   \
+  _(SimdUint32x4)                                  \
+  _(SimdInt16x8)                                   \
+  _(SimdUint16x8)                                  \
+  _(SimdInt8x16)                                   \
+  _(SimdUint8x16)                                  \
+  _(SimdFloat32x4)                                 \
+  _(SimdBool32x4)                                  \
+  _(SimdBool16x8)                                  \
+  _(SimdBool8x16)                                  \
+                                                   \
   _(TestBailout)                                   \
   _(TestAssertFloat32)                             \
   _(TestAssertRecoveredOnBailout)                  \
@@ -112,7 +123,7 @@
   _(IntrinsicIsConstructor)                        \
   _(IntrinsicToObject)                             \
   _(IntrinsicIsObject)                             \
-  _(IntrinsicIsCrossRealmArrayConstructor)         \
+  _(IntrinsicIsWrappedArrayConstructor)            \
   _(IntrinsicToInteger)                            \
   _(IntrinsicToString)                             \
   _(IntrinsicIsConstructing)                       \
@@ -125,7 +136,6 @@
   _(IntrinsicGuardToMapIterator)                   \
   _(IntrinsicGuardToSetIterator)                   \
   _(IntrinsicGuardToStringIterator)                \
-  _(IntrinsicGuardToRegExpStringIterator)          \
                                                    \
   _(IntrinsicGuardToMapObject)                     \
   _(IntrinsicGetNextMapEntryForIterator)           \
@@ -135,23 +145,15 @@
                                                    \
   _(IntrinsicNewArrayIterator)                     \
   _(IntrinsicNewStringIterator)                    \
-  _(IntrinsicNewRegExpStringIterator)              \
-  _(IntrinsicArrayIteratorPrototypeOptimizable)    \
                                                    \
-  _(IntrinsicGuardToArrayBuffer)                   \
   _(IntrinsicArrayBufferByteLength)                \
   _(IntrinsicPossiblyWrappedArrayBufferByteLength) \
                                                    \
-  _(IntrinsicGuardToSharedArrayBuffer)             \
-                                                   \
   _(TypedArrayConstructor)                         \
-  _(IntrinsicIsTypedArrayConstructor)              \
   _(IntrinsicIsTypedArray)                         \
   _(IntrinsicIsPossiblyWrappedTypedArray)          \
   _(IntrinsicTypedArrayLength)                     \
   _(IntrinsicPossiblyWrappedTypedArrayLength)      \
-  _(IntrinsicTypedArrayByteOffset)                 \
-  _(IntrinsicTypedArrayElementShift)               \
   _(IntrinsicSetDisjointTypedElements)             \
                                                    \
   _(IntrinsicObjectIsTypedObject)                  \

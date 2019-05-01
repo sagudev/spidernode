@@ -2,7 +2,7 @@
 // Debugger.Object.prototype.proxyTarget exposes the [[Proxytarget]] of a proxy.
 // Debugger.Object.prototype.proxyHandler exposes the [[ProxyHandler]] of a proxy.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger;
 var gDO = dbg.addDebuggee(g);
 

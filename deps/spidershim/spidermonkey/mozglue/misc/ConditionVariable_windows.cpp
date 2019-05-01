@@ -19,13 +19,13 @@
 // are not redefined as compiler intrinsics. Fix that for the interlocked
 // functions that are used in this file.
 #if defined(_MSC_VER) && !defined(InterlockedExchangeAdd)
-#  define InterlockedExchangeAdd(addend, value) \
-    _InterlockedExchangeAdd((volatile long*)(addend), (long)(value))
+#define InterlockedExchangeAdd(addend, value) \
+  _InterlockedExchangeAdd((volatile long*)(addend), (long)(value))
 #endif
 
 #if defined(_MSC_VER) && !defined(InterlockedIncrement)
-#  define InterlockedIncrement(addend) \
-    _InterlockedIncrement((volatile long*)(addend))
+#define InterlockedIncrement(addend) \
+  _InterlockedIncrement((volatile long*)(addend))
 #endif
 
 // Wrapper for native condition variable APIs.
@@ -52,33 +52,17 @@ void mozilla::detail::ConditionVariableImpl::wait(MutexImpl& lock) {
   MOZ_RELEASE_ASSERT(r);
 }
 
-mozilla::CVStatus mozilla::detail::ConditionVariableImpl::wait_for(
+mozilla::detail::CVStatus mozilla::detail::ConditionVariableImpl::wait_for(
     MutexImpl& lock, const mozilla::TimeDuration& rel_time) {
-  if (rel_time == mozilla::TimeDuration::Forever()) {
-    wait(lock);
-    return CVStatus::NoTimeout;
-  }
-
   SRWLOCK* srwlock = &lock.platformData()->lock;
 
-  // Note that DWORD is unsigned, so we have to be careful to clamp at 0. If
-  // rel_time is Forever, then ToMilliseconds is +inf, which evaluates as
-  // greater than UINT32_MAX, resulting in the correct INFINITE wait. We also
-  // don't want to round sub-millisecond waits to 0, as that wastes energy (see
-  // bug 1437167 comment 6), so we instead round submillisecond waits to 1ms.
+  // Note that DWORD is unsigned, so we have to be careful to clamp at 0.
+  // If rel_time is Forever, then ToMilliseconds is +inf, which evaluates as
+  // greater than UINT32_MAX, resulting in the correct INFINITE wait.
   double msecd = rel_time.ToMilliseconds();
-  DWORD msec;
-  if (msecd < 0.0) {
-    msec = 0;
-  } else if (msecd > UINT32_MAX) {
-    msec = INFINITE;
-  } else {
-    msec = static_cast<DWORD>(msecd);
-    // Round submillisecond waits to 1ms.
-    if (msec == 0 && !rel_time.IsZero()) {
-      msec = 1;
-    }
-  }
+  DWORD msec = msecd < 0.0
+                   ? 0
+                   : msecd > UINT32_MAX ? INFINITE : static_cast<DWORD>(msecd);
 
   BOOL r = SleepConditionVariableSRW(&platformData()->cv_, srwlock, msec, 0);
   if (r) return CVStatus::NoTimeout;

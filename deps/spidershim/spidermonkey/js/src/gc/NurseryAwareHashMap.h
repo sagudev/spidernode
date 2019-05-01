@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,12 +23,12 @@ template <typename T>
 class UnsafeBareReadBarriered : public ReadBarrieredBase<T> {
  public:
   UnsafeBareReadBarriered()
-      : ReadBarrieredBase<T>(JS::SafelyInitialized<T>()) {}
+      : ReadBarrieredBase<T>(JS::GCPolicy<T>::initial()) {}
   MOZ_IMPLICIT UnsafeBareReadBarriered(const T& v) : ReadBarrieredBase<T>(v) {}
   explicit UnsafeBareReadBarriered(const UnsafeBareReadBarriered& v)
       : ReadBarrieredBase<T>(v) {}
   UnsafeBareReadBarriered(UnsafeBareReadBarriered&& v)
-      : ReadBarrieredBase<T>(std::move(v)) {}
+      : ReadBarrieredBase<T>(mozilla::Move(v)) {}
 
   UnsafeBareReadBarriered& operator=(const UnsafeBareReadBarriered& v) {
     this->value = v.value;
@@ -41,9 +41,8 @@ class UnsafeBareReadBarriered : public ReadBarrieredBase<T> {
   }
 
   const T get() const {
-    if (!InternalBarrierMethods<T>::isMarkable(this->value)) {
-      return JS::SafelyInitialized<T>();
-    }
+    if (!InternalBarrierMethods<T>::isMarkable(this->value))
+      return JS::GCPolicy<T>::initial();
     this->read();
     return this->value;
   }
@@ -88,8 +87,8 @@ class NurseryAwareHashMap {
   using Entry = typename MapType::Entry;
 
   explicit NurseryAwareHashMap(AllocPolicy a = AllocPolicy()) : map(a) {}
-  explicit NurseryAwareHashMap(size_t length) : map(length) {}
-  NurseryAwareHashMap(AllocPolicy a, size_t length) : map(a, length) {}
+
+  MOZ_MUST_USE bool init(uint32_t len = 16) { return map.init(len); }
 
   bool empty() const { return map.empty(); }
   Ptr lookup(const Lookup& l) const { return map.lookup(l); }
@@ -99,11 +98,11 @@ class NurseryAwareHashMap {
     explicit Enum(NurseryAwareHashMap& namap) : MapType::Enum(namap.map) {}
   };
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
-    return map.shallowSizeOfExcludingThis(mallocSizeOf) +
+    return map.sizeOfExcludingThis(mallocSizeOf) +
            nurseryEntries.sizeOfExcludingThis(mallocSizeOf);
   }
   size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
-    return map.shallowSizeOfIncludingThis(mallocSizeOf) +
+    return map.sizeOfIncludingThis(mallocSizeOf) +
            nurseryEntries.sizeOfIncludingThis(mallocSizeOf);
   }
 
@@ -112,18 +111,14 @@ class NurseryAwareHashMap {
     if (p) {
       if (!JS::GCPolicy<Key>::isTenured(k) ||
           !JS::GCPolicy<Value>::isTenured(v)) {
-        if (!nurseryEntries.append(k)) {
-          return false;
-        }
+        if (!nurseryEntries.append(k)) return false;
       }
       p->value() = v;
       return true;
     }
 
     bool ok = map.add(p, k, v);
-    if (!ok) {
-      return false;
-    }
+    if (!ok) return false;
 
     if (!JS::GCPolicy<Key>::isTenured(k) ||
         !JS::GCPolicy<Value>::isTenured(v)) {
@@ -139,9 +134,7 @@ class NurseryAwareHashMap {
   void sweepAfterMinorGC(JSTracer* trc) {
     for (auto& key : nurseryEntries) {
       auto p = map.lookup(key);
-      if (!p) {
-        continue;
-      }
+      if (!p) continue;
 
       // Drop the entry if the value is not marked.
       if (JS::GCPolicy<BarrieredValue>::needsSweep(&p->value())) {

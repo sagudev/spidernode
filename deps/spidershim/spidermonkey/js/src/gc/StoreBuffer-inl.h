@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,10 +36,7 @@ inline bool ArenaCellSet::hasCell(size_t cellIndex) const {
 
 inline void ArenaCellSet::putCell(size_t cellIndex) {
   MOZ_ASSERT(cellIndex < MaxArenaCellIndex);
-  MOZ_ASSERT(arena);
-
   bits.set(cellIndex);
-  check();
 }
 
 inline void ArenaCellSet::check() const {
@@ -47,32 +44,23 @@ inline void ArenaCellSet::check() const {
   bool bitsZero = bits.isAllClear();
   MOZ_ASSERT(isEmpty() == bitsZero);
   MOZ_ASSERT(isEmpty() == !arena);
-  if (!isEmpty()) {
-    MOZ_ASSERT(IsCellPointerValid(arena));
-    MOZ_ASSERT(arena->bufferedCells() == this);
-    JSRuntime* runtime = arena->zone->runtimeFromMainThread();
-    MOZ_ASSERT(runtime->gc.minorGCCount() == minorGCNumberAtCreation);
-  }
+  MOZ_ASSERT_IF(!isEmpty(), arena->bufferedCells() == this);
 #endif
 }
 
-inline void StoreBuffer::WholeCellBuffer::put(const Cell* cell) {
+inline void StoreBuffer::putWholeCell(Cell* cell) {
   MOZ_ASSERT(cell->isTenured());
 
   Arena* arena = cell->asTenured().arena();
   ArenaCellSet* cells = arena->bufferedCells();
   if (cells->isEmpty()) {
-    cells = allocateCellSet(arena);
-    if (!cells) {
-      return;
-    }
+    cells = AllocateWholeCellSet(arena);
+    if (!cells) return;
   }
 
   cells->putCell(&cell->asTenured());
   cells->check();
 }
-
-inline void StoreBuffer::putWholeCell(Cell* cell) { bufferWholeCell.put(cell); }
 
 }  // namespace gc
 }  // namespace js

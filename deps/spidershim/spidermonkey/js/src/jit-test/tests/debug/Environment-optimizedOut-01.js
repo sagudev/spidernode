@@ -1,6 +1,6 @@
 // Optimized out scopes should be considered optimizedOut.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger;
 dbg.addDebuggee(g);
 

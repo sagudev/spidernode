@@ -1,4 +1,3 @@
-// |jit-test| skip-if: !this.getJitCompilerOptions() || !this.getJitCompilerOptions()['ion.enable']
 load(libdir + "asserts.js");
 var oldOpts = getJitCompilerOptions();
 for (var k in oldOpts)

@@ -66,9 +66,7 @@ info = {'os': unknown,
         'os_version': unknown,
         'bits': unknown,
         'has_sandbox': unknown,
-        'webrender': bool(os.environ.get("MOZ_WEBRENDER", False)),
-        'automation': bool(os.environ.get("MOZ_AUTOMATION", False)),
-        }
+        'webrender': bool(os.environ.get("MOZ_WEBRENDER", False))}
 (system, node, release, version, machine, processor) = platform.uname()
 (bits, linkage) = platform.architecture()
 
@@ -144,9 +142,6 @@ if processor in ["i386", "i686"]:
 elif processor.upper() == "AMD64":
     bits = "64bit"
     processor = "x86_64"
-elif processor.upper() == "ARM64":
-    bits = "64bit"
-    processor = "aarch64"
 elif processor == "Power Macintosh":
     processor = "ppc"
 bits = re.search('(\d+)bit', bits).group(1)
@@ -218,29 +213,16 @@ def update(new_info):
         globals()['isUnix'] = True
 
 
-def find_and_update_from_json(*dirs, **kwargs):
-    """Find a mozinfo.json file, load it, and update global symbol table.
+def find_and_update_from_json(*dirs):
+    """
+    Find a mozinfo.json file, load it, and update the info with the
+    contents.
 
-    This method will first check the relevant objdir directory for the
-    necessary mozinfo.json file, if the current script is being run from a
-    Mozilla objdir.
+    :param dirs: Directories in which to look for the file. They will be
+                 searched after first looking in the root of the objdir
+                 if the current script is being run from a Mozilla objdir.
 
-    If the objdir directory did not supply the necessary data, this method
-    will then look for the required mozinfo.json file from the provided
-    tuple of directories.
-
-    If file is found, the global symbols table is updated via a helper method.
-
-    If no valid files are found, this method no-ops unless the raise_exception
-    kwargs is provided with explicit boolean value of True.
-
-    :param tuple dirs: Directories in which to look for the file.
-    :param dict kwargs: optional values:
-                        raise_exception: if True, exceptions are raised.
-                                         False by default.
-    :returns: None: default behavior if mozinfo.json cannot be found.
-              json_path: string representation of mozinfo.json path.
-    :raises: IOError: if raise_exception is True and file is not found.
+    Returns the full path to mozinfo.json if it was found, or None otherwise.
     """
     # First, see if we're in an objdir
     try:
@@ -263,10 +245,6 @@ def find_and_update_from_json(*dirs, **kwargs):
             update(json_path)
             return json_path
 
-    # by default, exceptions are suppressed. Set this to True if otherwise
-    # desired.
-    if kwargs.get('raise_exception', False):
-        raise IOError('mozinfo.json could not be found.')
     return None
 
 

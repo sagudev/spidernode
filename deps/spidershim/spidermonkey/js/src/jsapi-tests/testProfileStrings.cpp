@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * Tests the stack-based instrumentation profiler on a JSRuntime
  */
@@ -9,16 +9,14 @@
 
 #include "mozilla/Atomics.h"
 
-#include "js/ContextOptions.h"
-#include "js/PropertySpec.h"
 #include "jsapi-tests/tests.h"
 #include "vm/JSContext.h"
 
-static ProfilingStack profilingStack;
+static PseudoStack pseudoStack;
 static uint32_t peakStackPointer = 0;
 
 static void reset(JSContext* cx) {
-  profilingStack.stackPointer = 0;
+  pseudoStack.stackPointer = 0;
   cx->runtime()->geckoProfiler().stringsReset();
   cx->runtime()->geckoProfiler().enableSlowAssertions(true);
   js::EnableContextProfilingStack(cx, true);
@@ -27,7 +25,7 @@ static void reset(JSContext* cx) {
 static const JSClass ptestClass = {"Prof", 0};
 
 static bool test_fn(JSContext* cx, unsigned argc, JS::Value* vp) {
-  peakStackPointer = profilingStack.stackPointer;
+  peakStackPointer = pseudoStack.stackPointer;
   return true;
 }
 
@@ -51,9 +49,7 @@ static bool disable(JSContext* cx, unsigned argc, JS::Value* vp) {
 static bool Prof(JSContext* cx, unsigned argc, JS::Value* vp) {
   JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
   JSObject* obj = JS_NewObjectForConstructor(cx, &ptestClass, args);
-  if (!obj) {
-    return false;
-  }
+  if (!obj) return false;
   args.rval().setObject(*obj);
   return true;
 }
@@ -63,7 +59,7 @@ static const JSFunctionSpec ptestFunctions[] = {
     JS_FN("enable", enable, 0, 0), JS_FN("disable", disable, 0, 0), JS_FS_END};
 
 static JSObject* initialize(JSContext* cx) {
-  js::SetContextProfilingStack(cx, &profilingStack);
+  js::SetContextProfilingStack(cx, &pseudoStack);
   JS::RootedObject global(cx, JS::CurrentGlobalOrNull(cx));
   return JS_InitClass(cx, global, nullptr, &ptestClass, Prof, 0, nullptr,
                       ptestFunctions, nullptr, nullptr);
@@ -88,14 +84,14 @@ BEGIN_TEST(testProfileStrings_isCalledWithInterpreter) {
     /* Make sure the stack resets and we have an entry for each stack */
     CHECK(JS_CallFunctionName(cx, global, "check",
                               JS::HandleValueArray::empty(), &rval));
-    CHECK(profilingStack.stackPointer == 0);
+    CHECK(pseudoStack.stackPointer == 0);
     CHECK(peakStackPointer >= 8);
     CHECK(cx->runtime()->geckoProfiler().stringsCount() == 8);
     /* Make sure the stack resets and we added no new entries */
     peakStackPointer = 0;
     CHECK(JS_CallFunctionName(cx, global, "check",
                               JS::HandleValueArray::empty(), &rval));
-    CHECK(profilingStack.stackPointer == 0);
+    CHECK(pseudoStack.stackPointer == 0);
     CHECK(peakStackPointer >= 8);
     CHECK(cx->runtime()->geckoProfiler().stringsCount() == 8);
   }
@@ -106,7 +102,7 @@ BEGIN_TEST(testProfileStrings_isCalledWithInterpreter) {
                               JS::HandleValueArray::empty(), &rval));
     CHECK(cx->runtime()->geckoProfiler().stringsCount() == 5);
     CHECK(peakStackPointer >= 6);
-    CHECK(profilingStack.stackPointer == 0);
+    CHECK(pseudoStack.stackPointer == 0);
   }
   return true;
 }
@@ -132,7 +128,7 @@ BEGIN_TEST(testProfileStrings_isCalledWithJIT) {
     /* Make sure the stack resets and we have an entry for each stack */
     CHECK(JS_CallFunctionName(cx, global, "check",
                               JS::HandleValueArray::empty(), &rval));
-    CHECK(profilingStack.stackPointer == 0);
+    CHECK(pseudoStack.stackPointer == 0);
     CHECK(peakStackPointer >= 8);
 
     /* Make sure the stack resets and we added no new entries */
@@ -140,7 +136,7 @@ BEGIN_TEST(testProfileStrings_isCalledWithJIT) {
     peakStackPointer = 0;
     CHECK(JS_CallFunctionName(cx, global, "check",
                               JS::HandleValueArray::empty(), &rval));
-    CHECK(profilingStack.stackPointer == 0);
+    CHECK(pseudoStack.stackPointer == 0);
     CHECK(cx->runtime()->geckoProfiler().stringsCount() == cnt);
     CHECK(peakStackPointer >= 8);
   }
@@ -162,7 +158,7 @@ BEGIN_TEST(testProfileStrings_isCalledWhenError) {
     bool ok = JS_CallFunctionName(cx, global, "check2",
                                   JS::HandleValueArray::empty(), &rval);
     CHECK(!ok);
-    CHECK(profilingStack.stackPointer == 0);
+    CHECK(pseudoStack.stackPointer == 0);
     CHECK(cx->runtime()->geckoProfiler().stringsCount() == 1);
 
     JS_ClearPendingException(cx);
@@ -184,7 +180,7 @@ BEGIN_TEST(testProfileStrings_worksWhenEnabledOnTheFly) {
     /* enable it in the middle of JS and make sure things check out */
     JS::RootedValue rval(cx);
     JS_CallFunctionName(cx, global, "a", JS::HandleValueArray::empty(), &rval);
-    CHECK(profilingStack.stackPointer == 0);
+    CHECK(pseudoStack.stackPointer == 0);
     CHECK(peakStackPointer >= 1);
     CHECK(cx->runtime()->geckoProfiler().stringsCount() == 1);
   }
@@ -196,7 +192,7 @@ BEGIN_TEST(testProfileStrings_worksWhenEnabledOnTheFly) {
     /* now disable in the middle of js */
     JS::RootedValue rval(cx);
     JS_CallFunctionName(cx, global, "c", JS::HandleValueArray::empty(), &rval);
-    CHECK(profilingStack.stackPointer == 0);
+    CHECK(pseudoStack.stackPointer == 0);
   }
 
   EXEC("function e() { var p = new Prof(); d(p); p.enable(); b(p); }");
@@ -205,7 +201,7 @@ BEGIN_TEST(testProfileStrings_worksWhenEnabledOnTheFly) {
     /* now disable in the middle of js, but re-enable before final exit */
     JS::RootedValue rval(cx);
     JS_CallFunctionName(cx, global, "e", JS::HandleValueArray::empty(), &rval);
-    CHECK(profilingStack.stackPointer == 0);
+    CHECK(pseudoStack.stackPointer == 0);
     CHECK(peakStackPointer >= 3);
   }
 
@@ -219,7 +215,7 @@ BEGIN_TEST(testProfileStrings_worksWhenEnabledOnTheFly) {
     /* disable, and make sure that if we try to re-enter the JIT the pop
      * will still happen */
     JS_CallFunctionName(cx, global, "f", JS::HandleValueArray::empty(), &rval);
-    CHECK(profilingStack.stackPointer == 0);
+    CHECK(pseudoStack.stackPointer == 0);
   }
   return true;
 }

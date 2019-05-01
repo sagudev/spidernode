@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -31,6 +31,7 @@ BEGIN_TEST(testWeakCacheSet) {
                 SystemAllocPolicy>;
   using Cache = JS::WeakCache<ObjectSet>;
   Cache cache(JS::GetObjectZone(tenured1));
+  CHECK(cache.init());
 
   cache.put(tenured1);
   cache.put(tenured2);
@@ -70,6 +71,7 @@ BEGIN_TEST(testWeakCacheMap) {
                                   js::MovableCellHasher<JS::Heap<JSObject*>>>;
   using Cache = JS::WeakCache<ObjectMap>;
   Cache cache(JS::GetObjectZone(tenured1), cx);
+  CHECK(cache.init());
 
   cache.put(tenured1, 1);
   cache.put(tenured2, 2);
@@ -213,7 +215,7 @@ struct MovableCellHasher<NumberAndObjectEntry> {
 BEGIN_TEST(testIncrementalWeakCacheSweeping) {
   AutoLeaveZeal nozeal(cx);
 
-  JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_ZONE_INCREMENTAL);
+  JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_INCREMENTAL);
   JS_SetGCZeal(cx, 17, 1000000);
 
   CHECK(TestSet());
@@ -249,7 +251,7 @@ bool SweepCacheAndFinishGC(JSContext* cx, const Cache& cache) {
   CHECK(IsIncrementalGCInProgress(cx));
 
   PrepareForIncrementalGC(cx);
-  IncrementalGCSlice(cx, JS::GCReason::API);
+  IncrementalGCSlice(cx, JS::gcreason::API);
 
   JS::Zone* zone = JS::GetObjectZone(global);
   CHECK(!IsIncrementalGCInProgress(cx));
@@ -265,6 +267,8 @@ bool TestSet() {
                 TempAllocPolicy>;
   using Cache = JS::WeakCache<ObjectSet>;
   Cache cache(JS::GetObjectZone(global), cx);
+  CHECK(cache.init());
+  CHECK(cache.initialized());
 
   // Sweep empty cache.
 
@@ -384,6 +388,7 @@ bool TestSet() {
   CHECK(cache.has(obj4));
 
   cache.clear();
+  cache.finish();
 
   return true;
 }
@@ -394,6 +399,8 @@ bool TestMap() {
                 MovableCellHasher<JS::Heap<JSObject*>>, TempAllocPolicy>;
   using Cache = JS::WeakCache<ObjectMap>;
   Cache cache(JS::GetObjectZone(global), cx);
+  CHECK(cache.init());
+  CHECK(cache.initialized());
 
   // Sweep empty cache.
 
@@ -515,6 +522,7 @@ bool TestMap() {
   CHECK(cache.has(obj4));
 
   cache.clear();
+  cache.finish();
 
   return true;
 }
@@ -527,6 +535,7 @@ bool TestReplaceDyingInSet() {
       GCHashSet<NumberAndObjectEntry, MovableCellHasher<NumberAndObjectEntry>,
                 TempAllocPolicy>>;
   Cache cache(JS::GetObjectZone(global), cx);
+  CHECK(cache.init());
 
   RootedObject value1(cx, JS_NewPlainObject(cx));
   RootedObject value2(cx, JS_NewPlainObject(cx));
@@ -586,6 +595,7 @@ bool TestReplaceDyingInMap() {
       JS::WeakCache<GCHashMap<uint32_t, JS::Heap<JSObject*>,
                               DefaultHasher<uint32_t>, TempAllocPolicy>>;
   Cache cache(JS::GetObjectZone(global), cx);
+  CHECK(cache.init());
 
   RootedObject value1(cx, JS_NewPlainObject(cx));
   RootedObject value2(cx, JS_NewPlainObject(cx));
@@ -614,7 +624,7 @@ bool TestReplaceDyingInMap() {
 
   auto ptr2 = cache.lookupForAdd(3);
   CHECK(!ptr2);
-  CHECK(cache.add(ptr2, 3, JS::Heap<JSObject*>()));
+  CHECK(cache.add(ptr2, 3));
 
   auto ptr3 = cache.lookupForAdd(4);
   CHECK(!ptr3);
@@ -649,6 +659,7 @@ bool TestUniqueIDLookups() {
   using Cache = JS::WeakCache<
       GCHashSet<ObjectEntry, MovableCellHasher<ObjectEntry>, TempAllocPolicy>>;
   Cache cache(JS::GetObjectZone(global), cx);
+  CHECK(cache.init());
 
   Rooted<GCVector<JSObject*, 0, SystemAllocPolicy>> liveObjects(cx);
 
@@ -656,18 +667,15 @@ bool TestUniqueIDLookups() {
     JSObject* obj = JS_NewPlainObject(cx);
     CHECK(obj);
     CHECK(cache.put(obj));
-    if (j % DeadFactor == 0) {
-      CHECK(liveObjects.get().append(obj));
-    }
+    if (j % DeadFactor == 0) CHECK(liveObjects.get().append(obj));
   }
 
   CHECK(cache.count() == ObjectCount);
 
   CHECK(GCUntilCacheSweep(cx, cache));
 
-  for (size_t j = 0; j < liveObjects.length(); j++) {
+  for (size_t j = 0; j < liveObjects.length(); j++)
     CHECK(cache.has(liveObjects[j]));
-  }
 
   CHECK(SweepCacheAndFinishGC(cx, cache));
 

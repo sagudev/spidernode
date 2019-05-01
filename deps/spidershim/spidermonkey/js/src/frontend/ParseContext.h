@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +11,6 @@
 
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/ErrorReporter.h"
-#include "frontend/NameCollections.h"
 #include "frontend/SharedContext.h"
 
 namespace js {
@@ -19,13 +18,6 @@ namespace js {
 namespace frontend {
 
 class ParserBase;
-
-const char* DeclarationKindString(DeclarationKind kind);
-
-// Returns true if the declaration is `var` or equivalent.
-bool DeclarationKindIsVar(DeclarationKind kind);
-
-bool DeclarationKindIsParameter(DeclarationKind kind);
 
 // A data structure for tracking used names per parsing session in order to
 // compute which bindings are closed over. Scripts and scopes are numbered
@@ -76,12 +68,11 @@ class UsedNameTracker {
    public:
     explicit UsedNameInfo(JSContext* cx) : uses_(cx) {}
 
-    UsedNameInfo(UsedNameInfo&& other) : uses_(std::move(other.uses_)) {}
+    UsedNameInfo(UsedNameInfo&& other) : uses_(mozilla::Move(other.uses_)) {}
 
     bool noteUsedInScope(uint32_t scriptId, uint32_t scopeId) {
-      if (uses_.empty() || uses_.back().scopeId < scopeId) {
+      if (uses_.empty() || uses_.back().scopeId < scopeId)
         return uses_.append(Use{scriptId, scopeId});
-      }
       return true;
     }
 
@@ -90,12 +81,8 @@ class UsedNameTracker {
       *closedOver = false;
       while (!uses_.empty()) {
         Use& innermost = uses_.back();
-        if (innermost.scopeId < scopeId) {
-          break;
-        }
-        if (innermost.scriptId > scriptId) {
-          *closedOver = true;
-        }
+        if (innermost.scopeId < scopeId) break;
+        if (innermost.scriptId > scriptId) *closedOver = true;
         uses_.popBack();
       }
     }
@@ -121,6 +108,8 @@ class UsedNameTracker {
   explicit UsedNameTracker(JSContext* cx)
       : map_(cx), scriptCounter_(0), scopeCounter_(0) {}
 
+  MOZ_MUST_USE bool init() { return map_.init(); }
+
   uint32_t nextScriptId() {
     MOZ_ASSERT(scriptCounter_ != UINT32_MAX,
                "ParseContext::Scope::init should have prevented wraparound");
@@ -136,16 +125,6 @@ class UsedNameTracker {
 
   MOZ_MUST_USE bool noteUse(JSContext* cx, JSAtom* name, uint32_t scriptId,
                             uint32_t scopeId);
-
-  MOZ_MUST_USE bool markAsAlwaysClosedOver(JSContext* cx, JSAtom* name,
-                                           uint32_t scriptId,
-                                           uint32_t scopeId) {
-    // This marks a variable as always closed over:
-    // UsedNameInfo::noteBoundInScope only checks if scriptId and scopeId are
-    // greater than the current scriptId/scopeId, so do a simple increment to
-    // make that so.
-    return noteUse(cx, name, scriptId + 1, scopeId + 1);
-  }
 
   struct RewindToken {
    private:
@@ -219,7 +198,8 @@ class ParseContext : public Nestable<ParseContext> {
 
    public:
     LabelStatement(ParseContext* pc, JSAtom* label)
-        : Statement(pc, StatementKind::Label), label_(pc->sc_->cx_, label) {}
+        : Statement(pc, StatementKind::Label),
+          label_(pc->sc_->context, label) {}
 
     HandleAtom label() const { return label_; }
   };
@@ -254,9 +234,7 @@ class ParseContext : public Nestable<ParseContext> {
     uint32_t id_;
 
     bool maybeReportOOM(ParseContext* pc, bool result) {
-      if (!result) {
-        ReportOutOfMemory(pc->sc()->cx_);
-      }
+      if (!result) ReportOutOfMemory(pc->sc()->context);
       return result;
     }
 
@@ -276,11 +254,11 @@ class ParseContext : public Nestable<ParseContext> {
 
     MOZ_MUST_USE bool init(ParseContext* pc) {
       if (id_ == UINT32_MAX) {
-        pc->errorReporter_.errorNoOffset(JSMSG_NEED_DIET, js_script_str);
+        pc->errorReporter_.reportErrorNoOffset(JSMSG_NEED_DIET, js_script_str);
         return false;
       }
 
-      return declared_.acquire(pc->sc()->cx_);
+      return declared_.acquire(pc->sc()->context);
     }
 
     bool isEmpty() const { return declared_->all().empty(); }
@@ -338,16 +316,12 @@ class ParseContext : public Nestable<ParseContext> {
       void settle() {
         // Both var and lexically declared names are binding in a var
         // scope.
-        if (isVarScope_) {
-          return;
-        }
+        if (isVarScope_) return;
 
         // Otherwise, pop only lexically declared names are
         // binding. Pop the range until we find such a name.
         while (!declaredRange_.empty()) {
-          if (BindingKindIsLexical(kind())) {
-            break;
-          }
+          if (BindingKindIsLexical(kind())) break;
           declaredRange_.popFront();
         }
       }
@@ -476,9 +450,34 @@ class ParseContext : public Nestable<ParseContext> {
   bool superScopeNeedsHomeObject_;
 
  public:
-  ParseContext(JSContext* cx, ParseContext*& parent, SharedContext* sc,
-               ErrorReporter& errorReporter, UsedNameTracker& usedNames,
-               Directives* newDirectives, bool isFull);
+  inline ParseContext(JSContext* cx, ParseContext*& parent, SharedContext* sc,
+                      ErrorReporter& errorReporter,
+                      class UsedNameTracker& usedNames,
+                      Directives* newDirectives, bool isFull)
+      : Nestable<ParseContext>(&parent),
+        traceLog_(sc->context,
+                  isFull ? TraceLogger_ParsingFull : TraceLogger_ParsingSyntax,
+                  errorReporter),
+        sc_(sc),
+        errorReporter_(errorReporter),
+        innermostStatement_(nullptr),
+        innermostScope_(nullptr),
+        varScope_(nullptr),
+        positionalFormalParameterNames_(cx->frontendCollectionPool()),
+        closedOverBindingsForLazy_(cx->frontendCollectionPool()),
+        innerFunctionsForLazy(cx, GCVector<JSFunction*, 8>(cx)),
+        newDirectives(newDirectives),
+        lastYieldOffset(NoYieldOffset),
+        lastAwaitOffset(NoAwaitOffset),
+        scriptId_(usedNames.nextScriptId()),
+        isStandaloneFunctionBody_(false),
+        superScopeNeedsHomeObject_(false) {
+    if (isFunctionBox()) {
+      if (functionBox()->function()->isNamedLambda())
+        namedLambdaScope_.emplace(cx, parent, usedNames);
+      functionScope_.emplace(cx, parent, usedNames);
+    }
+  }
 
   MOZ_MUST_USE bool init();
 
@@ -572,12 +571,6 @@ class ParseContext : public Nestable<ParseContext> {
   // True if we are at the topmost level of a module only.
   bool atModuleLevel() { return atBodyLevel() && sc_->isModuleContext(); }
 
-  // True if we are at the topmost level of an entire script or module.  For
-  // example, in the comment on |atBodyLevel()| above, we would encounter |f1|
-  // and the outermost |if (cond)| at top level, and everything else would not
-  // be at top level.
-  bool atTopLevel() { return atBodyLevel() && sc_->isTopLevelContext(); }
-
   void setIsStandaloneFunctionBody() { isStandaloneFunctionBody_ = true; }
 
   bool isStandaloneFunctionBody() const { return isStandaloneFunctionBody_; }
@@ -636,16 +629,6 @@ class ParseContext : public Nestable<ParseContext> {
                      uint32_t beginPos,
                      mozilla::Maybe<DeclarationKind>* redeclaredKind,
                      uint32_t* prevPos);
-
-  bool hasUsedName(const UsedNameTracker& usedNames, HandlePropertyName name);
-  bool hasUsedFunctionSpecialName(const UsedNameTracker& usedNames,
-                                  HandlePropertyName name);
-
-  bool declareFunctionThis(const UsedNameTracker& usedNames,
-                           bool canSkipLazyClosedOverBindings);
-  bool declareFunctionArgumentsObject(const UsedNameTracker& usedNames,
-                                      bool canSkipLazyClosedOverBindings);
-  bool declareDotGeneratorName();
 
  private:
   mozilla::Maybe<DeclarationKind> isVarRedeclaredInInnermostScope(

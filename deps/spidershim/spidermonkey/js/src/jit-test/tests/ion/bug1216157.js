@@ -1,5 +1,5 @@
-// |jit-test| skip-if: !('oomAfterAllocations' in this)
-
+if (!('oomAfterAllocations' in this))
+    quit();
 gcslice(0); // Start IGC, but don't mark anything.
 function f(str) {
     for (var i = 0; i < 10; i++) {

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -19,9 +19,8 @@ using namespace js::jit;
 
 static MBasicBlock* FollowTrivialGotos(MBasicBlock* block) {
   while (block->phisEmpty() && *block->begin() == block->lastIns() &&
-         block->lastIns()->isGoto()) {
+         block->lastIns()->isGoto())
     block = block->lastIns()->toGoto()->getSuccessor(0);
-  }
   return block;
 }
 
@@ -77,9 +76,7 @@ BEGIN_TEST(testJitGVN_FixupOSROnlyLoop) {
   outerHeader->setLoopHeader(outerBackedge);
   innerHeader->setLoopHeader(innerBackedge);
 
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   // The loops are no longer reachable from the normal entry. They are
   // doinated by the osrEntry.
@@ -95,9 +92,7 @@ BEGIN_TEST(testJitGVN_FixupOSROnlyLoop) {
 
   // One more time.
   ClearDominatorTree(func.graph);
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   // The loops are no longer reachable from the normal entry. They are
   // doinated by the osrEntry.
@@ -178,9 +173,7 @@ BEGIN_TEST(testJitGVN_FixupOSROnlyLoopNested) {
   middleHeader->setLoopHeader(middleBackedge);
   innerHeader->setLoopHeader(innerBackedge);
 
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   // The loops are no longer reachable from the normal entry. They are
   // doinated by the osrEntry.
@@ -199,9 +192,7 @@ BEGIN_TEST(testJitGVN_FixupOSROnlyLoopNested) {
 
   // One more time.
   ClearDominatorTree(func.graph);
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   // The loops are no longer reachable from the normal entry. They are
   // doinated by the osrEntry.
@@ -287,9 +278,7 @@ BEGIN_TEST(testJitGVN_PinnedPhis) {
   outerHeader->setLoopHeader(exit);
   innerHeader->setLoopHeader(innerBackedge);
 
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   MOZ_RELEASE_ASSERT(innerHeader->phisEmpty());
   MOZ_RELEASE_ASSERT(exit->isDead());

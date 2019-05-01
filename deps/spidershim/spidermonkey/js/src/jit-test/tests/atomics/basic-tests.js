@@ -560,4 +560,5 @@ function runTests() {
     assertEq(Atomics[Symbol.toStringTag], "Atomics");
 }
 
-runTests();
+if (this.Atomics && this.SharedArrayBuffer)
+    runTests();

@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !('oomAfterAllocations' in this)
+if (typeof oomAfterAllocations !== 'function' || typeof evaluate !== 'function')
+    quit();
 
 oomAfterAllocations(10, 2);
 evaluate(`function mod(stdlib, ffi, heap) {

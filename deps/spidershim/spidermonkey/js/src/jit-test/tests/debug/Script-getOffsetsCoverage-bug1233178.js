@@ -1,5 +1,5 @@
 gczeal(2);
-g = newGlobal({newCompartment: true});
+g = newGlobal();
 dbg = Debugger(g);
 function loop() {
   for (var i = 0; i < 10; i++)

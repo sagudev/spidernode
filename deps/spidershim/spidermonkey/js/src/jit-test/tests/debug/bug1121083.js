@@ -1,7 +1,7 @@
 // |jit-test| error:terminated
 options('werror');
 
-g = newGlobal({newCompartment: true});
+g = newGlobal();
 g.parent = this;
 g.eval("Debugger(parent).onExceptionUnwind = function () {};");
 

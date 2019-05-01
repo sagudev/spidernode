@@ -1,4 +1,5 @@
-// |jit-test| skip-if: typeof gczeal !== 'function' || helperThreadCount() === 0
+if (typeof gczeal != "function" || helperThreadCount() === 0)
+	quit(0);
 
 var lfGlobal = newGlobal();
 gczeal(4);

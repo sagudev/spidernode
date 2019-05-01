@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -68,12 +68,8 @@ bool ExhaustiveTest(const char funcode[]) {
     for (size_t j = 0; j <= ArgCount - i; j++) {
       ClearElements(elems);
       CHECK(argsobj->maybeGetElements(i, j, elems.begin()));
-      for (size_t k = 0; k < j; k++) {
-        CHECK(elems[k].isInt32(i + k));
-      }
-      for (size_t k = j; k < MAX_ELEMS - 1; k++) {
-        CHECK(elems[k].isNull());
-      }
+      for (size_t k = 0; k < j; k++) CHECK(elems[k].isInt32(i + k));
+      for (size_t k = j; k < MAX_ELEMS - 1; k++) CHECK(elems[k].isNull());
       CHECK(elems[MAX_ELEMS - 1].isInt32(42));
     }
   }
@@ -83,9 +79,7 @@ bool ExhaustiveTest(const char funcode[]) {
 
 template <size_t N>
 static void ClearElements(JS::AutoValueArray<N>& elems) {
-  for (size_t i = 0; i < elems.length() - 1; i++) {
-    elems[i].setNull();
-  }
+  for (size_t i = 0; i < elems.length() - 1; i++) elems[i].setNull();
   elems[elems.length() - 1].setInt32(42);
 }
 END_TEST(testArgumentsObject)

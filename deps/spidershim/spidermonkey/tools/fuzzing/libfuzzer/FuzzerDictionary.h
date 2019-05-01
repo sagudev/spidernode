@@ -1,8 +1,9 @@
 //===- FuzzerDictionary.h - Internal header for the Fuzzer ------*- C++ -* ===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 // fuzzer::Dictionary
@@ -32,7 +33,15 @@ public:
   }
 
   bool operator==(const FixedWord<kMaxSize> &w) const {
+    ScopedDoingMyOwnMemOrStr scoped_doing_my_own_mem_os_str;
     return Size == w.Size && 0 == memcmp(Data, w.Data, Size);
+  }
+
+  bool operator<(const FixedWord<kMaxSize> &w) const {
+    ScopedDoingMyOwnMemOrStr scoped_doing_my_own_mem_os_str;
+    if (Size != w.Size)
+      return Size < w.Size;
+    return memcmp(Data, w.Data, Size) < 0;
   }
 
   static size_t GetMaxSize() { return kMaxSize; }
@@ -106,12 +115,12 @@ private:
 };
 
 // Parses one dictionary entry.
-// If successful, write the enty to Unit and returns true,
+// If successfull, write the enty to Unit and returns true,
 // otherwise returns false.
 bool ParseOneDictionaryEntry(const std::string &Str, Unit *U);
 // Parses the dictionary file, fills Units, returns true iff all lines
-// were parsed successfully.
-bool ParseDictionaryFile(const std::string &Text, Vector<Unit> *Units);
+// were parsed succesfully.
+bool ParseDictionaryFile(const std::string &Text, std::vector<Unit> *Units);
 
 }  // namespace fuzzer
 

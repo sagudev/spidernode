@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,17 +7,14 @@
 #ifndef util_Text_h
 #define util_Text_h
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/TextUtils.h"
-#include "mozilla/Utf8.h"
 
+#include <ctype.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string>
-#include <type_traits>
 
 #include "jsutil.h"
 #include "NamespaceImports.h"
@@ -27,6 +24,21 @@
 #include "vm/Printer.h"
 
 class JSLinearString;
+
+/*
+ * Shorthands for ASCII (7-bit) decimal and hex conversion.
+ * Manually inline isdigit and isxdigit for performance; MSVC doesn't do this
+ * for us.
+ */
+#define JS7_ISDEC(c) ((((unsigned)(c)) - '0') <= 9)
+#define JS7_ISA2F(c) \
+  ((((((unsigned)(c)) - 'a') <= 5) || (((unsigned)(c)) - 'A') <= 5))
+#define JS7_UNDEC(c) ((c) - '0')
+#define JS7_ISOCT(c) ((((unsigned)(c)) - '0') <= 7)
+#define JS7_UNOCT(c) (JS7_UNDEC(c))
+#define JS7_ISHEX(c) ((c) < 128 && (JS7_ISDEC(c) || JS7_ISA2F(c)))
+#define JS7_UNHEX(c) \
+  (unsigned)(JS7_ISDEC(c) ? (c) - '0' : 10 + tolower(c) - 'a')
 
 static MOZ_ALWAYS_INLINE size_t js_strlen(const char16_t* s) {
   return std::char_traits<char16_t>::length(s);
@@ -42,23 +54,20 @@ namespace js {
 
 class StringBuffer;
 
-template <typename CharT>
-constexpr uint8_t AsciiDigitToNumber(CharT c) {
-  using UnsignedCharT = std::make_unsigned_t<CharT>;
-  auto uc = static_cast<UnsignedCharT>(c);
-  return uc - '0';
-}
+template <typename Char1, typename Char2>
+inline bool EqualChars(const Char1* s1, const Char2* s2, size_t len);
 
-template <typename CharT>
-static constexpr bool IsAsciiPrintable(CharT c) {
-  using UnsignedCharT = std::make_unsigned_t<CharT>;
-  auto uc = static_cast<UnsignedCharT>(c);
-  return ' ' <= uc && uc <= '~';
+template <typename Char1>
+inline bool EqualChars(const Char1* s1, const Char1* s2, size_t len) {
+  return mozilla::PodEqual(s1, s2, len);
 }
 
 template <typename Char1, typename Char2>
 inline bool EqualChars(const Char1* s1, const Char2* s2, size_t len) {
-  return mozilla::ArrayEqual(s1, s2, len);
+  for (const Char1 *s1end = s1 + len; s1 < s1end; s1++, s2++) {
+    if (*s1 != *s2) return false;
+  }
+  return true;
 }
 
 // Return less than, equal to, or greater than zero depending on whether
@@ -68,9 +77,7 @@ inline int32_t CompareChars(const Char1* s1, size_t len1, const Char2* s2,
                             size_t len2) {
   size_t n = Min(len1, len2);
   for (size_t i = 0; i < n; i++) {
-    if (int32_t cmp = s1[i] - s2[i]) {
-      return cmp;
-    }
+    if (int32_t cmp = s1[i] - s2[i]) return cmp;
   }
 
   return int32_t(len1 - len2);
@@ -81,35 +88,10 @@ template <typename CharT>
 static inline const CharT* SkipSpace(const CharT* s, const CharT* end) {
   MOZ_ASSERT(s <= end);
 
-  while (s < end && unicode::IsSpace(*s)) {
-    s++;
-  }
+  while (s < end && unicode::IsSpace(*s)) s++;
 
   return s;
 }
-
-extern UniqueChars DuplicateStringToArena(arena_id_t destArenaId, JSContext* cx,
-                                          const char* s);
-
-extern UniqueTwoByteChars DuplicateStringToArena(arena_id_t destArenaId,
-                                                 JSContext* cx,
-                                                 const char16_t* s);
-
-/*
- * These variants do not report OOMs, you must arrange for OOMs to be reported
- * yourself.
- */
-extern UniqueChars DuplicateStringToArena(arena_id_t destArenaId,
-                                          const char* s);
-
-extern UniqueChars DuplicateStringToArena(arena_id_t destArenaId, const char* s,
-                                          size_t n);
-
-extern UniqueTwoByteChars DuplicateStringToArena(arena_id_t destArenaId,
-                                                 const char16_t* s);
-
-extern UniqueTwoByteChars DuplicateStringToArena(arena_id_t destArenaId,
-                                                 const char16_t* s, size_t n);
 
 extern UniqueChars DuplicateString(JSContext* cx, const char* s);
 
@@ -139,17 +121,24 @@ extern char16_t* InflateString(JSContext* cx, const char* bytes, size_t length);
  * enough for 'srclen' char16_t code units. The buffer is NOT null-terminated.
  */
 inline void CopyAndInflateChars(char16_t* dst, const char* src, size_t srclen) {
-  for (size_t i = 0; i < srclen; i++) {
-    dst[i] = (unsigned char)src[i];
-  }
+  for (size_t i = 0; i < srclen; i++) dst[i] = (unsigned char)src[i];
 }
 
 inline void CopyAndInflateChars(char16_t* dst, const JS::Latin1Char* src,
                                 size_t srclen) {
-  for (size_t i = 0; i < srclen; i++) {
-    dst[i] = src[i];
-  }
+  for (size_t i = 0; i < srclen; i++) dst[i] = src[i];
 }
+
+/*
+ * Deflate JS chars to bytes into a buffer. 'bytes' must be large enough for
+ * 'length chars. The buffer is NOT null-terminated. The destination length
+ * must to be initialized with the buffer size and will contain on return the
+ * number of copied bytes.
+ */
+template <typename CharT>
+extern bool DeflateStringToBuffer(JSContext* maybecx, const CharT* chars,
+                                  size_t charsLength, char* bytes,
+                                  size_t* length);
 
 /*
  * Convert one UCS-4 char and write it into a UTF-8 buffer, which must be at
@@ -227,27 +216,8 @@ inline bool FileEscapedString(FILE* fp, const char* chars, size_t length,
   return res;
 }
 
-JSString* EncodeURI(JSContext* cx, const char* chars, size_t length);
-
-// Return true if input string contains a given flag in a comma separated list.
-bool ContainsFlag(const char* str, const char* flag);
-
-namespace unicode {
-
-/** Compute the number of code points in the valid UTF-8 range [begin, end). */
-extern size_t CountCodePoints(const mozilla::Utf8Unit* begin,
-                              const mozilla::Utf8Unit* end);
-
-/**
- * Count the number of code points in [begin, end).
- *
- * Unlike the UTF-8 case above, consistent with legacy ECMAScript practice,
- * every sequence of 16-bit units is considered valid.  Lone surrogates are
- * treated as if they represented a code point of the same value.
- */
-extern size_t CountCodePoints(const char16_t* begin, const char16_t* end);
-
-}  // namespace unicode
+bool EncodeURI(JSContext* cx, StringBuffer& sb, const char* chars,
+               size_t length);
 
 }  // namespace js
 

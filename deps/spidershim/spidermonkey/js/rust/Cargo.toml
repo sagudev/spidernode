@@ -6,14 +6,12 @@ build = "build.rs"
 license = "MPL-2.0"
 
 [build-dependencies]
-env_logger = {version = "0.5", default-features = false} # disable `regex` to reduce code size
-bindgen = {version = "0.49", default-features = false} # disable `logging` to reduce code size
+env_logger = {version = "0.4", default-features = false} # disable `regex` to reduce code size
+log = "0.3"
+bindgen = {version = "0.37", default-features = false} # disable `logging` to reduce code size
 cmake = "0.1"
 glob = "0.2.11"
 
-[[test]]
-name = "bigint"
-required-features = ["bigint"]
 [[test]]
 name = "callback"
 [[test]]
@@ -31,8 +29,6 @@ name = "typedarray"
 [[test]]
 name = "stack_limit"
 [[test]]
-name = "value"
-[[test]]
 name = "vec_conversion"
 
 [lib]
@@ -42,13 +38,12 @@ doctest = false
 debugmozjs = ['mozjs_sys/debugmozjs']
 promises = ['mozjs_sys/promises']
 nonzero = []
-bigint = ['mozjs_sys/bigint']
 
 [dependencies.mozjs_sys]
 path = "../src"
 
 [dependencies]
-lazy_static = "1.0"
+lazy_static = "0.2.1"
 libc = "0.2"
-log = "0.4"
+log = "0.3"
 num-traits = "0.1.32"

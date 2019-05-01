@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,12 +20,8 @@
 #include "builtin/intl/ICUStubs.h"
 #include "builtin/intl/NumberFormat.h"
 #include "builtin/intl/PluralRules.h"
-#include "builtin/intl/RelativeTimeFormat.h"
 #include "builtin/intl/ScopedICUObject.h"
-#include "js/CharacterEncoding.h"
 #include "js/Class.h"
-#include "js/PropertySpec.h"
-#include "js/StableStringChars.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
@@ -38,8 +34,6 @@ using namespace js;
 using mozilla::Range;
 using mozilla::RangedPtr;
 
-using JS::AutoStableStringChars;
-
 using js::intl::CallICU;
 using js::intl::DateTimeFormatOptions;
 using js::intl::IcuLocale;
@@ -50,15 +44,13 @@ bool js::intl_GetCalendarInfo(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 1);
 
-  UniqueChars locale = intl::EncodeLocale(cx, args[0].toString());
-  if (!locale) {
-    return false;
-  }
+  JSAutoByteString locale(cx, args[0].toString());
+  if (!locale) return false;
 
   UErrorCode status = U_ZERO_ERROR;
   const UChar* uTimeZone = nullptr;
   int32_t uTimeZoneLength = 0;
-  UCalendar* cal = ucal_open(uTimeZone, uTimeZoneLength, locale.get(),
+  UCalendar* cal = ucal_open(uTimeZone, uTimeZoneLength, locale.ptr(),
                              UCAL_DEFAULT, &status);
   if (U_FAILURE(status)) {
     intl::ReportInternalError(cx);
@@ -67,23 +59,18 @@ bool js::intl_GetCalendarInfo(JSContext* cx, unsigned argc, Value* vp) {
   ScopedICUObject<UCalendar, ucal_close> toClose(cal);
 
   RootedObject info(cx, NewBuiltinClassInstance<PlainObject>(cx));
-  if (!info) {
-    return false;
-  }
+  if (!info) return false;
 
   RootedValue v(cx);
   int32_t firstDayOfWeek = ucal_getAttribute(cal, UCAL_FIRST_DAY_OF_WEEK);
   v.setInt32(firstDayOfWeek);
 
-  if (!DefineDataProperty(cx, info, cx->names().firstDayOfWeek, v)) {
+  if (!DefineDataProperty(cx, info, cx->names().firstDayOfWeek, v))
     return false;
-  }
 
   int32_t minDays = ucal_getAttribute(cal, UCAL_MINIMAL_DAYS_IN_FIRST_WEEK);
   v.setInt32(minDays);
-  if (!DefineDataProperty(cx, info, cx->names().minDays, v)) {
-    return false;
-  }
+  if (!DefineDataProperty(cx, info, cx->names().minDays, v)) return false;
 
   UCalendarWeekdayType prevDayType =
       ucal_getDayOfWeekType(cal, UCAL_SATURDAY, &status);
@@ -131,13 +118,11 @@ bool js::intl_GetCalendarInfo(JSContext* cx, unsigned argc, Value* vp) {
   MOZ_ASSERT(weekendStart.isInt32());
   MOZ_ASSERT(weekendEnd.isInt32());
 
-  if (!DefineDataProperty(cx, info, cx->names().weekendStart, weekendStart)) {
+  if (!DefineDataProperty(cx, info, cx->names().weekendStart, weekendStart))
     return false;
-  }
 
-  if (!DefineDataProperty(cx, info, cx->names().weekendEnd, weekendEnd)) {
+  if (!DefineDataProperty(cx, info, cx->names().weekendEnd, weekendEnd))
     return false;
-  }
 
   args.rval().setObject(*info);
   return true;
@@ -158,9 +143,7 @@ template <typename ConstChar>
 static bool MatchPart(RangedPtr<ConstChar> iter, const RangedPtr<ConstChar> end,
                       const char* part, size_t partlen) {
   for (size_t i = 0; i < partlen; iter++, i++) {
-    if (iter == end || *iter != part[i]) {
-      return false;
-    }
+    if (iter == end || *iter != part[i]) return false;
   }
 
   return true;
@@ -169,9 +152,7 @@ static bool MatchPart(RangedPtr<ConstChar> iter, const RangedPtr<ConstChar> end,
 template <typename ConstChar, size_t N>
 inline bool MatchPart(RangedPtr<ConstChar>* iter,
                       const RangedPtr<ConstChar> end, const char (&part)[N]) {
-  if (!MatchPart(*iter, end, part, N - 1)) {
-    return false;
-  }
+  if (!MatchPart(*iter, end, part, N - 1)) return false;
 
   *iter += N - 1;
   return true;
@@ -206,14 +187,10 @@ static JSString* ComputeSingleDisplayName(JSContext* cx, UDateFormat* fmt,
     return nullptr;
   }
 
-  if (!MatchSlash()) {
-    return nullptr;
-  }
+  if (!MatchSlash()) return nullptr;
 
   if (MatchPart(&iter, end, "fields")) {
-    if (!MatchSlash()) {
-      return nullptr;
-    }
+    if (!MatchSlash()) return nullptr;
 
     UDateTimePatternField fieldType;
 
@@ -244,17 +221,13 @@ static JSString* ComputeSingleDisplayName(JSContext* cx, UDateFormat* fmt,
   }
 
   if (MatchPart(&iter, end, "gregorian")) {
-    if (!MatchSlash()) {
-      return nullptr;
-    }
+    if (!MatchSlash()) return nullptr;
 
     UDateFormatSymbolType symbolType;
     int32_t index;
 
     if (MatchPart(&iter, end, "months")) {
-      if (!MatchSlash()) {
-        return nullptr;
-      }
+      if (!MatchSlash()) return nullptr;
 
       switch (style) {
         case DisplayNameStyle::Narrow:
@@ -299,9 +272,7 @@ static JSString* ComputeSingleDisplayName(JSContext* cx, UDateFormat* fmt,
         return nullptr;
       }
     } else if (MatchPart(&iter, end, "weekdays")) {
-      if (!MatchSlash()) {
-        return nullptr;
-      }
+      if (!MatchSlash()) return nullptr;
 
       switch (style) {
         case DisplayNameStyle::Narrow:
@@ -336,9 +307,7 @@ static JSString* ComputeSingleDisplayName(JSContext* cx, UDateFormat* fmt,
         return nullptr;
       }
     } else if (MatchPart(&iter, end, "dayperiods")) {
-      if (!MatchSlash()) {
-        return nullptr;
-      }
+      if (!MatchSlash()) return nullptr;
 
       symbolType = UDAT_AM_PMS;
 
@@ -376,18 +345,15 @@ bool js::intl_ComputeDisplayNames(JSContext* cx, unsigned argc, Value* vp) {
   MOZ_ASSERT(args.length() == 3);
 
   // 1. Assert: locale is a string.
-  UniqueChars locale = intl::EncodeLocale(cx, args[0].toString());
-  if (!locale) {
-    return false;
-  }
+  RootedString str(cx, args[0].toString());
+  JSAutoByteString locale;
+  if (!locale.encodeUtf8(cx, str)) return false;
 
   // 2. Assert: style is a string.
   DisplayNameStyle dnStyle;
   {
     JSLinearString* style = args[1].toString()->ensureLinear(cx);
-    if (!style) {
-      return false;
-    }
+    if (!style) return false;
 
     if (StringEqualsAscii(style, "narrow")) {
       dnStyle = DisplayNameStyle::Narrow;
@@ -401,20 +367,16 @@ bool js::intl_ComputeDisplayNames(JSContext* cx, unsigned argc, Value* vp) {
 
   // 3. Assert: keys is an Array.
   RootedArrayObject keys(cx, &args[2].toObject().as<ArrayObject>());
-  if (!keys) {
-    return false;
-  }
+  if (!keys) return false;
 
   // 4. Let result be ArrayCreate(0).
   RootedArrayObject result(cx, NewDenseUnallocatedArray(cx, keys->length()));
-  if (!result) {
-    return false;
-  }
+  if (!result) return false;
 
   UErrorCode status = U_ZERO_ERROR;
 
   UDateFormat* fmt =
-      udat_open(UDAT_DEFAULT, UDAT_DEFAULT, IcuLocale(locale.get()), nullptr, 0,
+      udat_open(UDAT_DEFAULT, UDAT_DEFAULT, IcuLocale(locale.ptr()), nullptr, 0,
                 nullptr, 0, &status);
   if (U_FAILURE(status)) {
     intl::ReportInternalError(cx);
@@ -425,7 +387,7 @@ bool js::intl_ComputeDisplayNames(JSContext* cx, unsigned argc, Value* vp) {
   // UDateTimePatternGenerator will be needed for translations of date and
   // time fields like "month", "week", "day" etc.
   UDateTimePatternGenerator* dtpg =
-      udatpg_open(IcuLocale(locale.get()), &status);
+      udatpg_open(IcuLocale(locale.ptr()), &status);
   if (U_FAILURE(status)) {
     intl::ReportInternalError(cx);
     return false;
@@ -436,16 +398,12 @@ bool js::intl_ComputeDisplayNames(JSContext* cx, unsigned argc, Value* vp) {
   RootedString keyValStr(cx);
   RootedValue v(cx);
   for (uint32_t i = 0; i < keys->length(); i++) {
-    if (!GetElement(cx, keys, keys, i, &v)) {
-      return false;
-    }
+    if (!GetElement(cx, keys, keys, i, &v)) return false;
 
     keyValStr = v.toString();
 
     AutoStableStringChars stablePatternChars(cx);
-    if (!stablePatternChars.init(cx, keyValStr)) {
-      return false;
-    }
+    if (!stablePatternChars.init(cx, keyValStr)) return false;
 
     // 5.a. Perform an implementation dependent algorithm to map a key to a
     //      corresponding display name.
@@ -455,15 +413,11 @@ bool js::intl_ComputeDisplayNames(JSContext* cx, unsigned argc, Value* vp) {
                                        stablePatternChars.latin1Range())
             : ComputeSingleDisplayName(cx, fmt, dtpg, dnStyle,
                                        stablePatternChars.twoByteRange());
-    if (!displayName) {
-      return false;
-    }
+    if (!displayName) return false;
 
     // 5.b. Append the result string to result.
     v.setString(displayName);
-    if (!DefineDataElement(cx, result, i, v)) {
-      return false;
-    }
+    if (!DefineDataElement(cx, result, i, v)) return false;
   }
 
   // 6. Return result.
@@ -475,27 +429,19 @@ bool js::intl_GetLocaleInfo(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 1);
 
-  UniqueChars locale = intl::EncodeLocale(cx, args[0].toString());
-  if (!locale) {
-    return false;
-  }
+  JSAutoByteString locale(cx, args[0].toString());
+  if (!locale) return false;
 
   RootedObject info(cx, NewBuiltinClassInstance<PlainObject>(cx));
-  if (!info) {
-    return false;
-  }
+  if (!info) return false;
 
-  if (!DefineDataProperty(cx, info, cx->names().locale, args[0])) {
-    return false;
-  }
+  if (!DefineDataProperty(cx, info, cx->names().locale, args[0])) return false;
 
-  bool rtl = uloc_isRightToLeft(IcuLocale(locale.get()));
+  bool rtl = uloc_isRightToLeft(IcuLocale(locale.ptr()));
 
   RootedValue dir(cx, StringValue(rtl ? cx->names().rtl : cx->names().ltr));
 
-  if (!DefineDataProperty(cx, info, cx->names().direction, dir)) {
-    return false;
-  }
+  if (!DefineDataProperty(cx, info, cx->names().direction, dir)) return false;
 
   args.rval().setObject(*info);
   return true;
@@ -519,61 +465,41 @@ static const JSFunctionSpec intl_static_methods[] = {
  * Initializes the Intl Object and its standard built-in properties.
  * Spec: ECMAScript Internationalization API Specification, 8.0, 8.1
  */
-/* static */
-bool GlobalObject::initIntlObject(JSContext* cx, Handle<GlobalObject*> global) {
+/* static */ bool GlobalObject::initIntlObject(JSContext* cx,
+                                               Handle<GlobalObject*> global) {
   RootedObject proto(cx, GlobalObject::getOrCreateObjectPrototype(cx, global));
-  if (!proto) {
-    return false;
-  }
+  if (!proto) return false;
 
   // The |Intl| object is just a plain object with some "static" function
   // properties and some constructor properties.
   RootedObject intl(
       cx, NewObjectWithGivenProto(cx, &IntlClass, proto, SingletonObject));
-  if (!intl) {
-    return false;
-  }
+  if (!intl) return false;
 
   // Add the static functions.
-  if (!JS_DefineFunctions(cx, intl, intl_static_methods)) {
-    return false;
-  }
+  if (!JS_DefineFunctions(cx, intl, intl_static_methods)) return false;
 
   // Add the constructor properties, computing and returning the relevant
   // prototype objects needed below.
   RootedObject collatorProto(cx, CreateCollatorPrototype(cx, intl, global));
-  if (!collatorProto) {
-    return false;
-  }
+  if (!collatorProto) return false;
   RootedObject dateTimeFormatProto(cx), dateTimeFormat(cx);
   dateTimeFormatProto = CreateDateTimeFormatPrototype(
       cx, intl, global, &dateTimeFormat, DateTimeFormatOptions::Standard);
-  if (!dateTimeFormatProto) {
-    return false;
-  }
+  if (!dateTimeFormatProto) return false;
   RootedObject numberFormatProto(cx), numberFormat(cx);
   numberFormatProto =
       CreateNumberFormatPrototype(cx, intl, global, &numberFormat);
-  if (!numberFormatProto) {
-    return false;
-  }
+  if (!numberFormatProto) return false;
   RootedObject pluralRulesProto(cx,
                                 CreatePluralRulesPrototype(cx, intl, global));
-  if (!pluralRulesProto) {
-    return false;
-  }
-  RootedObject relativeTimeFmtProto(
-      cx, CreateRelativeTimeFormatPrototype(cx, intl, global));
-  if (!relativeTimeFmtProto) {
-    return false;
-  }
+  if (!pluralRulesProto) return false;
 
   // The |Intl| object is fully set up now, so define the global property.
   RootedValue intlValue(cx, ObjectValue(*intl));
   if (!DefineDataProperty(cx, global, cx->names().Intl, intlValue,
-                          JSPROP_RESOLVING)) {
+                          JSPROP_RESOLVING))
     return false;
-  }
 
   // Now that the |Intl| object is successfully added, we can OOM-safely fill
   // in all relevant reserved global slots.
@@ -591,8 +517,6 @@ bool GlobalObject::initIntlObject(JSContext* cx, Handle<GlobalObject*> global) {
   global->setReservedSlot(NUMBER_FORMAT, ObjectValue(*numberFormat));
   global->setReservedSlot(NUMBER_FORMAT_PROTO, ObjectValue(*numberFormatProto));
   global->setReservedSlot(PLURAL_RULES_PROTO, ObjectValue(*pluralRulesProto));
-  global->setReservedSlot(RELATIVE_TIME_FORMAT_PROTO,
-                          ObjectValue(*relativeTimeFmtProto));
 
   // Also cache |Intl| to implement spec language that conditions behavior
   // based on values being equal to "the standard built-in |Intl| object".
@@ -603,10 +527,9 @@ bool GlobalObject::initIntlObject(JSContext* cx, Handle<GlobalObject*> global) {
   return true;
 }
 
-JSObject* js::InitIntlClass(JSContext* cx, Handle<GlobalObject*> global) {
-  if (!GlobalObject::initIntlObject(cx, global)) {
-    return nullptr;
-  }
+JSObject* js::InitIntlClass(JSContext* cx, HandleObject obj) {
+  Handle<GlobalObject*> global = obj.as<GlobalObject>();
+  if (!GlobalObject::initIntlObject(cx, global)) return nullptr;
 
   return &global->getConstructor(JSProto_Intl).toObject();
 }

@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty('Atomics')||!this.hasOwnProperty('SharedArrayBuffer')||(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration()['arm64-simulator'])) -- Atomics,SharedArrayBuffer is not enabled unconditionally, ARM64 Simulator cannot emulate atomics
+// |reftest| skip-if(!this.hasOwnProperty('SharedArrayBuffer')||!this.hasOwnProperty('Atomics')) -- SharedArrayBuffer,Atomics is not enabled unconditionally
 // Copyright (C) 2017 Mozilla Corporation.  All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -7,19 +7,23 @@ esid: sec-atomics.add
 description: >
   Test range checking of Atomics.add on arrays that allow atomic operations
 includes: [testAtomics.js, testTypedArray.js]
-features: [ArrayBuffer, Atomics, DataView, SharedArrayBuffer, Symbol, TypedArray]
+features: [SharedArrayBuffer, ArrayBuffer, DataView, Atomics, arrow-function, let, TypedArray, for-of]
 ---*/
 
-const buffer = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
-const views = intArrayConstructors.slice();
+var sab = new SharedArrayBuffer(8);
+var views = [Int8Array, Uint8Array, Int16Array, Uint16Array, Int32Array, Uint32Array];
 
-testWithTypedArrayConstructors(function(TA) {
-  let view = new TA(buffer);
-  testWithAtomicsOutOfBoundsIndices(function(IdxGen) {
-    assert.throws(RangeError, function() {
-      Atomics.add(view, IdxGen(view), 10);
-    }, '`Atomics.add(view, IdxGen(view), 10)` throws RangeError');
-  });
+if (typeof BigInt !== "undefined") {
+  views.push(BigInt64Array);
+  views.push(BigUint64Array);
+}
+
+testWithTypedArrayConstructors(function(View) {
+    let view = new View(sab);
+    testWithAtomicsOutOfBoundsIndices(function(IdxGen) {
+        let Idx = IdxGen(view);
+        assert.throws(RangeError, () => Atomics.add(view, Idx, 10));
+    });
 }, views);
 
 reportCompare(0, 0);

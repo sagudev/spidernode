@@ -1,7 +1,10 @@
-// |jit-test| test-also=--wasm-compiler=ion; skip-if: !wasmDebuggingIsSupported()
+// |jit-test| test-also-no-wasm-baseline
 // Checking if we destroying work registers by breakpoint/step handler.
 
 load(libdir + "wasm.js");
+
+if (!wasmDebuggingIsSupported())
+    quit();
 
 // Running the following code compiled from C snippet:
 //

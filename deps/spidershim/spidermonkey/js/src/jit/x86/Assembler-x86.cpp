@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +18,6 @@ ABIArg ABIArgGenerator::next(MIRType type) {
     case MIRType::Int32:
     case MIRType::Float32:
     case MIRType::Pointer:
-    case MIRType::RefOrNull:
       current_ = ABIArg(stackOffset_);
       stackOffset_ += sizeof(uint32_t);
       break;
@@ -49,9 +48,8 @@ ABIArg ABIArgGenerator::next(MIRType type) {
 
 void Assembler::executableCopy(uint8_t* buffer, bool flushICache) {
   AssemblerX86Shared::executableCopy(buffer);
-  for (RelativePatch& rp : jumps_) {
+  for (RelativePatch& rp : jumps_)
     X86Encoding::SetRel32(buffer + rp.offset, rp.target);
-  }
 }
 
 class RelocationIterator {
@@ -62,9 +60,7 @@ class RelocationIterator {
   explicit RelocationIterator(CompactBufferReader& reader) : reader_(reader) {}
 
   bool read() {
-    if (!reader_.more()) {
-      return false;
-    }
+    if (!reader_.more()) return false;
     offset_ = reader_.readUnsigned();
     return true;
   }

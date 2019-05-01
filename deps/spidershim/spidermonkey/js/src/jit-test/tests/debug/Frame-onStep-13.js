@@ -2,7 +2,7 @@
 // should move to the end of the function, not somewhere in the body
 // of the "if".
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.eval(`function f() {        // 1
   var a,c;                    // 2
   debugger;                   // 3

@@ -408,23 +408,6 @@ void Elf::normalize() {
       }
     }
   }
-
-  ElfSegment *prevLoad = nullptr;
-  for (auto &it : segments) {
-    if (it->getType() == PT_LOAD) {
-      if (prevLoad) {
-        size_t alignedPrevEnd = (prevLoad->getAddr() + prevLoad->getMemSize() +
-                                 prevLoad->getAlign() - 1) &
-                                ~(prevLoad->getAlign() - 1);
-        size_t alignedStart = it->getAddr() & ~(it->getAlign() - 1);
-        if (alignedPrevEnd > alignedStart) {
-          throw std::runtime_error("Segments overlap");
-        }
-      }
-      prevLoad = it;
-    }
-  }
-
   // fixup ehdr before writing
   if (ehdr->e_phnum != segments.size()) {
     ehdr->e_phnum = segments.size();
@@ -497,10 +480,7 @@ ElfSection::ElfSection(Elf_Shdr &s, std::ifstream *file, Elf *parent)
       (shdr.sh_type == SHT_NOBITS))
     data = nullptr;
   else {
-    data = static_cast<char *>(malloc(shdr.sh_size));
-    if (!data) {
-      throw std::runtime_error("Could not malloc ElfSection data");
-    }
+    data = new char[shdr.sh_size];
     int pos = file->tellg();
     file->seekg(shdr.sh_offset);
     file->read(data, shdr.sh_size);
@@ -575,6 +555,15 @@ unsigned int ElfSection::getOffset() {
   if ((getType() != SHT_NOBITS) && (offset & (getAddrAlign() - 1)))
     offset = (offset | (getAddrAlign() - 1)) + 1;
 
+  // Two subsequent sections can't be mapped in the same page in memory
+  // if they aren't in the same 4K block on disk.
+  if ((getType() != SHT_NOBITS) && getAddr()) {
+    if (((offset >> 12) != (previous->getOffset() >> 12)) &&
+        ((getAddr() >> 12) == (previous->getAddr() >> 12)))
+      throw std::runtime_error(
+          "Moving section would require overlapping segments");
+  }
+
   return (shdr.sh_offset = offset);
 }
 
@@ -629,7 +618,7 @@ void ElfSegment::removeSection(ElfSection *section) {
 }
 
 unsigned int ElfSegment::getFileSize() {
-  if (type == PT_GNU_RELRO) return filesz;
+  if (type == PT_GNU_RELRO || isElfHackFillerSegment()) return filesz;
 
   if (sections.empty()) return 0;
   // Search the last section that is not SHT_NOBITS
@@ -646,7 +635,7 @@ unsigned int ElfSegment::getFileSize() {
 }
 
 unsigned int ElfSegment::getMemSize() {
-  if (type == PT_GNU_RELRO) return memsz;
+  if (type == PT_GNU_RELRO || isElfHackFillerSegment()) return memsz;
 
   if (sections.empty()) return 0;
 
@@ -661,6 +650,10 @@ unsigned int ElfSegment::getOffset() {
     throw std::runtime_error(
         "PT_GNU_RELRO segment doesn't start on a section start");
 
+  // Neither bionic nor glibc linkers seem to like when the offset of that
+  // segment is 0
+  if (isElfHackFillerSegment()) return vaddr;
+
   return sections.empty() ? 0 : sections.front()->getOffset();
 }
 
@@ -669,6 +662,8 @@ unsigned int ElfSegment::getAddr() {
       (sections.front()->getAddr() != vaddr))
     throw std::runtime_error(
         "PT_GNU_RELRO segment doesn't start on a section start");
+
+  if (isElfHackFillerSegment()) return vaddr;
 
   return sections.empty() ? 0 : sections.front()->getAddr();
 }

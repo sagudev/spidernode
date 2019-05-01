@@ -6,6 +6,7 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import os
 import json
+import yaml
 import shutil
 import unittest
 import tempfile
@@ -13,7 +14,6 @@ import tempfile
 from mock import patch
 from mozunit import main, MockedOpen
 from taskgraph import decision
-from taskgraph.util.yaml import load_yaml
 
 
 FAKE_GRAPH_CONFIG = {'product-dir': 'browser'}
@@ -40,7 +40,8 @@ class TestDecision(unittest.TestCase):
         try:
             decision.ARTIFACTS_DIR = os.path.join(tmpdir, "artifacts")
             decision.write_artifact("artifact.yml", data)
-            self.assertEqual(load_yaml(decision.ARTIFACTS_DIR, "artifact.yml"), data)
+            with open(os.path.join(decision.ARTIFACTS_DIR, "artifact.yml")) as f:
+                self.assertEqual(yaml.safe_load(f), data)
         finally:
             if os.path.exists(tmpdir):
                 shutil.rmtree(tmpdir)
@@ -99,9 +100,7 @@ class TestGetDecisionParameters(unittest.TestCase):
         self.assertEqual(params['try_task_config'], None)
 
     @patch('taskgraph.decision.get_hg_revision_branch')
-    @patch('taskgraph.decision.get_hg_commit_message')
-    def test_try_task_config(self, mock_get_hg_commit_message, _):
-        mock_get_hg_commit_message.return_value = 'Fuzzy query=foo'
+    def test_try_task_config(self, _):
         ttc = {'tasks': ['a', 'b'], 'templates': {}}
         self.options['project'] = 'try'
         with MockedOpen({self.ttc_file: json.dumps(ttc)}):

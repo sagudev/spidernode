@@ -1,3 +1,6 @@
+if (typeof parseRegExp === 'undefined')
+    quit();
+
 load(libdir + "regexp_parse.js");
 
 // Leading and trailing .* are ignored if match_only==true.

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,30 +8,35 @@
 #define vm_AsyncIteration_h
 
 #include "builtin/Promise.h"
-#include "js/Class.h"
 #include "vm/GeneratorObject.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
-#include "vm/List.h"
 
 namespace js {
 
-class AsyncGeneratorObject;
+// Async generator consists of 2 functions, |wrapped| and |unwrapped|.
+// |unwrapped| is a generator function compiled from async generator script,
+// |await| behaves just like |yield| there.  |unwrapped| isn't exposed to user
+// script.
+// |wrapped| is a native function that is the value of async generator.
 
-// Resume the async generator when the `await` operand fulfills to `value`.
+JSObject* WrapAsyncGeneratorWithProto(JSContext* cx, HandleFunction unwrapped,
+                                      HandleObject proto);
+
+JSObject* WrapAsyncGenerator(JSContext* cx, HandleFunction unwrapped);
+
+bool IsWrappedAsyncGenerator(JSFunction* fun);
+
+JSFunction* GetWrappedAsyncGenerator(JSFunction* unwrapped);
+
+JSFunction* GetUnwrappedAsyncGenerator(JSFunction* wrapped);
+
 MOZ_MUST_USE bool AsyncGeneratorAwaitedFulfilled(
     JSContext* cx, Handle<AsyncGeneratorObject*> asyncGenObj,
     HandleValue value);
-
-// Resume the async generator when the `await` operand rejects with `reason`.
 MOZ_MUST_USE bool AsyncGeneratorAwaitedRejected(
     JSContext* cx, Handle<AsyncGeneratorObject*> asyncGenObj,
     HandleValue reason);
-
-// Resume the async generator after awaiting on the value passed to
-// AsyncGenerator#return, when the async generator was still executing.
-// Split into two functions depending on whether the awaited value was
-// fulfilled or rejected.
 MOZ_MUST_USE bool AsyncGeneratorYieldReturnAwaitedFulfilled(
     JSContext* cx, Handle<AsyncGeneratorObject*> asyncGenObj,
     HandleValue value);
@@ -39,38 +44,25 @@ MOZ_MUST_USE bool AsyncGeneratorYieldReturnAwaitedRejected(
     JSContext* cx, Handle<AsyncGeneratorObject*> asyncGenObj,
     HandleValue reason);
 
-// AsyncGeneratorRequest record in the spec.
-// Stores the info from AsyncGenerator#{next,return,throw}.
-//
-// This object is reused across multiple requests as an optimization, and
-// stored in the Slot_CachedRequest slot.
+class AsyncGeneratorObject;
+
 class AsyncGeneratorRequest : public NativeObject {
  private:
   enum AsyncGeneratorRequestSlots {
-    // Int32 value with CompletionKind.
-    //   Normal: next
-    //   Return: return
-    //   Throw:  throw
     Slot_CompletionKind = 0,
-
-    // The value passed to AsyncGenerator#{next,return,throw}.
     Slot_CompletionValue,
-
-    // The promise returned by AsyncGenerator#{next,return,throw}.
     Slot_Promise,
-
     Slots,
   };
 
-  void init(CompletionKind completionKind, const Value& completionValue,
-            PromiseObject* promise) {
+  void init(CompletionKind completionKind, HandleValue completionValue,
+            HandleObject promise) {
     setFixedSlot(Slot_CompletionKind,
                  Int32Value(static_cast<int32_t>(completionKind)));
     setFixedSlot(Slot_CompletionValue, completionValue);
     setFixedSlot(Slot_Promise, ObjectValue(*promise));
   }
 
-  // Clear the request data for reuse.
   void clearData() {
     setFixedSlot(Slot_CompletionValue, NullValue());
     setFixedSlot(Slot_Promise, NullValue());
@@ -84,7 +76,7 @@ class AsyncGeneratorRequest : public NativeObject {
   static AsyncGeneratorRequest* create(JSContext* cx,
                                        CompletionKind completionKind,
                                        HandleValue completionValue,
-                                       Handle<PromiseObject*> promise);
+                                       HandleObject promise);
 
   CompletionKind completionKind() const {
     return static_cast<CompletionKind>(
@@ -93,56 +85,29 @@ class AsyncGeneratorRequest : public NativeObject {
   JS::Value completionValue() const {
     return getFixedSlot(Slot_CompletionValue);
   }
-  PromiseObject* promise() const {
-    return &getFixedSlot(Slot_Promise).toObject().as<PromiseObject>();
-  }
+  JSObject* promise() const { return &getFixedSlot(Slot_Promise).toObject(); }
 };
 
-class AsyncGeneratorObject : public AbstractGeneratorObject {
+class AsyncGeneratorObject : public NativeObject {
  private:
   enum AsyncGeneratorObjectSlots {
-    // Int32 value containing one of the |State| fields from below.
-    Slot_State = AbstractGeneratorObject::RESERVED_SLOTS,
-
-    // * null value if this async generator has no requests
-    // * AsyncGeneratorRequest if this async generator has only one request
-    // * list object if this async generator has 2 or more requests
+    Slot_State = 0,
+    Slot_Generator,
     Slot_QueueOrRequest,
-
-    // Cached AsyncGeneratorRequest for later use.
-    // undefined if there's no cache.
     Slot_CachedRequest,
-
     Slots
   };
 
- public:
   enum State {
-    // "suspendedStart" in the spec.
-    // Suspended after invocation.
     State_SuspendedStart,
-
-    // "suspendedYield" in the spec
-    // Suspended with `yield` expression.
     State_SuspendedYield,
-
-    // "executing" in the spec.
-    // Resumed from initial suspend or yield, and either running the script
-    // or awaiting for `await` expression.
     State_Executing,
-
-    // Part of "executing" in the spec.
-    // Awaiting on the value passed by AsyncGenerator#return which is called
-    // while executing.
+    // State_AwaitingYieldReturn corresponds to the case that
+    // AsyncGenerator#return is called while State_Executing,
+    // just like the case that AsyncGenerator#return is called
+    // while State_Completed.
     State_AwaitingYieldReturn,
-
-    // "awaiting-return" in the spec.
-    // Awaiting on the value passed by AsyncGenerator#return which is called
-    // after completed.
     State_AwaitingReturn,
-
-    // "completed" in the spec.
-    // The generator is completed.
     State_Completed
   };
 
@@ -151,10 +116,11 @@ class AsyncGeneratorObject : public AbstractGeneratorObject {
   }
   void setState(State state_) { setFixedSlot(Slot_State, Int32Value(state_)); }
 
- private:
+  void setGenerator(const Value& value) { setFixedSlot(Slot_Generator, value); }
+
   // Queue is implemented in 2 ways.  If only one request is queued ever,
-  // request is stored directly to the slot.  Once 2 requests are queued, a
-  // list is created and requests are appended into it, and the list is
+  // request is stored directly to the slot.  Once 2 requests are queued, an
+  // array is created and requests are pushed into it, and the array is
   // stored to the slot.
 
   bool isSingleQueue() const {
@@ -178,17 +144,18 @@ class AsyncGeneratorObject : public AbstractGeneratorObject {
                 .as<AsyncGeneratorRequest>();
   }
 
-  ListObject* queue() const {
-    return &getFixedSlot(Slot_QueueOrRequest).toObject().as<ListObject>();
+  NativeObject* queue() const {
+    return &getFixedSlot(Slot_QueueOrRequest).toObject().as<NativeObject>();
   }
-  void setQueue(ListObject* queue_) {
+  void setQueue(JSObject* queue_) {
     setFixedSlot(Slot_QueueOrRequest, ObjectValue(*queue_));
   }
 
  public:
   static const Class class_;
 
-  static AsyncGeneratorObject* create(JSContext* cx, HandleFunction asyncGen);
+  static AsyncGeneratorObject* create(JSContext* cx, HandleFunction asyncGen,
+                                      HandleValue generatorVal);
 
   bool isSuspendedStart() const { return state() == State_SuspendedStart; }
   bool isSuspendedYield() const { return state() == State_SuspendedYield; }
@@ -206,6 +173,11 @@ class AsyncGeneratorObject : public AbstractGeneratorObject {
   void setAwaitingReturn() { setState(State_AwaitingReturn); }
   void setCompleted() { setState(State_Completed); }
 
+  JS::Value generatorVal() const { return getFixedSlot(Slot_Generator); }
+  GeneratorObject* generatorObj() const {
+    return &getFixedSlot(Slot_Generator).toObject().as<GeneratorObject>();
+  }
+
   static MOZ_MUST_USE bool enqueueRequest(
       JSContext* cx, Handle<AsyncGeneratorObject*> asyncGenObj,
       Handle<AsyncGeneratorRequest*> request);
@@ -217,9 +189,7 @@ class AsyncGeneratorObject : public AbstractGeneratorObject {
       Handle<AsyncGeneratorObject*> asyncGenObj);
 
   bool isQueueEmpty() const {
-    if (isSingleQueue()) {
-      return isSingleQueueEmpty();
-    }
+    if (isSingleQueue()) return isSingleQueueEmpty();
     return queue()->getDenseInitializedLength() == 0;
   }
 
@@ -229,15 +199,13 @@ class AsyncGeneratorObject : public AbstractGeneratorObject {
   static AsyncGeneratorRequest* createRequest(
       JSContext* cx, Handle<AsyncGeneratorObject*> asyncGenObj,
       CompletionKind completionKind, HandleValue completionValue,
-      Handle<PromiseObject*> promise);
+      HandleObject promise);
 
   // Stores the given request to the generator's cache after clearing its data
   // slots.  The cached request will be reused in the subsequent createRequest
   // call.
   void cacheRequest(AsyncGeneratorRequest* request) {
-    if (hasCachedRequest()) {
-      return;
-    }
+    if (hasCachedRequest()) return;
 
     request->clearData();
     setFixedSlot(Slot_CachedRequest, ObjectValue(*request));
@@ -265,17 +233,16 @@ JSObject* CreateAsyncFromSyncIterator(JSContext* cx, HandleObject iter,
 class AsyncFromSyncIteratorObject : public NativeObject {
  private:
   enum AsyncFromSyncIteratorObjectSlots {
-    // Object that implements the sync iterator protocol.
     Slot_Iterator = 0,
-
-    // The `next` property of the iterator object.
     Slot_NextMethod = 1,
-
     Slots
   };
 
-  void init(JSObject* iterator, const Value& nextMethod) {
+  void setIterator(HandleObject iterator) {
     setFixedSlot(Slot_Iterator, ObjectValue(*iterator));
+  }
+
+  void setNextMethod(HandleValue nextMethod) {
     setFixedSlot(Slot_NextMethod, nextMethod);
   }
 

@@ -34,9 +34,9 @@ U_NAMESPACE_BEGIN
 // private mutex where possible.
 
 // For example:
-//
-// UMutex myMutex = U_MUTEX_INITIALIZER;
-//
+// 
+// UMutex myMutex;
+// 
 // void Function(int arg1, int arg2)
 // {
 //    static Object* foo;     // Shared read-write object

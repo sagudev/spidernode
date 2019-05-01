@@ -12,27 +12,29 @@
 #include "mozilla/Types.h"
 
 // The Gecko Profiler defines AutoProfilerLabel, an RAII class for
-// pushing/popping frames to/from the ProfilingStack.
+// pushing/popping entries to/from the PseudoStack.
 //
 // This file defines a class of the same name that does much the same thing,
 // but which can be used in (and only in) mozglue. A different class is
-// necessary because mozglue cannot directly access sProfilingStack.
+// necessary because mozglue cannot directly access sPseudoStack.
 //
 // Note that this class is slightly slower than the other AutoProfilerLabel,
 // and it lacks the macro wrappers. It also is effectively hardwired to use
-// JS::ProfilingCategory::OTHER as the category pair, because that's what
-// the callbacks provided by the profiler use. (Specifying the categories in
-// this file would require #including ProfilingCategory.h in mozglue, which we
+// js::ProfileEntry::Kind::CPP_NORMAL as the kind, and
+// js::ProfileEntry::Category::OTHER as the category, because that's what the
+// callbacks provided by the profiler use. (Specifying the kind or category in
+// this file would require #including ProfilingStack.h in mozglue, which we
 // don't want to do.)
 
-class ProfilingStack;
+class PseudoStack;
 
 namespace mozilla {
 
-typedef ProfilingStack* (*ProfilerLabelEnter)(const char*, const char*, void*);
-typedef void (*ProfilerLabelExit)(ProfilingStack*);
+typedef PseudoStack* (*ProfilerLabelEnter)(const char*, const char*, void*,
+                                           uint32_t);
+typedef void (*ProfilerLabelExit)(PseudoStack*);
 
-// Register callbacks that do the entry/exit work involving sProfilingStack.
+// Register callbacks that do the entry/exit work involving sPseudoStack.
 MFBT_API void RegisterProfilerLabelEnterExit(ProfilerLabelEnter aEnter,
                                              ProfilerLabelExit aExit);
 
@@ -42,13 +44,13 @@ MFBT_API void RegisterProfilerLabelEnterExit(ProfilerLabelEnter aEnter,
 
 class MOZ_RAII AutoProfilerLabel {
  public:
-  AutoProfilerLabel(const char* aLabel,
-                    const char* aDynamicString MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+  AutoProfilerLabel(const char* aLabel, const char* aDynamicString,
+                    uint32_t aLine MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
   ~AutoProfilerLabel();
 
  private:
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
-  ProfilingStack* mProfilingStack;
+  PseudoStack* mPseudoStack;
 };
 
 #endif

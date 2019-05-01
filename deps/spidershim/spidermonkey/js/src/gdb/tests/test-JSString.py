@@ -1,5 +1,4 @@
 # Printing JSStrings.
-# flake8: noqa: F821
 
 assert_subprinter_registered('SpiderMonkey', 'ptr-to-JSString')
 run_fragment('JSString.simple')

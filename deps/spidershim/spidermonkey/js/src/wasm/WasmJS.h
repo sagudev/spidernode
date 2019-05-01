@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * Copyright 2016 Mozilla Foundation
  *
@@ -25,13 +25,9 @@
 
 namespace js {
 
-class ArrayBufferObjectMaybeShared;
-class GlobalObject;
-class StructTypeDescr;
 class TypedArrayObject;
 class WasmFunctionScope;
 class WasmInstanceScope;
-class SharedArrayRawBuffer;
 
 namespace wasm {
 
@@ -41,32 +37,17 @@ namespace wasm {
 
 bool HasCompilerSupport(JSContext* cx);
 
-// Return whether WebAssembly has support for an optimized compiler backend.
-
-bool HasOptimizedCompilerTier(JSContext* cx);
-
-// Return whether WebAssembly is supported on this platform. This determines
-// whether the WebAssembly object is exposed to JS and takes into account
-// configuration options that disable various modes.
+// Return whether WebAssembly is enabled on this platform.
 
 bool HasSupport(JSContext* cx);
 
-// Return whether WebAssembly streaming/caching is supported on this platform.
-// This takes into account prefs and necessary embedding callbacks.
+// ToWebAssemblyValue and ToJSValue are conversion functions defined in
+// the Wasm JS API spec.
 
-bool HasStreamingSupport(JSContext* cx);
+bool ToWebAssemblyValue(JSContext* cx, ValType targetType, HandleValue v,
+                        Val* val);
 
-bool HasCachingSupport(JSContext* cx);
-
-// Returns true if WebAssembly as configured by compile-time flags and run-time
-// options can support reference types and stack walking.
-
-bool HasReftypesSupport(JSContext* cx);
-
-// Returns true if WebAssembly as configured by compile-time flags and run-time
-// options can support (ref T) types and structure types, etc (evolving).
-
-bool HasGcSupport(JSContext* cx);
+void ToJSValue(const Val& val, MutableHandleValue v);
 
 // Compiles the given binary wasm module given the ArrayBufferObject
 // and links the module's imports with the given import object.
@@ -75,37 +56,19 @@ MOZ_MUST_USE bool Eval(JSContext* cx, Handle<TypedArrayObject*> code,
                        HandleObject importObj,
                        MutableHandleWasmInstanceObject instanceObj);
 
-// Extracts the various imports from the given import object into the given
-// ImportValues structure while checking the imports against the given module.
-// The resulting structure can be passed to WasmModule::instantiate.
+// These accessors can be used to probe JS values for being an exported wasm
+// function.
 
-struct ImportValues;
-MOZ_MUST_USE bool GetImports(JSContext* cx, const Module& module,
-                             HandleObject importObj, ImportValues* imports);
+extern bool IsExportedFunction(JSFunction* fun);
 
-// For testing cross-process (de)serialization, this pair of functions are
-// responsible for, in the child process, compiling the given wasm bytecode
-// to a wasm::Module that is serialized into the given byte array, and, in
-// the parent process, deserializing the given byte array into a
-// WebAssembly.Module object.
+extern bool IsExportedWasmFunction(JSFunction* fun);
 
-MOZ_MUST_USE bool CompileAndSerialize(const ShareableBytes& bytecode,
-                                      Bytes* serialized);
-
-MOZ_MUST_USE bool DeserializeModule(JSContext* cx, const Bytes& serialized,
-                                    MutableHandleObject module);
-
-// A WebAssembly "Exported Function" is the spec name for the JS function
-// objects created to wrap wasm functions. This predicate returns false
-// for asm.js functions which are semantically just normal JS functions
-// (even if they are implemented via wasm under the hood). The accessor
-// functions for extracting the instance and func-index of a wasm function
-// can be used for both wasm and asm.js, however.
-
-extern bool IsWasmExportedFunction(JSFunction* fun);
+extern bool IsExportedFunction(const Value& v, MutableHandleFunction f);
 
 extern Instance& ExportedFunctionToInstance(JSFunction* fun);
+
 extern WasmInstanceObject* ExportedFunctionToInstanceObject(JSFunction* fun);
+
 extern uint32_t ExportedFunctionToFuncIndex(JSFunction* fun);
 
 extern bool IsSharedWasmMemoryObject(JSObject* obj);
@@ -116,7 +79,7 @@ extern bool IsSharedWasmMemoryObject(JSObject* obj);
 
 extern const Class WebAssemblyClass;
 
-JSObject* InitWebAssemblyClass(JSContext* cx, Handle<GlobalObject*> global);
+JSObject* InitWebAssemblyClass(JSContext* cx, HandleObject global);
 
 // The class of WebAssembly.Module. Each WasmModuleObject owns a
 // wasm::Module. These objects are used both as content-facing JS objects and as
@@ -138,67 +101,9 @@ class WasmModuleObject : public NativeObject {
   static const JSFunctionSpec static_methods[];
   static bool construct(JSContext*, unsigned, Value*);
 
-  static WasmModuleObject* create(JSContext* cx, const wasm::Module& module,
+  static WasmModuleObject* create(JSContext* cx, wasm::Module& module,
                                   HandleObject proto = nullptr);
-  const wasm::Module& module() const;
-};
-
-// The class of WebAssembly.Global.  This wraps a storage location, and there is
-// a per-agent one-to-one relationship between the WasmGlobalObject and the
-// storage location (the Cell) it wraps: if a module re-exports an imported
-// global, the imported and exported WasmGlobalObjects are the same, and if a
-// module exports a global twice, the two exported WasmGlobalObjects are the
-// same.
-
-// TODO/AnyRef-boxing: With boxed immediates and strings, JSObject* is no longer
-// the most appropriate representation for Cell::anyref.
-STATIC_ASSERT_ANYREF_IS_JSOBJECT;
-
-class WasmGlobalObject : public NativeObject {
-  static const unsigned TYPE_SLOT = 0;
-  static const unsigned MUTABLE_SLOT = 1;
-  static const unsigned CELL_SLOT = 2;
-
-  static const ClassOps classOps_;
-  static void finalize(FreeOp*, JSObject* obj);
-  static void trace(JSTracer* trc, JSObject* obj);
-
-  static bool valueGetterImpl(JSContext* cx, const CallArgs& args);
-  static bool valueGetter(JSContext* cx, unsigned argc, Value* vp);
-  static bool valueSetterImpl(JSContext* cx, const CallArgs& args);
-  static bool valueSetter(JSContext* cx, unsigned argc, Value* vp);
-
- public:
-  // For exposed globals the Cell holds the value of the global; the
-  // instance's global area holds a pointer to the Cell.
-  union Cell {
-    int32_t i32;
-    int64_t i64;
-    float f32;
-    double f64;
-    JSObject* ref;  // Note, this breaks an abstraction boundary
-    wasm::AnyRef anyref;
-    Cell() : i64(0) {}
-    ~Cell() {}
-  };
-
-  static const unsigned RESERVED_SLOTS = 3;
-  static const Class class_;
-  static const JSPropertySpec properties[];
-  static const JSFunctionSpec methods[];
-  static const JSFunctionSpec static_methods[];
-  static bool construct(JSContext*, unsigned, Value*);
-
-  static WasmGlobalObject* create(JSContext* cx, wasm::HandleVal value,
-                                  bool isMutable);
-  bool isNewborn() { return getReservedSlot(CELL_SLOT).isUndefined(); }
-
-  wasm::ValType type() const;
-  void val(wasm::MutableHandleVal outval) const;
-  bool isMutable() const;
-  // value() will MOZ_CRASH if the type is int64
-  Value value(JSContext* cx) const;
-  Cell* cell() const;
+  wasm::Module& module() const;
 };
 
 // The class of WebAssembly.Instance. Each WasmInstanceObject owns a
@@ -211,7 +116,6 @@ class WasmInstanceObject : public NativeObject {
   static const unsigned EXPORTS_SLOT = 2;
   static const unsigned SCOPES_SLOT = 3;
   static const unsigned INSTANCE_SCOPE_SLOT = 4;
-  static const unsigned GLOBALS_SLOT = 5;
 
   static const ClassOps classOps_;
   static bool exportsGetterImpl(JSContext* cx, const CallArgs& args);
@@ -237,7 +141,7 @@ class WasmInstanceObject : public NativeObject {
   ScopeMap& scopes() const;
 
  public:
-  static const unsigned RESERVED_SLOTS = 6;
+  static const unsigned RESERVED_SLOTS = 5;
   static const Class class_;
   static const JSPropertySpec properties[];
   static const JSFunctionSpec methods[];
@@ -246,17 +150,11 @@ class WasmInstanceObject : public NativeObject {
 
   static WasmInstanceObject* create(
       JSContext* cx, RefPtr<const wasm::Code> code,
-      const wasm::DataSegmentVector& dataSegments,
-      const wasm::ElemSegmentVector& elemSegments, wasm::UniqueTlsData tlsData,
+      UniquePtr<wasm::DebugState> debug, wasm::UniqueTlsData tlsData,
       HandleWasmMemoryObject memory,
       Vector<RefPtr<wasm::Table>, 0, SystemAllocPolicy>&& tables,
-      GCVector<HeapPtr<StructTypeDescr*>, 0, SystemAllocPolicy>&&
-          structTypeDescrs,
-      const JSFunctionVector& funcImports,
-      const wasm::GlobalDescVector& globals,
-      const wasm::ValVector& globalImportValues,
-      const WasmGlobalObjectVector& globalObjs, HandleObject proto,
-      UniquePtr<wasm::DebugState> maybeDebug);
+      Handle<FunctionVector> funcImports, const wasm::ValVector& globalImports,
+      HandleObject proto);
   void initExportsObj(JSObject& exportsObj);
 
   wasm::Instance& instance() const;
@@ -267,15 +165,13 @@ class WasmInstanceObject : public NativeObject {
                                   uint32_t funcIndex,
                                   MutableHandleFunction fun);
 
-  const wasm::CodeRange& getExportedFunctionCodeRange(JSFunction* fun,
+  const wasm::CodeRange& getExportedFunctionCodeRange(HandleFunction fun,
                                                       wasm::Tier tier);
 
   static WasmInstanceScope* getScope(JSContext* cx,
                                      HandleWasmInstanceObject instanceObj);
   static WasmFunctionScope* getFunctionScope(
       JSContext* cx, HandleWasmInstanceObject instanceObj, uint32_t funcIndex);
-
-  WasmGlobalObjectVector& indirectGlobals() const;
 };
 
 // The class of WebAssembly.Memory. A WasmMemoryObject references an ArrayBuffer
@@ -366,10 +262,44 @@ class WasmTableObject : public NativeObject {
   // Note that, after creation, a WasmTableObject's table() is not initialized
   // and must be initialized before use.
 
-  static WasmTableObject* create(JSContext* cx, const wasm::Limits& limits,
-                                 wasm::TableKind tableKind);
+  static WasmTableObject* create(JSContext* cx, const wasm::Limits& limits);
   wasm::Table& table() const;
 };
+
+#if defined(ENABLE_WASM_GLOBAL) && defined(EARLY_BETA_OR_EARLIER)
+
+// The class of WebAssembly.Global.  A WasmGlobalObject holds either the value
+// of an immutable wasm global or the cell of a mutable wasm global.
+
+class WasmGlobalObject : public NativeObject {
+  static const unsigned TYPE_SLOT = 0;
+  static const unsigned MUTABLE_SLOT = 1;
+  static const unsigned VALUE_SLOT = 2;
+
+  static const ClassOps classOps_;
+
+  static bool valueGetterImpl(JSContext* cx, const CallArgs& args);
+  static bool valueGetter(JSContext* cx, unsigned argc, Value* vp);
+  static bool valueSetterImpl(JSContext* cx, const CallArgs& args);
+  static bool valueSetter(JSContext* cx, unsigned argc, Value* vp);
+
+ public:
+  static const unsigned RESERVED_SLOTS = 3;
+  static const Class class_;
+  static const JSPropertySpec properties[];
+  static const JSFunctionSpec methods[];
+  static const JSFunctionSpec static_methods[];
+  static bool construct(JSContext*, unsigned, Value*);
+
+  static WasmGlobalObject* create(JSContext* cx, wasm::ValType type,
+                                  bool isMutable, HandleValue value);
+
+  wasm::ValType type() const;
+  bool isMutable() const;
+  Value value() const;
+};
+
+#endif  // ENABLE_WASM_GLOBAL && EARLY_BETA_OR_EARLIER
 
 }  // namespace js
 

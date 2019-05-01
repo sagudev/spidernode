@@ -1,3 +1,6 @@
+if (typeof evaluate === 'undefined')
+    quit();
+
 evaluate(`
   var f = (function module() {
     "use asm";

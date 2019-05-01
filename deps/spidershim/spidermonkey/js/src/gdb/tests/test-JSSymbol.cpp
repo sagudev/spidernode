@@ -1,8 +1,6 @@
 #include "gdb-tests.h"
 #include "jsapi.h"
 
-#include "js/Symbol.h"
-
 FRAGMENT(JSSymbol, simple) {
   using namespace JS;
 

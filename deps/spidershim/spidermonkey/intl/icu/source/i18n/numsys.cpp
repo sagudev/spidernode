@@ -26,8 +26,6 @@
 #include "unicode/numsys.h"
 #include "cstring.h"
 #include "uassert.h"
-#include "ucln_in.h"
-#include "umutex.h"
 #include "uresimp.h"
 #include "numsys_impl.h"
 
@@ -81,45 +79,43 @@ NumberingSystem* U_EXPORT2
 NumberingSystem::createInstance(int32_t radix_in, UBool isAlgorithmic_in, const UnicodeString & desc_in, UErrorCode &status) {
 
     if (U_FAILURE(status)) {
-        return nullptr;
+        return NULL;
     }
 
     if ( radix_in < 2 ) {
         status = U_ILLEGAL_ARGUMENT_ERROR;
-        return nullptr;
+        return NULL;
     }
 
     if ( !isAlgorithmic_in ) {
        if ( desc_in.countChar32() != radix_in ) {
            status = U_ILLEGAL_ARGUMENT_ERROR;
-           return nullptr;
+           return NULL;
        }
     }
 
-    LocalPointer<NumberingSystem> ns(new NumberingSystem(), status);
-    if (U_FAILURE(status)) {
-        return nullptr;
-    }
+    NumberingSystem *ns = new NumberingSystem();
 
     ns->setRadix(radix_in);
     ns->setDesc(desc_in);
     ns->setAlgorithmic(isAlgorithmic_in);
-    ns->setName(nullptr);
-
-    return ns.orphan();
+    ns->setName(NULL);
+    return ns;
+    
 }
+
 
 NumberingSystem* U_EXPORT2
 NumberingSystem::createInstance(const Locale & inLocale, UErrorCode& status) {
 
     if (U_FAILURE(status)) {
-        return nullptr;
+        return NULL;
     }
 
     UBool nsResolved = TRUE;
     UBool usingFallback = FALSE;
     char buffer[ULOC_KEYWORDS_CAPACITY];
-    int32_t count = inLocale.getKeywordValue("numbers", buffer, sizeof(buffer), status);
+    int32_t count = inLocale.getKeywordValue("numbers",buffer, sizeof(buffer),status);
     if (U_FAILURE(status) || status == U_STRING_NOT_TERMINATED_WARNING) {
         // the "numbers" keyword exceeds ULOC_KEYWORDS_CAPACITY; ignore and use default.
         count = 0;
@@ -133,30 +129,20 @@ NumberingSystem::createInstance(const Locale & inLocale, UErrorCode& status) {
             nsResolved = FALSE;
         }
     } else {
-        uprv_strcpy(buffer, gDefault);
+        uprv_strcpy(buffer,gDefault);
         nsResolved = FALSE;
     }
 
     if (!nsResolved) { // Resolve the numbering system ( default, native, traditional or finance ) into a "real" numbering system
         UErrorCode localStatus = U_ZERO_ERROR;
-        LocalUResourceBundlePointer resource(ures_open(nullptr, inLocale.getName(), &localStatus));
-        LocalUResourceBundlePointer numberElementsRes(ures_getByKey(resource.getAlias(), gNumberElements, nullptr, &localStatus));
-        // Don't stomp on the catastrophic failure of OOM.
-        if (localStatus == U_MEMORY_ALLOCATION_ERROR) {
-            status = U_MEMORY_ALLOCATION_ERROR;
-            return nullptr;
-        }
+        UResourceBundle *resource = ures_open(NULL, inLocale.getName(), &localStatus);
+        UResourceBundle *numberElementsRes = ures_getByKey(resource,gNumberElements,NULL,&localStatus);
         while (!nsResolved) {
             localStatus = U_ZERO_ERROR;
             count = 0;
-            const UChar *nsName = ures_getStringByKeyWithFallback(numberElementsRes.getAlias(), buffer, &count, &localStatus);
-            // Don't stomp on the catastrophic failure of OOM.
-            if (localStatus == U_MEMORY_ALLOCATION_ERROR) {
-                status = U_MEMORY_ALLOCATION_ERROR;
-                return nullptr;
-            }
+            const UChar *nsName = ures_getStringByKeyWithFallback(numberElementsRes, buffer, &count, &localStatus);
             if ( count > 0 && count < ULOC_KEYWORDS_CAPACITY ) { // numbering system found
-                u_UCharsToChars(nsName, buffer, count);
+                u_UCharsToChars(nsName,buffer,count); 
                 buffer[count] = '\0'; // Make sure it is null terminated.
                 nsResolved = TRUE;
             } 
@@ -172,17 +158,16 @@ NumberingSystem::createInstance(const Locale & inLocale, UErrorCode& status) {
                 }
             }
         }
+        ures_close(numberElementsRes);
+        ures_close(resource);
     }
 
     if (usingFallback) {
         status = U_USING_FALLBACK_WARNING;
         NumberingSystem *ns = new NumberingSystem();
-        if (ns == nullptr) {
-            status = U_MEMORY_ALLOCATION_ERROR;
-        }
         return ns;
     } else {
-        return NumberingSystem::createInstanceByName(buffer, status);
+        return NumberingSystem::createInstanceByName(buffer,status);
     }
  }
 
@@ -193,37 +178,36 @@ NumberingSystem::createInstance(UErrorCode& status) {
 
 NumberingSystem* U_EXPORT2
 NumberingSystem::createInstanceByName(const char *name, UErrorCode& status) {
+    UResourceBundle *numberingSystemsInfo = NULL;
+    UResourceBundle *nsTop, *nsCurrent;
     int32_t radix = 10;
     int32_t algorithmic = 0;
 
-    LocalUResourceBundlePointer numberingSystemsInfo(ures_openDirect(nullptr, gNumberingSystems, &status));
-    LocalUResourceBundlePointer nsCurrent(ures_getByKey(numberingSystemsInfo.getAlias(), gNumberingSystems, nullptr, &status));
-    LocalUResourceBundlePointer nsTop(ures_getByKey(nsCurrent.getAlias(), name, nullptr, &status));
+    numberingSystemsInfo = ures_openDirect(NULL,gNumberingSystems, &status);
+    nsCurrent = ures_getByKey(numberingSystemsInfo,gNumberingSystems,NULL,&status);
+    nsTop = ures_getByKey(nsCurrent,name,NULL,&status);
+    UnicodeString nsd = ures_getUnicodeStringByKey(nsTop,gDesc,&status);
 
-    UnicodeString nsd = ures_getUnicodeStringByKey(nsTop.getAlias(), gDesc, &status);
+    ures_getByKey(nsTop,gRadix,nsCurrent,&status);
+    radix = ures_getInt(nsCurrent,&status);
 
-    ures_getByKey(nsTop.getAlias(), gRadix, nsCurrent.getAlias(), &status);
-    radix = ures_getInt(nsCurrent.getAlias(), &status);
-
-    ures_getByKey(nsTop.getAlias(), gAlgorithmic, nsCurrent.getAlias(), &status);
-    algorithmic = ures_getInt(nsCurrent.getAlias(), &status);
+    ures_getByKey(nsTop,gAlgorithmic,nsCurrent,&status);
+    algorithmic = ures_getInt(nsCurrent,&status);
 
     UBool isAlgorithmic = ( algorithmic == 1 );
 
+    ures_close(nsCurrent);
+    ures_close(nsTop);
+    ures_close(numberingSystemsInfo);
+
     if (U_FAILURE(status)) {
-        // Don't stomp on the catastrophic failure of OOM.
-        if (status != U_MEMORY_ALLOCATION_ERROR) {
-            status = U_UNSUPPORTED_ERROR;
-        }
-        return nullptr;
+        status = U_UNSUPPORTED_ERROR;
+        return NULL;
     }
 
-    LocalPointer<NumberingSystem> ns(NumberingSystem::createInstance(radix, isAlgorithmic, nsd, status), status);
-    if (U_FAILURE(status)) {
-        return nullptr;
-    }
+    NumberingSystem* ns = NumberingSystem::createInstance(radix,isAlgorithmic,nsd,status);
     ns->setName(name);
-    return ns.orphan();
+    return ns;
 }
 
     /**
@@ -257,95 +241,74 @@ void NumberingSystem::setDesc(const UnicodeString &d) {
     desc.setTo(d);
 }
 void NumberingSystem::setName(const char *n) {
-    if ( n == nullptr ) {
+    if ( n == NULL ) {
         name[0] = (char) 0;
     } else {
-        uprv_strncpy(name,n,kInternalNumSysNameCapacity);
-        name[kInternalNumSysNameCapacity] = '\0'; // Make sure it is null terminated.
+        uprv_strncpy(name,n,NUMSYS_NAME_CAPACITY);
+        name[NUMSYS_NAME_CAPACITY] = (char)0; // Make sure it is null terminated.
     }
 }
 UBool NumberingSystem::isAlgorithmic() const {
     return ( algorithmic );
 }
 
-namespace {
-
-UVector* gNumsysNames = nullptr;
-UInitOnce gNumSysInitOnce = U_INITONCE_INITIALIZER;
-
-U_CFUNC UBool U_CALLCONV numSysCleanup() {
-    delete gNumsysNames;
-    gNumsysNames = nullptr;
-    gNumSysInitOnce.reset();
-    return true;
-}
-
-U_CFUNC void initNumsysNames(UErrorCode &status) {
-    U_ASSERT(gNumsysNames == nullptr);
-    ucln_i18n_registerCleanup(UCLN_I18N_NUMSYS, numSysCleanup);
-
-    // TODO: Simple array of UnicodeString objects, based on length of table resource?
-    LocalPointer<UVector> numsysNames(new UVector(uprv_deleteUObject, nullptr, status), status);
-    if (U_FAILURE(status)) {
-        return;
-    }
-
-    UErrorCode rbstatus = U_ZERO_ERROR;
-    UResourceBundle *numberingSystemsInfo = ures_openDirect(nullptr, "numberingSystems", &rbstatus);
-    numberingSystemsInfo =
-            ures_getByKey(numberingSystemsInfo, "numberingSystems", numberingSystemsInfo, &rbstatus);
-    if (U_FAILURE(rbstatus)) {
-        // Don't stomp on the catastrophic failure of OOM.
-        if (rbstatus == U_MEMORY_ALLOCATION_ERROR) {
-            status = rbstatus;
-        } else {
-            status = U_MISSING_RESOURCE_ERROR;
-        }
-        ures_close(numberingSystemsInfo);
-        return;
-    }
-
-    while ( ures_hasNext(numberingSystemsInfo) && U_SUCCESS(status) ) {
-        LocalUResourceBundlePointer nsCurrent(ures_getNextResource(numberingSystemsInfo, nullptr, &rbstatus));
-        if (rbstatus == U_MEMORY_ALLOCATION_ERROR) {
-            status = rbstatus; // we want to report OOM failure back to the caller.
-            break;
-        }
-        const char *nsName = ures_getKey(nsCurrent.getAlias());
-        LocalPointer<UnicodeString> newElem(new UnicodeString(nsName, -1, US_INV), status);
-        if (U_SUCCESS(status)) {
-            numsysNames->addElement(newElem.getAlias(), status);
-            if (U_SUCCESS(status)) {
-                newElem.orphan(); // on success, the numsysNames vector owns newElem.
-            }
-        }
-    }
-
-    ures_close(numberingSystemsInfo);
-    if (U_SUCCESS(status)) {
-        gNumsysNames = numsysNames.orphan();
-    }
-    return;
-}
-
-}   // end anonymous namespace
-
 StringEnumeration* NumberingSystem::getAvailableNames(UErrorCode &status) {
-    umtx_initOnce(gNumSysInitOnce, &initNumsysNames, status);
-    LocalPointer<StringEnumeration> result(new NumsysNameEnumeration(status), status);
-    return result.orphan();
+    // TODO(ticket #11908): Init-once static cache, with u_cleanup() callback.
+    static StringEnumeration* availableNames = NULL;
+
+    if (U_FAILURE(status)) {
+        return NULL;
+    }
+
+    if ( availableNames == NULL ) {
+        // TODO: Simple array of UnicodeString objects, based on length of table resource?
+        LocalPointer<UVector> numsysNames(new UVector(uprv_deleteUObject, NULL, status), status);
+        if (U_FAILURE(status)) {
+            return NULL;
+        }
+        
+        UErrorCode rbstatus = U_ZERO_ERROR;
+        UResourceBundle *numberingSystemsInfo = ures_openDirect(NULL, "numberingSystems", &rbstatus);
+        numberingSystemsInfo = ures_getByKey(numberingSystemsInfo,"numberingSystems",numberingSystemsInfo,&rbstatus);
+        if(U_FAILURE(rbstatus)) {
+            status = U_MISSING_RESOURCE_ERROR;
+            ures_close(numberingSystemsInfo);
+            return NULL;
+        }
+
+        while ( ures_hasNext(numberingSystemsInfo) ) {
+            UResourceBundle *nsCurrent = ures_getNextResource(numberingSystemsInfo,NULL,&rbstatus);
+            const char *nsName = ures_getKey(nsCurrent);
+            numsysNames->addElement(new UnicodeString(nsName, -1, US_INV),status);
+            ures_close(nsCurrent);
+        }
+
+        ures_close(numberingSystemsInfo);
+        if (U_FAILURE(status)) {
+            return NULL;
+        }
+        availableNames = new NumsysNameEnumeration(numsysNames.getAlias(), status);
+        if (availableNames == NULL) {
+            status = U_MEMORY_ALLOCATION_ERROR;
+            return NULL;
+        }
+        numsysNames.orphan();  // The names got adopted.
+    }
+
+    return availableNames;
 }
 
-NumsysNameEnumeration::NumsysNameEnumeration(UErrorCode& status) : pos(0) {
-    (void)status;
+NumsysNameEnumeration::NumsysNameEnumeration(UVector *numsysNames, UErrorCode& /*status*/) {
+    pos=0;
+    fNumsysNames = numsysNames;
 }
 
 const UnicodeString*
 NumsysNameEnumeration::snext(UErrorCode& status) {
-    if (U_SUCCESS(status) && (gNumsysNames != nullptr) && (pos < gNumsysNames->size())) {
-        return (const UnicodeString*)gNumsysNames->elementAt(pos++);
+    if (U_SUCCESS(status) && pos < fNumsysNames->size()) {
+        return (const UnicodeString*)fNumsysNames->elementAt(pos++);
     }
-    return nullptr;
+    return NULL;
 }
 
 void
@@ -355,10 +318,11 @@ NumsysNameEnumeration::reset(UErrorCode& /*status*/) {
 
 int32_t
 NumsysNameEnumeration::count(UErrorCode& /*status*/) const {
-    return (gNumsysNames==nullptr) ? 0 : gNumsysNames->size();
+    return (fNumsysNames==NULL) ? 0 : fNumsysNames->size();
 }
 
 NumsysNameEnumeration::~NumsysNameEnumeration() {
+    delete fNumsysNames;
 }
 U_NAMESPACE_END
 

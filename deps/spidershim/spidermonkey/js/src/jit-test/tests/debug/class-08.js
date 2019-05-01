@@ -1,4 +1,4 @@
-let g = newGlobal({newCompartment: true});
+let g = newGlobal();
 let dbg = Debugger(g);
 dbg.onDebuggerStatement = function() {
     // Force the constructor to return undefined, which should be replaced with

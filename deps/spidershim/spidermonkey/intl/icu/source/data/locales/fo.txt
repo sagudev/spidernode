@@ -210,7 +210,7 @@ fo{
         minimumGroupingDigits{"1"}
         native{"latn"}
     }
-    Version{"2.1.48.9"}
+    Version{"2.1.37.5"}
     calendar{
         generic{
             DateTimePatterns{
@@ -432,8 +432,8 @@ fo{
                 MMM{"LLL"}
                 MMMEd{"E d. MMM"}
                 MMMMW{
-                    one{"W. 'vika' 'í' MMMM"}
-                    other{"W. 'vika' 'í' MMMM"}
+                    one{"W. 'vika' 'í' MMM"}
+                    other{"W. 'vika' 'í' MMM"}
                 }
                 MMMMd{"d. MMMM"}
                 MMMd{"d. MMM"}
@@ -1718,37 +1718,5 @@ fo{
         UK{"UK"}
         US{"US"}
         metric{"metralagið"}
-    }
-    parse{
-        date{
-            lenient{
-                "[\\--/]",
-                "[\\:∶]",
-            }
-        }
-        general{
-            lenient{
-                "[.․。︒﹒．｡]",
-                "['ʼ՚᾽᾿’＇]",
-                "[%٪﹪％]",
-                "[؉‰]",
-                "[\$﹩＄$]",
-                "[£₤]",
-                "[¥￥]",
-                "[₩￦]",
-                "[₨₹{Rp}{Rs}]",
-            }
-        }
-        number{
-            lenient{
-                "[\\-‒⁻₋−➖﹣－]",
-                "[,،٫、︐︑﹐﹑，､]",
-                "[+⁺₊➕﬩﹢＋]",
-            }
-            stricter{
-                "[,٫︐﹐，]",
-                "[.․﹒．｡]",
-            }
-        }
     }
 }

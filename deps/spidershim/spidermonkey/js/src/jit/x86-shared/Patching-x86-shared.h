@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,9 +37,8 @@ inline void SetRel32(void* from, void* to) {
       reinterpret_cast<intptr_t>(to) - reinterpret_cast<intptr_t>(from);
   MOZ_ASSERT(offset == static_cast<int32_t>(offset),
              "offset is too great for a 32-bit relocation");
-  if (offset != static_cast<int32_t>(offset)) {
+  if (offset != static_cast<int32_t>(offset))
     MOZ_CRASH("offset is too great for a 32-bit relocation");
-  }
 
   SetInt32(from, offset);
 }

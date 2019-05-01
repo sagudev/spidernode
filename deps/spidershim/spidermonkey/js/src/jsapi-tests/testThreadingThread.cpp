@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -37,7 +37,7 @@ BEGIN_TEST(testThreadingThreadDetach) {
         *flag = true;
         js_delete(flag);
       },
-      std::move(flag)));
+      mozilla::Move(flag)));
   CHECK(thread.joinable());
   thread.detach();
   CHECK(!thread.joinable());
@@ -77,9 +77,7 @@ BEGIN_TEST(testThreadingThreadVectorMoveConstruct) {
                         &count));
     CHECK(v.length() == i + 1);
   }
-  for (auto& th : v) {
-    th.join();
-  }
+  for (auto& th : v) th.join();
   CHECK(count == 10);
   return true;
 }

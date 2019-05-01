@@ -1,6 +1,6 @@
 // Tests that exception handling works with block scopes.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 var correct;
 dbg.onEnterFrame = function (f) {

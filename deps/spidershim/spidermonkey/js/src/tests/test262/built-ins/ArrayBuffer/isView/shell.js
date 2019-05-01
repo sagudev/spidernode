@@ -1,4 +1,3 @@
-// GENERATED, DO NOT EDIT
 // file: testTypedArray.js
 // Copyright (C) 2015 André Bargull. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
@@ -21,9 +20,6 @@ var typedArrayConstructors = [
   Uint8Array,
   Uint8ClampedArray
 ];
-
-var floatArrayConstructors = typedArrayConstructors.slice(0, 2);
-var intArrayConstructors = typedArrayConstructors.slice(2, 7);
 
 /**
  * The %TypedArray% intrinsic constructor function.

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +23,7 @@ struct DependentAddPtr {
   typedef typename T::Entry Entry;
 
   template <class Lookup>
-  DependentAddPtr(const JSContext* cx, T& table, const Lookup& lookup)
+  DependentAddPtr(const JSContext* cx, const T& table, const Lookup& lookup)
       : addPtr(table.lookupForAdd(lookup)),
         originalGcNumber(cx->zone()->gcNumber()) {}
 
@@ -44,9 +44,7 @@ struct DependentAddPtr {
   template <class KeyInput>
   void remove(JSContext* cx, T& table, const KeyInput& key) {
     refreshAddPtr(cx, table, key);
-    if (addPtr) {
-      table.remove(addPtr);
-    }
+    table.remove(addPtr);
   }
 
   bool found() const { return addPtr.found(); }
@@ -61,9 +59,7 @@ struct DependentAddPtr {
   template <class KeyInput>
   void refreshAddPtr(JSContext* cx, T& table, const KeyInput& key) {
     bool gcHappened = originalGcNumber != cx->zone()->gcNumber();
-    if (gcHappened) {
-      addPtr = table.lookupForAdd(key);
-    }
+    if (gcHappened) addPtr = table.lookupForAdd(key);
   }
 
   DependentAddPtr() = delete;
@@ -73,7 +69,9 @@ struct DependentAddPtr {
 
 template <typename T, typename Lookup>
 inline auto MakeDependentAddPtr(const JSContext* cx, T& table,
-                                const Lookup& lookup) {
+                                const Lookup& lookup)
+    -> DependentAddPtr<
+        typename mozilla::RemoveReference<decltype(table)>::Type> {
   using Ptr =
       DependentAddPtr<typename mozilla::RemoveReference<decltype(table)>::Type>;
   return Ptr(cx, table, lookup);

@@ -24,9 +24,9 @@ for (let body of bodies) {
     (module
         (func $f (param $x i32) (result i32)
             loop $top i32
-                local.get $x
+                get_local $x
                 if
-                    local.get $x
+                    get_local $x
                     br 2
                 end
                 ${body}

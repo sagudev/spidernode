@@ -12,7 +12,7 @@
 class MemMoveAnnotation final : public CustomTypeAnnotation {
 public:
   MemMoveAnnotation()
-      : CustomTypeAnnotation(moz_non_memmovable, "non-memmove()able") {}
+      : CustomTypeAnnotation("moz_non_memmovable", "non-memmove()able") {}
 
   virtual ~MemMoveAnnotation() {}
 
@@ -27,7 +27,6 @@ protected:
       if (Name == "pair" || Name == "atomic" ||
           // libstdc++ specific names
           Name == "__atomic_base" || Name == "atomic_bool" ||
-          Name == "__pair_base" ||
           // MSVCRT specific names
           Name == "_Atomic_impl" || Name == "_Atomic_base" ||
           Name == "_Atomic_bool" || Name == "_Atomic_char" ||

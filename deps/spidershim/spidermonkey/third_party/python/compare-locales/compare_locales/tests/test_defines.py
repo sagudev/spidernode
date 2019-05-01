@@ -3,8 +3,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-from __future__ import unicode_literals
 import unittest
 
 from compare_locales.tests import ParserTestMixin
@@ -69,11 +67,10 @@ class TestDefinesParser(ParserTestMixin, unittest.TestCase):
             (Whitespace, '\n\n'),
             ('MOZ_LANGPACK_CREATOR', 'mozilla.org'),
             (Whitespace, '\n\n'),
-            (
-                'MOZ_LANGPACK_CONTRIBUTORS',
-                '<em:contributor>Joe Solon</em:contributor>',
-                'non-English',
-            ),
+            (Comment, 'non-English'),
+            (Whitespace, '\n'),
+            ('MOZ_LANGPACK_CONTRIBUTORS',
+             '<em:contributor>Joe Solon</em:contributor>'),
             (Whitespace, '\n\n'),
             (DefinesInstruction, 'unfilter emptyLines'),
             (Junk, '\n\n')))
@@ -92,7 +89,9 @@ class TestDefinesParser(ParserTestMixin, unittest.TestCase):
             (Whitespace, '\n'),
             (DefinesInstruction, 'filter emptyLines'),
             (Whitespace, '\n\n'),
-            ('seamonkey_l10n_long', '', 'češtině'),
+            (Comment, u'češtině'),
+            (Whitespace, '\n'),
+            ('seamonkey_l10n_long', ''),
             (Whitespace, '\n\n'),
             (DefinesInstruction, 'unfilter emptyLines'),
             (Junk, '\n\n')))
@@ -192,36 +191,6 @@ class TestDefinesParser(ParserTestMixin, unittest.TestCase):
             (Whitespace, '\n'),
             ('tre', '  '),
             (Whitespace, '\n'),))
-
-    def test_standalone_comments(self):
-        self._test(
-            '''\
-#filter emptyLines
-# One comment
-
-# Second comment
-
-#define foo
-# bar comment
-#define bar
-
-#unfilter emptyLines
-''',
-            (
-                (DefinesInstruction, 'filter emptyLines'),
-                (Whitespace, '\n'),
-                (Comment, 'One comment'),
-                (Whitespace, '\n\n'),
-                (Comment, 'Second comment'),
-                (Whitespace, '\n\n'),
-                ('foo', ''),
-                (Whitespace, '\n'),
-                ('bar', '', 'bar comment'),
-                (Whitespace, '\n\n'),
-                (DefinesInstruction, 'unfilter emptyLines'),
-                (Whitespace, '\n'),
-            )
-        )
 
 
 if __name__ == '__main__':

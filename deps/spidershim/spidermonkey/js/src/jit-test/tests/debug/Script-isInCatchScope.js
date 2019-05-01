@@ -1,6 +1,6 @@
 // Test if isInCatchScope properly detects catch blocks.
 
-let g = newGlobal({newCompartment: true});
+let g = newGlobal();
 let dbg = new Debugger(g);
 
 function test(string, mustBeCaught) {

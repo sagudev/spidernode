@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +9,7 @@
 #include "gc/Allocator.h"
 #include "gc/GCTrace.h"
 #include "proxy/DeadObjectProxy.h"
-#include "vm/Realm.h"
+#include "vm/JSCompartment.h"
 
 #include "gc/ObjectKind-inl.h"
 #include "vm/JSObject-inl.h"
@@ -38,31 +38,26 @@ static gc::AllocKind GetProxyGCObjectKind(const Class* clasp,
   MOZ_ASSERT(nslots <= NativeObject::MAX_FIXED_SLOTS);
 
   gc::AllocKind kind = gc::GetGCObjectKind(nslots);
-  if (handler->finalizeInBackground(priv)) {
-    kind = GetBackgroundAllocKind(kind);
-  }
+  if (handler->finalizeInBackground(priv)) kind = GetBackgroundAllocKind(kind);
 
   return kind;
 }
 
-/* static */
-ProxyObject* ProxyObject::New(JSContext* cx, const BaseProxyHandler* handler,
-                              HandleValue priv, TaggedProto proto_,
-                              const ProxyOptions& options) {
+/* static */ ProxyObject* ProxyObject::New(JSContext* cx,
+                                           const BaseProxyHandler* handler,
+                                           HandleValue priv, TaggedProto proto_,
+                                           const ProxyOptions& options) {
   Rooted<TaggedProto> proto(cx, proto_);
 
   const Class* clasp = options.clasp();
 
-#ifdef DEBUG
   MOZ_ASSERT(isValidProxyClass(clasp));
   MOZ_ASSERT(clasp->shouldDelayMetadataBuilder());
   MOZ_ASSERT_IF(proto.isObject(),
                 cx->compartment() == proto.toObject()->compartment());
   MOZ_ASSERT(clasp->hasFinalize());
-  if (priv.isGCThing()) {
-    JS::AssertCellIsNotGray(priv.toGCThing());
-  }
-#endif
+  MOZ_ASSERT_IF(priv.isGCThing(),
+                !JS::GCThingIsMarkedGray(JS::GCCellPtr(priv)));
 
   /*
    * Eagerly mark properties unknown for proxies, so we don't try to track
@@ -72,11 +67,8 @@ ProxyObject* ProxyObject::New(JSContext* cx, const BaseProxyHandler* handler,
    * ways.
    */
   if (proto.isObject() && !options.singleton() && !clasp->isDOMClass()) {
-    ObjectGroupRealm& realm = ObjectGroupRealm::getForNewObject(cx);
     RootedObject protoObj(cx, proto.toObject());
-    if (!JSObject::setNewGroupUnknown(cx, realm, clasp, protoObj)) {
-      return nullptr;
-    }
+    if (!JSObject::setNewGroupUnknown(cx, clasp, protoObj)) return nullptr;
   }
 
   // Ensure that the wrapper has the same lifetime assumptions as the
@@ -106,12 +98,10 @@ ProxyObject* ProxyObject::New(JSContext* cx, const BaseProxyHandler* handler,
   values->init(proxy->numReservedSlots());
 
   proxy->data.handler = handler;
-  if (IsCrossCompartmentWrapper(proxy)) {
-    MOZ_ASSERT(cx->global() == &cx->compartment()->globalForNewCCW());
+  if (IsCrossCompartmentWrapper(proxy))
     proxy->setCrossCompartmentPrivate(priv);
-  } else {
+  else
     proxy->setSameCompartmentPrivate(priv);
-  }
 
   if (newKind == SingletonObject) {
     Rooted<ProxyObject*> rootedProxy(cx, proxy);
@@ -122,16 +112,15 @@ ProxyObject* ProxyObject::New(JSContext* cx, const BaseProxyHandler* handler,
   }
 
   /* Don't track types of properties of non-DOM and non-singleton proxies. */
-  if (!clasp->isDOMClass()) {
+  if (!clasp->isDOMClass())
     MarkObjectGroupUnknownProperties(cx, proxy->group());
-  }
 
   return proxy;
 }
 
 gc::AllocKind ProxyObject::allocKindForTenure() const {
   MOZ_ASSERT(usingInlineValueArray());
-  Value priv = private_();
+  Value priv = const_cast<ProxyObject*>(this)->private_();
   return GetProxyGCObjectKind(getClass(), data.handler, priv);
 }
 
@@ -171,50 +160,42 @@ void ProxyObject::nuke() {
     gc::AllocKind allocKind, NewObjectKind newKind) {
   MOZ_ASSERT(clasp->isProxy());
 
-  Realm* realm = cx->realm();
+  JSCompartment* comp = cx->compartment();
   RootedObjectGroup group(cx);
   RootedShape shape(cx);
 
   // Try to look up the group and shape in the NewProxyCache.
-  if (!realm->newProxyCache.lookup(clasp, proto, group.address(),
-                                   shape.address())) {
+  if (!comp->newProxyCache.lookup(clasp, proto, group.address(),
+                                  shape.address())) {
     group = ObjectGroup::defaultNewGroup(cx, clasp, proto, nullptr);
-    if (!group) {
-      return cx->alreadyReportedOOM();
-    }
+    if (!group) return cx->alreadyReportedOOM();
 
     shape = EmptyShape::getInitialShape(cx, clasp, proto, /* nfixed = */ 0);
-    if (!shape) {
-      return cx->alreadyReportedOOM();
-    }
+    if (!shape) return cx->alreadyReportedOOM();
 
-    MOZ_ASSERT(group->realm() == realm);
-    realm->newProxyCache.add(group, shape);
+    comp->newProxyCache.add(group, shape);
   }
 
-  gc::InitialHeap heap = GetInitialHeap(newKind, group);
+  gc::InitialHeap heap = GetInitialHeap(newKind, clasp);
   debugCheckNewObject(group, shape, allocKind, heap);
 
-  JSObject* obj =
-      js::AllocateObject(cx, allocKind, /* nDynamicSlots = */ 0, heap, clasp);
-  if (!obj) {
-    return cx->alreadyReportedOOM();
-  }
+  JSObject* obj = js::Allocate<JSObject>(cx, allocKind, /* nDynamicSlots = */ 0,
+                                         heap, clasp);
+  if (!obj) return cx->alreadyReportedOOM();
 
   ProxyObject* pobj = static_cast<ProxyObject*>(obj);
   pobj->initGroup(group);
   pobj->initShape(shape);
 
   MOZ_ASSERT(clasp->shouldDelayMetadataBuilder());
-  cx->realm()->setObjectPendingMetadata(cx, pobj);
+  cx->compartment()->setObjectPendingMetadata(cx, pobj);
 
-  js::gc::gcTracer.traceCreateObject(pobj);
+  js::gc::TraceCreateObject(pobj);
 
   return pobj;
 }
 
-JS_FRIEND_API void js::detail::SetValueInProxy(Value* slot,
-                                               const Value& value) {
+JS_FRIEND_API void js::SetValueInProxy(Value* slot, const Value& value) {
   // Slots in proxies are not GCPtrValues, so do a cast whenever assigning
   // values to them which might trigger a barrier.
   *reinterpret_cast<GCPtrValue*>(slot) = value;

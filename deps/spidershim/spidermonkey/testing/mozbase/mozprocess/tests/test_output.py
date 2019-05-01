@@ -6,6 +6,7 @@ import io
 import os
 
 import mozunit
+
 import proctest
 from mozprocess import processhandler
 
@@ -33,8 +34,7 @@ class ProcTestOutput(proctest.ProcTest):
         """
         Process is started, outputs data with no newline
         """
-        p = processhandler.ProcessHandler([self.python,
-                                           os.path.join("scripts", "procnonewline.py")],
+        p = processhandler.ProcessHandler([self.python, "scripts", "procnonewline.py"],
                                           cwd=here)
 
         p.run()
@@ -60,10 +60,10 @@ class ProcTestOutput(proctest.ProcTest):
         p.run()
         p.wait()
         for i in range(5, 10):
-            stream.write(str(i).encode('utf8') + '\n'.encode('utf8'))
+            stream.write(str(i) + '\n')
 
         buf.flush()
-        self.assertEquals(stream.getvalue().strip().decode('utf8'), expected)
+        self.assertEquals(stream.getvalue().strip(), expected)
 
         # make sure mozprocess doesn't close the stream
         # since mozprocess didn't create it

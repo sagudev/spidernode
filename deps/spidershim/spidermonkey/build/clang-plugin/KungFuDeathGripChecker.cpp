@@ -92,8 +92,8 @@ void KungFuDeathGripChecker::check(const MatchFinder::MatchResult &Result) {
   }
 
   // We cannot provide the note if we don't have an initializer
-  diag(D->getBeginLoc(), Error, DiagnosticIDs::Error)
+  diag(D->getLocStart(), Error, DiagnosticIDs::Error)
       << D->getType() << ErrThing;
-  diag(E->getBeginLoc(), Note, DiagnosticIDs::Note)
+  diag(E->getLocStart(), Note, DiagnosticIDs::Note)
       << NoteThing << getNameChecked(D);
 }

@@ -1,3 +1,4 @@
-// |jit-test| skip-if: !('oomTest' in this)
+if (!('oomTest' in this))
+    quit();
 
 oomTest(() => getBacktrace({thisprops: gc() && delete addDebuggee.enabled}));

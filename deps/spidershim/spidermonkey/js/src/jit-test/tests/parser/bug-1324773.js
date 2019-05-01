@@ -1,5 +1,5 @@
-// |jit-test| skip-if: !('gczeal' in this)
-
+if (!('gczeal' in this))
+    quit();
 var lfGlobal = newGlobal();
 lfGlobal.evaluate(`
     for (var i = 0; i < 600; i++)

@@ -1,4 +1,7 @@
-// |jit-test| exitstatus: 3; skip-if: !('oomAfterAllocations' in this)
+// |jit-test| exitstatus: 3
+
+if (!('oomAfterAllocations' in this))
+    quit(3);
 
 var g = newGlobal();
 var dbg = new Debugger(g);

@@ -1,3 +1,4 @@
+// |reftest| error:SyntaxError
 // Copyright (c) 2012 Ecma International.  All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -15,5 +16,5 @@ flags: [raw]
 "a";
 "use strict";
 "c";
-throw "Test262: This statement should not be evaluated.";
+throw new Error("This code should not execute");
 eval = 42;

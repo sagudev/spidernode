@@ -2,8 +2,9 @@
 
 load(libdir + "asserts.js");
 
-function testcase(obj, fn, ...args) {
+function testcase(obj, fn) {
     assertEq(typeof fn, "function");
+    var args = Array.slice(arguments, 2);
     assertThrowsInstanceOf(function () { fn.apply(obj, args); }, TypeError);
 }
 

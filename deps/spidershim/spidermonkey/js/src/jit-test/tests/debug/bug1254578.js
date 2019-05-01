@@ -1,6 +1,9 @@
-// |jit-test| slow; skip-if: !('oomTest' in this)
+// |jit-test| error:ReferenceError; slow
 
-var g = newGlobal({newCompartment: true});
+if (!('oomTest' in this))
+  throw (new ReferenceError);
+
+var g = newGlobal();
 g.debuggeeGlobal = this;
 g.eval("(" + function() {
     dbg = new Debugger(debuggeeGlobal);

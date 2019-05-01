@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +15,6 @@
 namespace js {
 
 class AbstractFramePtr;
-class ArgumentsObject;
 class ScriptFrameIter;
 
 namespace jit {
@@ -97,8 +96,6 @@ struct ArgumentsData {
 static const unsigned ARGS_LENGTH_MAX = 500 * 1000;
 
 /*
- * [SMDOC] ArgumentsObject
- *
  * ArgumentsObject instances represent |arguments| objects created to store
  * function arguments when a function is called.  It's expensive to create such
  * objects if they're never used, so they're only created when they are
@@ -174,9 +171,7 @@ class ArgumentsObject : public NativeObject {
   MOZ_MUST_USE bool createRareData(JSContext* cx);
 
   RareArgumentsData* getOrCreateRareData(JSContext* cx) {
-    if (!data()->rareData && !createRareData(cx)) {
-      return nullptr;
-    }
+    if (!data()->rareData && !createRareData(cx)) return nullptr;
     return data()->rareData;
   }
 
@@ -210,10 +205,10 @@ class ArgumentsObject : public NativeObject {
    * Allocate ArgumentsData and fill reserved slots after allocating an
    * ArgumentsObject in Ion code.
    */
-  static ArgumentsObject* finishForIonPure(JSContext* cx,
-                                           jit::JitFrameLayout* frame,
-                                           JSObject* scopeChain,
-                                           ArgumentsObject* obj);
+  static ArgumentsObject* finishForIon(JSContext* cx,
+                                       jit::JitFrameLayout* frame,
+                                       JSObject* scopeChain,
+                                       ArgumentsObject* obj);
 
   static ArgumentsObject* createTemplateObject(JSContext* cx, bool mapped);
 
@@ -292,9 +287,7 @@ class ArgumentsObject : public NativeObject {
    */
   bool isElementDeleted(uint32_t i) const {
     MOZ_ASSERT(i < data()->numArgs);
-    if (i >= initialLength()) {
-      return false;
-    }
+    if (i >= initialLength()) return false;
     return maybeRareData() &&
            maybeRareData()->isElementDeleted(initialLength(), i);
   }
@@ -349,9 +342,7 @@ class ArgumentsObject : public NativeObject {
    * NB: Returning false does not indicate error!
    */
   bool maybeGetElement(uint32_t i, MutableHandleValue vp) {
-    if (i >= initialLength() || isElementDeleted(i)) {
-      return false;
-    }
+    if (i >= initialLength() || isElementDeleted(i)) return false;
     vp.set(element(i));
     return true;
   }
@@ -363,9 +354,8 @@ class ArgumentsObject : public NativeObject {
    * |miscSize| argument in JSObject::sizeOfExcludingThis().
    */
   size_t sizeOfMisc(mozilla::MallocSizeOf mallocSizeOf) const {
-    if (!data()) {  // Template arguments objects have no data.
+    if (!data())  // Template arguments objects have no data.
       return 0;
-    }
     return mallocSizeOf(data()) + mallocSizeOf(maybeRareData());
   }
   size_t sizeOfData() const {

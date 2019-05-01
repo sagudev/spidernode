@@ -1,6 +1,6 @@
 // obj.defineProperty can define simple data properties.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger;
 var gobj = dbg.addDebuggee(g);
 gobj.defineProperty("x", {configurable: true, enumerable: true, writable: true, value: 'ok'});

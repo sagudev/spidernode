@@ -4,7 +4,7 @@
 /*---
 description: Referencing a parameter from within its own initializer (async arrow function expression)
 esid: sec-async-arrow-function-definitions
-features: [default-parameters, async-functions]
+features: [default-parameters]
 flags: [generated, async]
 info: |
     14.7 Async Arrow Function Definitions

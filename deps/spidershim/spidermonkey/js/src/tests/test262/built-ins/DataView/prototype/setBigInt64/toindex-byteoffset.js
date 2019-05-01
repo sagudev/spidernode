@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty('BigInt')) -- BigInt is not enabled unconditionally
+// |reftest| skip -- BigInt is not supported
 // Copyright (C) 2017 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -12,16 +12,8 @@ features: [DataView, ArrayBuffer, BigInt]
 var buffer = new ArrayBuffer(12);
 var sample = new DataView(buffer, 0);
 
-var obj1 = {
-  valueOf() {
-    return 3;
-  }
-};
-var obj2 = {
-  toString() {
-    return 4;
-  }
-};
+var obj1 = { valueOf() { return 3; } };
+var obj2 = { toString() { return 4; } };
 
 sample.setBigInt64(0, 0n);
 sample.setBigInt64(-0, 42n);

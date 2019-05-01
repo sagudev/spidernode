@@ -9,10 +9,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT']:
         'gtest',
     ]
 
-# Important: for these tests to be run, they also need to be added
-# to testing/cppunittest.ini.
 CppUnitTests([
-    'TestAlgorithm',
     'TestArray',
     'TestArrayUtils',
     'TestAtomics',
@@ -32,7 +29,6 @@ CppUnitTests([
     'TestEnumTypeTraits',
     'TestFastBernoulliTrial',
     'TestFloatingPoint',
-    'TestFunctionTypeTraits',
     'TestIntegerPrintfMacros',
     'TestIntegerRange',
     'TestJSONWriter',
@@ -41,10 +37,8 @@ CppUnitTests([
     'TestMacroForEach',
     'TestMathAlgorithms',
     'TestMaybe',
-    'TestNonDereferenceable',
     'TestNotNull',
     'TestPair',
-    'TestRandomNum',
     'TestRange',
     'TestRefPtr',
     'TestResult',
@@ -55,7 +49,6 @@ CppUnitTests([
     'TestSHA1',
     'TestSmallPointerArray',
     'TestSplayTree',
-    'TestSPSCQueue',
     'TestTemplateLib',
     'TestTextUtils',
     'TestThreadSafeWeakPtr',
@@ -63,7 +56,6 @@ CppUnitTests([
     'TestTypedEnum',
     'TestTypeTraits',
     'TestUniquePtr',
-    'TestUtf8',
     'TestVariant',
     'TestVector',
     'TestWeakPtr',
@@ -81,7 +73,7 @@ DEFINES['IMPL_MFBT'] = True
 
 DisableStlWrapping()
 
-if CONFIG['CC_TYPE'] == 'clang-cl':
+if CONFIG['CC_TYPE'] in ('msvc', 'clang-cl'):
   CXXFLAGS += [
     '-wd4275', # non dll-interface class used as base for dll-interface class
     '-wd4530', # C++ exception handler used, but unwind semantics are not enabled

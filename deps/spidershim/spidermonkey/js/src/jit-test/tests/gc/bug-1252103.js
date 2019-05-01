@@ -1,7 +1,8 @@
-// |jit-test| skip-if: !this.hasOwnProperty("TypedObject")
-
 // Bug 1252103: Inline typed array objects need delayed metadata collection.
 // Shouldn't crash.
+
+if (!this.hasOwnProperty("TypedObject"))
+  quit();
 
 function foo() {
     enableTrackAllocations();

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=4 et :
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: sw=4 ts=4 et :
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -8,17 +8,15 @@
 #include "mozilla/mozalloc_abort.h"
 
 #ifdef ANDROID
-#  include <android/log.h>
+#include <android/log.h>
 #endif
 #ifdef MOZ_WIDGET_ANDROID
-#  include "APKOpen.h"
-#  include "dlfcn.h"
+#include "APKOpen.h"
+#include "dlfcn.h"
 #endif
 #include <stdio.h>
-#include <string.h>
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Sprintf.h"
 
 void mozalloc_abort(const char* const msg) {
 #ifndef ANDROID
@@ -50,8 +48,8 @@ void fillAbortMessage(char (&msg)[N], uintptr_t retAddress) {
       reinterpret_cast<void*>(retAddress - uintptr_t(info.dli_fbase));
   const char* const sym = info.dli_sname ? info.dli_sname : "";
 
-  SprintfLiteral(msg, "abort() called from %s:%p (%s)",
-                 base_module ? base_module + 1 : module, module_offset, sym);
+  snprintf(msg, sizeof(msg), "abort() called from %s:%p (%s)",
+           base_module ? base_module + 1 : module, module_offset, sym);
 }
 #endif
 
@@ -69,12 +67,12 @@ void fillAbortMessage(char (&msg)[N], uintptr_t retAddress) {
 // That segmentation fault will be interpreted as another bug by ASan and as a
 // result, ASan will just exit(1) instead of aborting.
 extern "C" void abort(void) {
-#  ifdef MOZ_WIDGET_ANDROID
+#ifdef MOZ_WIDGET_ANDROID
   char msg[64] = {};
   fillAbortMessage(msg, uintptr_t(__builtin_return_address(0)));
-#  else
+#else
   const char* const msg = "Redirecting call to abort() to mozalloc_abort\n";
-#  endif
+#endif
 
   mozalloc_abort(msg);
 

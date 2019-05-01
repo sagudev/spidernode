@@ -9,7 +9,7 @@ static unsigned FinalizeCalls = 0;
 static JSFinalizeStatus StatusBuffer[BufferSize];
 
 BEGIN_TEST(testGCFinalizeCallback) {
-  JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_ZONE_INCREMENTAL);
+  JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_INCREMENTAL);
 
   /* Full GC, non-incremental. */
   FinalizeCalls = 0;
@@ -21,10 +21,10 @@ BEGIN_TEST(testGCFinalizeCallback) {
   /* Full GC, incremental. */
   FinalizeCalls = 0;
   JS::PrepareForFullGC(cx);
-  JS::StartIncrementalGC(cx, GC_NORMAL, JS::GCReason::API, 1000000);
+  JS::StartIncrementalGC(cx, GC_NORMAL, JS::gcreason::API, 1000000);
   while (cx->runtime()->gc.isIncrementalGCInProgress()) {
     JS::PrepareForFullGC(cx);
-    JS::IncrementalGCSlice(cx, JS::GCReason::API, 1000000);
+    JS::IncrementalGCSlice(cx, JS::gcreason::API, 1000000);
   }
   CHECK(!cx->runtime()->gc.isIncrementalGCInProgress());
   CHECK(cx->runtime()->gc.isFullGc());
@@ -47,7 +47,7 @@ BEGIN_TEST(testGCFinalizeCallback) {
   /* Zone GC, non-incremental, single zone. */
   FinalizeCalls = 0;
   JS::PrepareZoneForGC(global1->zone());
-  JS::NonIncrementalGC(cx, GC_NORMAL, JS::GCReason::API);
+  JS::GCForReason(cx, GC_NORMAL, JS::gcreason::API);
   CHECK(!cx->runtime()->gc.isFullGc());
   CHECK(checkSingleGroup());
   CHECK(checkFinalizeStatus());
@@ -57,7 +57,7 @@ BEGIN_TEST(testGCFinalizeCallback) {
   JS::PrepareZoneForGC(global1->zone());
   JS::PrepareZoneForGC(global2->zone());
   JS::PrepareZoneForGC(global3->zone());
-  JS::NonIncrementalGC(cx, GC_NORMAL, JS::GCReason::API);
+  JS::GCForReason(cx, GC_NORMAL, JS::gcreason::API);
   CHECK(!cx->runtime()->gc.isFullGc());
   CHECK(checkSingleGroup());
   CHECK(checkFinalizeStatus());
@@ -65,10 +65,10 @@ BEGIN_TEST(testGCFinalizeCallback) {
   /* Zone GC, incremental, single zone. */
   FinalizeCalls = 0;
   JS::PrepareZoneForGC(global1->zone());
-  JS::StartIncrementalGC(cx, GC_NORMAL, JS::GCReason::API, 1000000);
+  JS::StartIncrementalGC(cx, GC_NORMAL, JS::gcreason::API, 1000000);
   while (cx->runtime()->gc.isIncrementalGCInProgress()) {
     JS::PrepareZoneForGC(global1->zone());
-    JS::IncrementalGCSlice(cx, JS::GCReason::API, 1000000);
+    JS::IncrementalGCSlice(cx, JS::gcreason::API, 1000000);
   }
   CHECK(!cx->runtime()->gc.isIncrementalGCInProgress());
   CHECK(!cx->runtime()->gc.isFullGc());
@@ -80,12 +80,12 @@ BEGIN_TEST(testGCFinalizeCallback) {
   JS::PrepareZoneForGC(global1->zone());
   JS::PrepareZoneForGC(global2->zone());
   JS::PrepareZoneForGC(global3->zone());
-  JS::StartIncrementalGC(cx, GC_NORMAL, JS::GCReason::API, 1000000);
+  JS::StartIncrementalGC(cx, GC_NORMAL, JS::gcreason::API, 1000000);
   while (cx->runtime()->gc.isIncrementalGCInProgress()) {
     JS::PrepareZoneForGC(global1->zone());
     JS::PrepareZoneForGC(global2->zone());
     JS::PrepareZoneForGC(global3->zone());
-    JS::IncrementalGCSlice(cx, JS::GCReason::API, 1000000);
+    JS::IncrementalGCSlice(cx, JS::gcreason::API, 1000000);
   }
   CHECK(!cx->runtime()->gc.isIncrementalGCInProgress());
   CHECK(!cx->runtime()->gc.isFullGc());
@@ -107,11 +107,10 @@ BEGIN_TEST(testGCFinalizeCallback) {
   JS::RootedObject global4(cx, createTestGlobal());
   budget = js::SliceBudget(js::WorkBudget(1));
   cx->runtime()->gc.debugGCSlice(budget);
-  while (cx->runtime()->gc.isIncrementalGCInProgress()) {
+  while (cx->runtime()->gc.isIncrementalGCInProgress())
     cx->runtime()->gc.debugGCSlice(budget);
-  }
   CHECK(!cx->runtime()->gc.isIncrementalGCInProgress());
-  CHECK(checkSingleGroup());
+  CHECK(checkMultipleGroups());
   CHECK(checkFinalizeStatus());
 
   JS_SetGCZeal(cx, 0, 0);
@@ -131,15 +130,13 @@ BEGIN_TEST(testGCFinalizeCallback) {
 }
 
 JSObject* createTestGlobal() {
-  JS::RealmOptions options;
+  JS::CompartmentOptions options;
   return JS_NewGlobalObject(cx, getGlobalClass(), nullptr,
                             JS::FireOnNewGlobalHook, options);
 }
 
 virtual bool init() override {
-  if (!JSAPITest::init()) {
-    return false;
-  }
+  if (!JSAPITest::init()) return false;
 
   JS_AddFinalizeCallback(cx, FinalizeCallback, nullptr);
   return true;
@@ -183,9 +180,7 @@ bool checkFinalizeStatus() {
 
 static void FinalizeCallback(JSFreeOp* fop, JSFinalizeStatus status,
                              void* data) {
-  if (FinalizeCalls < BufferSize) {
-    StatusBuffer[FinalizeCalls] = status;
-  }
+  if (FinalizeCalls < BufferSize) StatusBuffer[FinalizeCalls] = status;
   ++FinalizeCalls;
 }
 END_TEST(testGCFinalizeCallback)

@@ -9,7 +9,7 @@ import os
 import mozunit
 import pytest
 
-from mozlint.result import Issue, ResultSummary
+from mozlint.result import ResultContainer
 
 
 @pytest.fixture
@@ -31,26 +31,25 @@ def linter(lintdir, request):
 def test_linter_types(lint, linter, files, path):
     lint.read(linter)
     result = lint.roll(files)
-    assert isinstance(result, ResultSummary)
-    assert isinstance(result.issues, dict)
-    assert path('foobar.js') in result.issues
-    assert path('no_foobar.js') not in result.issues
+    assert isinstance(result, dict)
+    assert path('foobar.js') in result
+    assert path('no_foobar.js') not in result
 
-    issue = result.issues[path('foobar.js')][0]
-    assert isinstance(issue, Issue)
+    result = result[path('foobar.js')][0]
+    assert isinstance(result, ResultContainer)
 
     name = os.path.basename(linter).split('.')[0]
-    assert issue.linter.lower().startswith(name)
+    assert result.linter.lower().startswith(name)
 
 
 def test_no_filter(lint, lintdir, files):
     lint.read(os.path.join(lintdir, 'explicit_path.yml'))
     result = lint.roll(files)
-    assert len(result.issues) == 0
+    assert len(result) == 0
 
     lint.lintargs['use_filters'] = False
     result = lint.roll(files)
-    assert len(result.issues) == 3
+    assert len(result) == 3
 
 
 if __name__ == '__main__':

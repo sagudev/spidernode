@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -27,16 +27,12 @@ BEGIN_TEST(testJitFoldsTo_DivReciprocal) {
   block->add(c);
   MDiv* div = MDiv::New(func.alloc, p, c, MIRType::Double);
   block->add(div);
-  if (!div->typePolicy()->adjustInputs(func.alloc, div)) {
-    return false;
-  }
+  if (!div->typePolicy()->adjustInputs(func.alloc, div)) return false;
   MDefinition* left = div->getOperand(0);
   MReturn* ret = MReturn::New(func.alloc, div);
   block->end(ret);
 
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   // Test that the div got folded to p * 0.25.
   MDefinition* op = ret->getOperand(0);
@@ -59,17 +55,13 @@ BEGIN_TEST(testJitFoldsTo_NoDivReciprocal) {
   block->add(c);
   MDiv* div = MDiv::New(func.alloc, p, c, MIRType::Double);
   block->add(div);
-  if (!div->typePolicy()->adjustInputs(func.alloc, div)) {
-    return false;
-  }
+  if (!div->typePolicy()->adjustInputs(func.alloc, div)) return false;
   MDefinition* left = div->getOperand(0);
   MDefinition* right = div->getOperand(1);
   MReturn* ret = MReturn::New(func.alloc, div);
   block->end(ret);
 
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   // Test that the div didn't get folded.
   MDefinition* op = ret->getOperand(0);
@@ -94,9 +86,7 @@ BEGIN_TEST(testJitNotNot) {
   MReturn* ret = MReturn::New(func.alloc, not1);
   block->end(ret);
 
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   // Test that the nots did not get folded.
   MDefinition* op = ret->getOperand(0);
@@ -123,9 +113,7 @@ BEGIN_TEST(testJitNotNotNot) {
   MReturn* ret = MReturn::New(func.alloc, not2);
   block->end(ret);
 
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   // Test that the nots got folded.
   MDefinition* op = ret->getOperand(0);
@@ -159,9 +147,7 @@ BEGIN_TEST(testJitNotTest) {
 
   MOZ_ALWAYS_TRUE(exit->addPredecessorWithoutPhis(then));
 
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   // Test that the not got folded.
   test = block->lastIns()->toTest();
@@ -198,9 +184,7 @@ BEGIN_TEST(testJitNotNotTest) {
 
   MOZ_ALWAYS_TRUE(exit->addPredecessorWithoutPhis(then));
 
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   // Test that the nots got folded.
   test = block->lastIns()->toTest();
@@ -225,9 +209,7 @@ BEGIN_TEST(testJitFoldsTo_UnsignedDiv) {
   MReturn* ret = MReturn::New(func.alloc, div);
   block->end(ret);
 
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   // Test that the div got folded to 0.
   MConstant* op = ret->getOperand(0)->toConstant();
@@ -250,9 +232,7 @@ BEGIN_TEST(testJitFoldsTo_UnsignedMod) {
   MReturn* ret = MReturn::New(func.alloc, mod);
   block->end(ret);
 
-  if (!func.runGVN()) {
-    return false;
-  }
+  if (!func.runGVN()) return false;
 
   // Test that the mod got folded to 1.
   MConstant* op = ret->getOperand(0)->toConstant();

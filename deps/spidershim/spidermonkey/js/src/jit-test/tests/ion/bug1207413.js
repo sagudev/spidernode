@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !('oomAfterAllocations' in this)
+if (typeof oomAfterAllocations !== 'function')
+    quit();
 
 function first(a) {
     return a[0];

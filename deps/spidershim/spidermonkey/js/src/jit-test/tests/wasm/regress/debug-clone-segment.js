@@ -1,5 +1,3 @@
-// |jit-test| skip-if: !wasmDebugSupport()
-//
 var mod = new WebAssembly.Module(wasmTextToBinary(`
     (module
         (func (export "func_0") (result i32)
@@ -8,7 +6,7 @@ var mod = new WebAssembly.Module(wasmTextToBinary(`
     )
 `));
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.parent = this;
 g.eval("(" + function() {
     var dbg = Debugger(parent);

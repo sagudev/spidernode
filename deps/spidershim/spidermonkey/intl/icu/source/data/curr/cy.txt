@@ -644,10 +644,6 @@ cy{
         }
         MRO{
             "MRO",
-            "Ouguiya Mauritania (1973–2017)",
-        }
-        MRU{
-            "MRU",
             "Ouguiya Mauritania",
         }
         MTL{
@@ -864,10 +860,6 @@ cy{
         }
         STD{
             "STD",
-            "Dobra São Tomé a Príncipe (1977–2017)",
-        }
-        STN{
-            "STN",
             "Dobra São Tomé a Príncipe",
         }
         SVC{
@@ -980,10 +972,6 @@ cy{
         }
         VEF{
             "VEF",
-            "Bolívar Venezuela (2008–2018)",
-        }
-        VES{
-            "VES",
             "Bolívar Venezuela",
         }
         VND{
@@ -1116,16 +1104,104 @@ cy{
         }
     }
     Currencies%narrow{
+        AOA{"Kz"}
+        ARS{"$"}
+        AUD{"$"}
+        BAM{"KM"}
+        BBD{"$"}
         BDT{"TK"}
+        BMD{"$"}
+        BND{"$"}
+        BOB{"Bs"}
+        BRL{"R$"}
+        BSD{"$"}
         BWP{"BWP"}
+        BYN{"р."}
+        BZD{"$"}
+        CAD{"$"}
+        CLP{"$"}
+        CNY{"¥"}
+        COP{"$"}
+        CRC{"₡"}
+        CUC{"$"}
+        CUP{"$"}
+        CZK{"Kč"}
+        DKK{"kr"}
+        DOP{"$"}
+        EGP{"E£"}
+        EUR{"€"}
+        FJD{"$"}
+        FKP{"£"}
+        GBP{"£"}
+        GEL{"₾"}
+        GIP{"£"}
+        GNF{"FG"}
+        GTQ{"Q"}
+        GYD{"$"}
         HKD{"HK$"}
-        STN{"Db"}
+        HNL{"L"}
+        HRK{"kn"}
+        HUF{"Ft"}
+        IDR{"Rp"}
+        ILS{"₪"}
+        INR{"₹"}
+        ISK{"kr"}
+        JMD{"$"}
+        JPY{"¥"}
+        KHR{"៛"}
+        KMF{"CF"}
+        KPW{"₩"}
+        KRW{"₩"}
+        KYD{"$"}
+        KZT{"₸"}
+        LAK{"₭"}
+        LBP{"L£"}
+        LKR{"Rs"}
+        LRD{"$"}
+        MGA{"Ar"}
+        MMK{"K"}
+        MNT{"₮"}
+        MUR{"Rs"}
+        MXN{"$"}
+        MYR{"RM"}
+        NAD{"$"}
+        NGN{"₦"}
+        NIO{"C$"}
+        NOK{"kr"}
+        NPR{"Rs"}
+        NZD{"$"}
+        PHP{"₱"}
+        PKR{"Rs"}
+        PLN{"zł"}
+        PYG{"₲"}
+        RON{"lei"}
+        RUB{"₽"}
+        RWF{"RF"}
+        SBD{"$"}
+        SEK{"kr"}
+        SGD{"$"}
+        SHP{"£"}
+        SRD{"$"}
+        SSP{"£"}
+        STD{"Db"}
+        SYP{"£"}
+        THB{"฿"}
+        TOP{"T$"}
+        TRY{"₺"}
+        TTD{"$"}
         TWD{"NT$"}
+        UAH{"₴"}
+        USD{"$"}
+        UYU{"$"}
+        VEF{"Bs"}
+        VND{"₫"}
+        XCD{"$"}
         ZAR{"ZAR"}
         ZMW{"ZMW"}
     }
     Currencies%variant{
         GEL{"₾"}
+        TRY{"TL"}
     }
     CurrencyPlurals{
         AED{
@@ -2337,14 +2413,6 @@ cy{
             zero{"pataca Macau"}
         }
         MRO{
-            few{"ouguiya Mauritania (1973–2017)"}
-            many{"ouguiya Mauritania (1973–2017)"}
-            one{"ouguiya Mauritania (1973–2017)"}
-            other{"ouguiya Mauritania (1973–2017)"}
-            two{"ouguiya Mauritania (1973–2017)"}
-            zero{"ouguiya Mauritania (1973–2017)"}
-        }
-        MRU{
             few{"ouguiya Mauritania"}
             many{"ouguiya Mauritania"}
             one{"ouguiya Mauritania"}
@@ -2745,14 +2813,6 @@ cy{
             zero{"punt De Sudan"}
         }
         STD{
-            few{"dobra São Tomé a Príncipe (1977–2017)"}
-            many{"dobra São Tomé a Príncipe (1977–2017)"}
-            one{"dobra São Tomé a Príncipe (1977–2017)"}
-            other{"dobra São Tomé a Príncipe (1977–2017)"}
-            two{"dobra São Tomé a Príncipe (1977–2017)"}
-            zero{"dobra São Tomé a Príncipe (1977–2017)"}
-        }
-        STN{
             few{"dobra São Tomé a Príncipe"}
             many{"dobra São Tomé a Príncipe"}
             one{"dobra São Tomé a Príncipe"}
@@ -2969,14 +3029,6 @@ cy{
             zero{"bolívar Venezuela (1871–2008)"}
         }
         VEF{
-            few{"bolívar Venezuela (2008–2018)"}
-            many{"bolívar Venezuela (2008–2018)"}
-            one{"bolívar Venezuela (2008–2018)"}
-            other{"bolívar Venezuela (2008–2018)"}
-            two{"bolívar Venezuela (2008–2018)"}
-            zero{"bolívar Venezuela (2008–2018)"}
-        }
-        VES{
             few{"bolívar Venezuela"}
             many{"bolívar Venezuela"}
             one{"bolívar Venezuela"}
@@ -3185,5 +3237,5 @@ cy{
         two{"{0} {1}"}
         zero{"{0} {1}"}
     }
-    Version{"2.1.48.17"}
+    Version{"2.1.37.17"}
 }

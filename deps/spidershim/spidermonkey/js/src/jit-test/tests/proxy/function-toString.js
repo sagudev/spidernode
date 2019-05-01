@@ -1,10 +1,10 @@
 load(libdir + 'asserts.js');
 
-var nativeCode = "function () {\n    [native code]\n}";
+// Function.prototype.toString doesn't accept ES6 proxies.
 
 var proxy = new Proxy(function() {}, {});
-assertEq(Function.prototype.toString.call(proxy), nativeCode);
+assertThrowsInstanceOf(() => Function.prototype.toString.call(proxy), TypeError);
 var o = Proxy.revocable(function() {}, {});
-assertEq(Function.prototype.toString.call(o.proxy), nativeCode);
+assertThrowsInstanceOf(() => Function.prototype.toString.call(o.proxy), TypeError);
 o.revoke();
-assertEq(Function.prototype.toString.call(o.proxy), nativeCode);
+assertThrowsInstanceOf(() => Function.prototype.toString.call(o.proxy), TypeError);

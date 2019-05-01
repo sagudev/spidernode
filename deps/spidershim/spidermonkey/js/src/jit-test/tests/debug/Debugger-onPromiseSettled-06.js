@@ -1,8 +1,10 @@
 // Resumption values from onPromiseSettled handlers are disallowed.
+if (!('Promise' in this))
+    quit(0);
 
 load(libdir + 'asserts.js');
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 var log;
 

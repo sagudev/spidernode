@@ -1,33 +1,30 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifdef JS_JITSPEW
 
-#  include "jit/JSONSpewer.h"
+#include "jit/JSONSpewer.h"
 
-#  include <stdarg.h>
+#include <stdarg.h>
 
-#  include "jit/BacktrackingAllocator.h"
-#  include "jit/LIR.h"
-#  include "jit/MIR.h"
-#  include "jit/MIRGraph.h"
-#  include "jit/RangeAnalysis.h"
+#include "jit/BacktrackingAllocator.h"
+#include "jit/LIR.h"
+#include "jit/MIR.h"
+#include "jit/MIRGraph.h"
+#include "jit/RangeAnalysis.h"
 
 using namespace js;
 using namespace js::jit;
 
 void JSONSpewer::beginFunction(JSScript* script) {
   beginObject();
-  formatProperty("name", "%s:%u", script->filename(), script->lineno());
-  beginListProperty("passes");
-}
-
-void JSONSpewer::beginWasmFunction(unsigned funcIndex) {
-  beginObject();
-  formatProperty("name", "wasm-func%u", funcIndex);
+  if (script)
+    formatProperty("name", "%s:%zu", script->filename(), script->lineno());
+  else
+    property("name", "wasm compilation");
   beginListProperty("passes");
 }
 
@@ -37,15 +34,11 @@ void JSONSpewer::beginPass(const char* pass) {
 }
 
 void JSONSpewer::spewMResumePoint(MResumePoint* rp) {
-  if (!rp) {
-    return;
-  }
+  if (!rp) return;
 
   beginObjectProperty("resumePoint");
 
-  if (rp->caller()) {
-    property("caller", rp->caller()->block()->id());
-  }
+  if (rp->caller()) property("caller", rp->caller()->block()->id());
 
   switch (rp->mode()) {
     case MResumePoint::ResumeAt:
@@ -61,12 +54,9 @@ void JSONSpewer::spewMResumePoint(MResumePoint* rp) {
 
   beginListProperty("operands");
   for (MResumePoint* iter = rp; iter; iter = iter->caller()) {
-    for (int i = iter->numOperands() - 1; i >= 0; i--) {
+    for (int i = iter->numOperands() - 1; i >= 0; i--)
       value(iter->getOperand(i)->id());
-    }
-    if (iter->caller()) {
-      value("|");
-    }
+    if (iter->caller()) value("|");
   }
   endList();
 
@@ -84,39 +74,33 @@ void JSONSpewer::spewMDef(MDefinition* def) {
   out_.printf("\"");
 
   beginListProperty("attributes");
-#  define OUTPUT_ATTRIBUTE(X)      \
-    do {                           \
-      if (def->is##X()) value(#X); \
-    } while (0);
+#define OUTPUT_ATTRIBUTE(X)      \
+  do {                           \
+    if (def->is##X()) value(#X); \
+  } while (0);
   MIR_FLAG_LIST(OUTPUT_ATTRIBUTE);
-#  undef OUTPUT_ATTRIBUTE
+#undef OUTPUT_ATTRIBUTE
   endList();
 
   beginListProperty("inputs");
-  for (size_t i = 0, e = def->numOperands(); i < e; i++) {
+  for (size_t i = 0, e = def->numOperands(); i < e; i++)
     value(def->getOperand(i)->id());
-  }
   endList();
 
   beginListProperty("uses");
-  for (MUseDefIterator use(def); use; use++) {
-    value(use.def()->id());
-  }
+  for (MUseDefIterator use(def); use; use++) value(use.def()->id());
   endList();
 
   if (!def->isLowered()) {
     beginListProperty("memInputs");
-    if (def->dependency()) {
-      value(def->dependency()->id());
-    }
+    if (def->dependency()) value(def->dependency()->id());
     endList();
   }
 
   bool isTruncated = false;
   if (def->isAdd() || def->isSub() || def->isMod() || def->isMul() ||
-      def->isDiv()) {
+      def->isDiv())
     isTruncated = static_cast<MBinaryArithInstruction*>(def)->isTruncated();
-  }
 
   if (def->type() != MIRType::None && def->range()) {
     beginStringProperty("type");
@@ -130,9 +114,8 @@ void JSONSpewer::spewMDef(MDefinition* def) {
   }
 
   if (def->isInstruction()) {
-    if (MResumePoint* rp = def->toInstruction()->resumePoint()) {
+    if (MResumePoint* rp = def->toInstruction()->resumePoint())
       spewMResumePoint(rp);
-    }
   }
 
   endObject();
@@ -146,45 +129,34 @@ void JSONSpewer::spewMIR(MIRGraph* mir) {
     beginObject();
 
     property("number", block->id());
-    if (block->getHitState() == MBasicBlock::HitState::Count) {
+    if (block->getHitState() == MBasicBlock::HitState::Count)
       property("count", block->getHitCount());
-    }
 
     beginListProperty("attributes");
     if (block->hasLastIns()) {
-      if (block->isLoopBackedge()) {
-        value("backedge");
-      }
-      if (block->isLoopHeader()) {
-        value("loopheader");
-      }
-      if (block->isSplitEdge()) {
-        value("splitedge");
-      }
+      if (block->isLoopBackedge()) value("backedge");
+      if (block->isLoopHeader()) value("loopheader");
+      if (block->isSplitEdge()) value("splitedge");
     }
     endList();
 
     beginListProperty("predecessors");
-    for (size_t i = 0; i < block->numPredecessors(); i++) {
+    for (size_t i = 0; i < block->numPredecessors(); i++)
       value(block->getPredecessor(i)->id());
-    }
     endList();
 
     beginListProperty("successors");
     if (block->hasLastIns()) {
-      for (size_t i = 0; i < block->numSuccessors(); i++) {
+      for (size_t i = 0; i < block->numSuccessors(); i++)
         value(block->getSuccessor(i)->id());
-      }
     }
     endList();
 
     beginListProperty("instructions");
-    for (MPhiIterator phi(block->phisBegin()); phi != block->phisEnd(); phi++) {
+    for (MPhiIterator phi(block->phisBegin()); phi != block->phisEnd(); phi++)
       spewMDef(*phi);
-    }
-    for (MInstructionIterator i(block->begin()); i != block->end(); i++) {
+    for (MInstructionIterator i(block->begin()); i != block->end(); i++)
       spewMDef(*i);
-    }
     endList();
 
     spewMResumePoint(block->entryResumePoint());
@@ -208,11 +180,10 @@ void JSONSpewer::spewLIns(LNode* ins) {
 
   beginListProperty("defs");
   for (size_t i = 0; i < ins->numDefs(); i++) {
-    if (ins->isPhi()) {
+    if (ins->isPhi())
       value(ins->toPhi()->getDef(i)->virtualRegister());
-    } else {
+    else
       value(ins->toInstruction()->getDef(i)->virtualRegister());
-    }
   }
   endList();
 
@@ -225,20 +196,15 @@ void JSONSpewer::spewLIR(MIRGraph* mir) {
 
   for (MBasicBlockIterator i(mir->begin()); i != mir->end(); i++) {
     LBlock* block = i->lir();
-    if (!block) {
-      continue;
-    }
+    if (!block) continue;
 
     beginObject();
     property("number", i->id());
 
     beginListProperty("instructions");
-    for (size_t p = 0; p < block->numPhis(); p++) {
-      spewLIns(block->getPhi(p));
-    }
-    for (LInstructionIterator ins(block->begin()); ins != block->end(); ins++) {
+    for (size_t p = 0; p < block->numPhis(); p++) spewLIns(block->getPhi(p));
+    for (LInstructionIterator ins(block->begin()); ins != block->end(); ins++)
       spewLIns(*ins);
-    }
     endList();
 
     endObject();

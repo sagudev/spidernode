@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,8 +15,6 @@ using namespace js;
 using namespace js::jit;
 
 /*
- * [SMDOC] IonMonkey Value Numbering
- *
  * Some notes on the main algorithm here:
  *  - The SSA identifier id() is the value number. We do replaceAllUsesWith as
  *    we go, so there's always at most one visible value with a given number.
@@ -50,9 +48,7 @@ HashNumber ValueNumberer::VisibleValues::ValueHasher::hash(Lookup ins) {
 bool ValueNumberer::VisibleValues::ValueHasher::match(Key k, Lookup l) {
   // If one of the instructions depends on a store, and the other instruction
   // does not depend on the same store, the instructions are not congruent.
-  if (k->dependency() != l->dependency()) {
-    return false;
-  }
+  if (k->dependency() != l->dependency()) return false;
 
   bool congruent =
       k->congruentTo(l);  // Ask the values themselves what they think.
@@ -73,6 +69,9 @@ void ValueNumberer::VisibleValues::ValueHasher::rekey(Key& k, Key newKey) {
 
 ValueNumberer::VisibleValues::VisibleValues(TempAllocator& alloc)
     : set_(alloc) {}
+
+// Initialize the set.
+bool ValueNumberer::VisibleValues::init() { return set_.init(); }
 
 // Look up the first entry for |def|.
 ValueNumberer::VisibleValues::Ptr ValueNumberer::VisibleValues::findLeader(
@@ -99,9 +98,7 @@ void ValueNumberer::VisibleValues::overwrite(AddPtr p, MDefinition* def) {
 // |def| will be discarded, so remove it from any sets.
 void ValueNumberer::VisibleValues::forget(const MDefinition* def) {
   Ptr p = set_.lookup(def);
-  if (p && *p == def) {
-    set_.remove(p);
-  }
+  if (p && *p == def) set_.remove(p);
 }
 
 // Clear all state.
@@ -131,9 +128,7 @@ static void ReplaceAllUsesWith(MDefinition* from, MDefinition* to) {
 static bool HasSuccessor(const MControlInstruction* block,
                          const MBasicBlock* succ) {
   for (size_t i = 0, e = block->numSuccessors(); i != e; ++i) {
-    if (block->getSuccessor(i) == succ) {
-      return true;
-    }
+    if (block->getSuccessor(i) == succ) return true;
   }
   return false;
 }
@@ -149,9 +144,7 @@ static MBasicBlock* ComputeNewDominator(MBasicBlock* block, MBasicBlock* old) {
     // whether now dominates pred, not block.
     while (!now->dominates(pred)) {
       MBasicBlock* next = now->immediateDominator();
-      if (next == old) {
-        return old;
-      }
+      if (next == old) return old;
       if (next == now) {
         MOZ_ASSERT(block == old,
                    "Non-self-dominating block became self-dominating");
@@ -174,14 +167,10 @@ static bool BlockHasInterestingDefs(MBasicBlock* block) {
 // which look potentially interesting to GVN.
 static bool ScanDominatorsForDefs(MBasicBlock* block) {
   for (MBasicBlock* i = block;;) {
-    if (BlockHasInterestingDefs(block)) {
-      return true;
-    }
+    if (BlockHasInterestingDefs(block)) return true;
 
     MBasicBlock* immediateDominator = i->immediateDominator();
-    if (immediateDominator == i) {
-      break;
-    }
+    if (immediateDominator == i) break;
     i = immediateDominator;
   }
   return false;
@@ -194,9 +183,7 @@ static bool ScanDominatorsForDefs(MBasicBlock* now, MBasicBlock* old) {
              "Refined dominator not dominated by old dominator");
 
   for (MBasicBlock* i = now; i != old; i = i->immediateDominator()) {
-    if (BlockHasInterestingDefs(i)) {
-      return true;
-    }
+    if (BlockHasInterestingDefs(i)) return true;
   }
   return false;
 }
@@ -219,9 +206,7 @@ static bool IsDominatorRefined(MBasicBlock* block) {
 
   // We've computed block's new dominator. Test whether there are any
   // newly-dominating definitions which look interesting.
-  if (block == old) {
-    return block != now && ScanDominatorsForDefs(now);
-  }
+  if (block == old) return block != now && ScanDominatorsForDefs(now);
   MOZ_ASSERT(block != now, "Non-self-dominating block became self-dominating");
   return ScanDominatorsForDefs(now, old);
 }
@@ -232,13 +217,9 @@ bool ValueNumberer::handleUseReleased(MDefinition* def,
                                       UseRemovedOption useRemovedOption) {
   if (IsDiscardable(def)) {
     values_.forget(def);
-    if (!deadDefs_.append(def)) {
-      return false;
-    }
+    if (!deadDefs_.append(def)) return false;
   } else {
-    if (useRemovedOption == SetUseRemoved) {
-      def->setUseRemovedUnchecked();
-    }
+    if (useRemovedOption == SetUseRemoved) def->setUseRemovedUnchecked();
   }
   return true;
 }
@@ -256,18 +237,14 @@ bool ValueNumberer::discardDefsRecursively(MDefinition* def) {
 // becomes unused, so it isn't trivial to do.
 bool ValueNumberer::releaseResumePointOperands(MResumePoint* resume) {
   for (size_t i = 0, e = resume->numOperands(); i < e; ++i) {
-    if (!resume->hasOperand(i)) {
-      continue;
-    }
+    if (!resume->hasOperand(i)) continue;
     MDefinition* op = resume->getOperand(i);
     resume->releaseOperand(i);
 
     // We set the UseRemoved flag when removing resume point operands,
     // because even though we may think we're certain that a particular
     // branch might not be taken, the type information might be incomplete.
-    if (!handleUseReleased(op, SetUseRemoved)) {
-      return false;
-    }
+    if (!handleUseReleased(op, SetUseRemoved)) return false;
   }
   return true;
 }
@@ -279,9 +256,7 @@ bool ValueNumberer::releaseAndRemovePhiOperands(MPhi* phi) {
   for (int o = phi->numOperands() - 1; o >= 0; --o) {
     MDefinition* op = phi->getOperand(o);
     phi->removeOperand(o);
-    if (!handleUseReleased(op, DontSetUseRemoved)) {
-      return false;
-    }
+    if (!handleUseReleased(op, DontSetUseRemoved)) return false;
   }
   return true;
 }
@@ -292,9 +267,7 @@ bool ValueNumberer::releaseOperands(MDefinition* def) {
   for (size_t o = 0, e = def->numOperands(); o < e; ++o) {
     MDefinition* op = def->getOperand(o);
     def->releaseOperand(o);
-    if (!handleUseReleased(op, DontSetUseRemoved)) {
-      return false;
-    }
+    if (!handleUseReleased(op, DontSetUseRemoved)) return false;
   }
   return true;
 }
@@ -319,20 +292,14 @@ bool ValueNumberer::discardDef(MDefinition* def) {
   MBasicBlock* block = def->block();
   if (def->isPhi()) {
     MPhi* phi = def->toPhi();
-    if (!releaseAndRemovePhiOperands(phi)) {
-      return false;
-    }
+    if (!releaseAndRemovePhiOperands(phi)) return false;
     block->discardPhi(phi);
   } else {
     MInstruction* ins = def->toInstruction();
     if (MResumePoint* resume = ins->resumePoint()) {
-      if (!releaseResumePointOperands(resume)) {
-        return false;
-      }
+      if (!releaseResumePointOperands(resume)) return false;
     }
-    if (!releaseOperands(ins)) {
-      return false;
-    }
+    if (!releaseOperands(ins)) return false;
     block->discardIgnoreOperands(ins);
   }
 
@@ -368,13 +335,9 @@ bool ValueNumberer::processDeadDefs() {
 
     // Don't invalidate the MDefinition iterator. This is what we're going
     // to visit next, so we won't miss anything.
-    if (def == nextDef) {
-      continue;
-    }
+    if (def == nextDef) continue;
 
-    if (!discardDef(def)) {
-      return false;
-    }
+    if (!discardDef(def)) return false;
   }
   return true;
 }
@@ -388,9 +351,7 @@ static bool hasNonDominatingPredecessor(MBasicBlock* block,
 
   for (uint32_t i = 0, e = block->numPredecessors(); i < e; ++i) {
     MBasicBlock* pred = block->getPredecessor(i);
-    if (pred != loopPred && !block->dominates(pred)) {
-      return true;
-    }
+    if (pred != loopPred && !block->dominates(pred)) return true;
   }
   return false;
 }
@@ -407,9 +368,7 @@ bool ValueNumberer::fixupOSROnlyLoop(MBasicBlock* block,
   // extraordinarily rare that it isn't worth the complexity.
   MBasicBlock* fake =
       MBasicBlock::New(graph_, block->info(), nullptr, MBasicBlock::NORMAL);
-  if (fake == nullptr) {
-    return false;
-  }
+  if (fake == nullptr) return false;
 
   graph_.insertBlockBefore(block, fake);
   fake->setImmediateDominator(fake);
@@ -425,16 +384,12 @@ bool ValueNumberer::fixupOSROnlyLoop(MBasicBlock* block,
     MPhi* phi = *iter;
     MPhi* fakePhi = MPhi::New(graph_.alloc(), phi->type());
     fake->addPhi(fakePhi);
-    if (!phi->addInputSlow(fakePhi)) {
-      return false;
-    }
+    if (!phi->addInputSlow(fakePhi)) return false;
   }
 
   fake->end(MGoto::New(graph_.alloc(), block));
 
-  if (!block->addPredecessorWithoutPhis(fake)) {
-    return false;
-  }
+  if (!block->addPredecessorWithoutPhis(fake)) return false;
 
   // Restore |backedge| as |block|'s loop backedge.
   block->clearLoopHeader();
@@ -468,9 +423,8 @@ bool ValueNumberer::removePredecessorAndDoDCE(MBasicBlock* block,
     phi->removeOperand(predIndex);
 
     nextDef_ = iter != end ? *iter : nullptr;
-    if (!handleUseReleased(op, DontSetUseRemoved) || !processDeadDefs()) {
+    if (!handleUseReleased(op, DontSetUseRemoved) || !processDeadDefs())
       return false;
-    }
 
     // If |nextDef_| became dead while we had it pinned, advance the
     // iterator and discard it now.
@@ -479,9 +433,7 @@ bool ValueNumberer::removePredecessorAndDoDCE(MBasicBlock* block,
       phi = nextDef_->toPhi();
       iter++;
       nextDef_ = iter != end ? *iter : nullptr;
-      if (!discardDefsRecursively(phi)) {
-        return false;
-      }
+      if (!discardDefsRecursively(phi)) return false;
     }
   }
   nextDef_ = nullptr;
@@ -502,9 +454,8 @@ bool ValueNumberer::removePredecessorAndCleanUp(MBasicBlock* block,
   // We'll be removing a predecessor, so anything we know about phis in this
   // block will be wrong.
   for (MPhiIterator iter(block->phisBegin()), end(block->phisEnd());
-       iter != end; ++iter) {
+       iter != end; ++iter)
     values_.forget(*iter);
-  }
 
   // If this is a loop header, test whether it will become an unreachable
   // loop, or whether it needs special OSR-related fixups.
@@ -534,10 +485,8 @@ bool ValueNumberer::removePredecessorAndCleanUp(MBasicBlock* block,
   }
 
   // Actually remove the CFG edge.
-  if (!removePredecessorAndDoDCE(block, pred,
-                                 block->getPredecessorIndex(pred))) {
+  if (!removePredecessorAndDoDCE(block, pred, block->getPredecessorIndex(pred)))
     return false;
-  }
 
   // We've now edited the CFG; check to see if |block| became unreachable.
   if (block->numPredecessors() == 0 || isUnreachableLoop) {
@@ -547,34 +496,27 @@ bool ValueNumberer::removePredecessorAndCleanUp(MBasicBlock* block,
     // immediately-dominated-block information we need to update, because
     // everything dominated by this block is about to be swept away.
     MBasicBlock* parent = block->immediateDominator();
-    if (parent != block) {
-      parent->removeImmediatelyDominatedBlock(block);
-    }
+    if (parent != block) parent->removeImmediatelyDominatedBlock(block);
 
     // Completely disconnect it from the CFG. We do this now rather than
     // just doing it later when we arrive there in visitUnreachableBlock
     // so that we don't leave a partially broken loop sitting around. This
     // also lets visitUnreachableBlock assert that numPredecessors() == 0,
     // which is a nice invariant.
-    if (block->isLoopHeader()) {
-      block->clearLoopHeader();
-    }
+    if (block->isLoopHeader()) block->clearLoopHeader();
     for (size_t i = 0, e = block->numPredecessors(); i < e; ++i) {
-      if (!removePredecessorAndDoDCE(block, block->getPredecessor(i), i)) {
+      if (!removePredecessorAndDoDCE(block, block->getPredecessor(i), i))
         return false;
-      }
     }
 
     // Clear out the resume point operands, as they can hold things that
     // don't appear to dominate them live.
     if (MResumePoint* resume = block->entryResumePoint()) {
-      if (!releaseResumePointOperands(resume) || !processDeadDefs()) {
+      if (!releaseResumePointOperands(resume) || !processDeadDefs())
         return false;
-      }
       if (MResumePoint* outer = block->outerResumePoint()) {
-        if (!releaseResumePointOperands(outer) || !processDeadDefs()) {
+        if (!releaseResumePointOperands(outer) || !processDeadDefs())
           return false;
-        }
       }
       MOZ_ASSERT(nextDef_ == nullptr);
       for (MInstructionIterator iter(block->begin()), end(block->end());
@@ -582,9 +524,8 @@ bool ValueNumberer::removePredecessorAndCleanUp(MBasicBlock* block,
         MInstruction* ins = *iter++;
         nextDef_ = iter != end ? *iter : nullptr;
         if (MResumePoint* resume = ins->resumePoint()) {
-          if (!releaseResumePointOperands(resume) || !processDeadDefs()) {
+          if (!releaseResumePointOperands(resume) || !processDeadDefs())
             return false;
-          }
         }
       }
       nextDef_ = nullptr;
@@ -636,9 +577,7 @@ MDefinition* ValueNumberer::leader(MDefinition* def) {
       values_.overwrite(p, def);
     } else {
       // No match. Add a new entry.
-      if (!values_.add(p, def)) {
-        return nullptr;
-      }
+      if (!values_.add(p, def)) return nullptr;
     }
 
 #ifdef JS_JITSPEW
@@ -665,9 +604,7 @@ bool ValueNumberer::hasLeader(const MPhi* phi,
 // discarding the phi triggering the iteration.
 bool ValueNumberer::loopHasOptimizablePhi(MBasicBlock* header) const {
   // If the header is unreachable, don't bother re-optimizing it.
-  if (header->isMarked()) {
-    return false;
-  }
+  if (header->isMarked()) return false;
 
   // Rescan the phis for any that can be simplified, since they may be reading
   // values from backedges.
@@ -676,9 +613,8 @@ bool ValueNumberer::loopHasOptimizablePhi(MBasicBlock* header) const {
     MPhi* phi = *iter;
     MOZ_ASSERT_IF(!phi->hasUses(), !DeadIfUnused(phi));
 
-    if (phi->operandIfRedundant() || hasLeader(phi, header)) {
+    if (phi->operandIfRedundant() || hasLeader(phi, header))
       return true;  // Phi can be simplified.
-    }
   }
   return false;
 }
@@ -745,9 +681,7 @@ bool ValueNumberer::visitDefinition(MDefinition* def) {
   // Skip optimizations on instructions which are recovered on bailout, to
   // avoid mixing instructions which are recovered on bailouts with
   // instructions which are not.
-  if (def->isRecoveredOnBailout()) {
-    return true;
-  }
+  if (def->isRecoveredOnBailout()) return true;
 
   // If this instruction has a dependency() into an unreachable block, we'll
   // need to update AliasAnalysis.
@@ -770,16 +704,13 @@ bool ValueNumberer::visitDefinition(MDefinition* def) {
   // Look for a simplified form of |def|.
   MDefinition* sim = simplified(def);
   if (sim != def) {
-    if (sim == nullptr) {
-      return false;
-    }
+    if (sim == nullptr) return false;
 
     bool isNewInstruction = sim->block() == nullptr;
 
     // If |sim| doesn't belong to a block, insert it next to |def|.
-    if (isNewInstruction) {
+    if (isNewInstruction)
       def->block()->insertAfter(def->toInstruction(), sim->toInstruction());
-    }
 
 #ifdef JS_JITSPEW
     JitSpew(JitSpew_GVN, "      Folded %s%u to %s%u", def->opName(), def->id(),
@@ -793,19 +724,13 @@ bool ValueNumberer::visitDefinition(MDefinition* def) {
     // needed, so we can clear |def|'s guard flag and let it be discarded.
     def->setNotGuardUnchecked();
 
-    if (def->isGuardRangeBailouts()) {
-      sim->setGuardRangeBailoutsUnchecked();
-    }
+    if (def->isGuardRangeBailouts()) sim->setGuardRangeBailoutsUnchecked();
 
     if (DeadIfUnused(def)) {
-      if (!discardDefsRecursively(def)) {
-        return false;
-      }
+      if (!discardDefsRecursively(def)) return false;
 
       // If that ended up discarding |sim|, then we're done here.
-      if (sim->isDiscarded()) {
-        return true;
-      }
+      if (sim->isDiscarded()) return true;
     }
 
     if (!rerun_ && def->isPhi() && !sim->isPhi()) {
@@ -821,24 +746,18 @@ bool ValueNumberer::visitDefinition(MDefinition* def) {
 
     // If the simplified instruction was already part of the graph, then we
     // probably already visited and optimized this instruction.
-    if (!isNewInstruction) {
-      return true;
-    }
+    if (!isNewInstruction) return true;
   }
 
   // Now that foldsTo is done, re-enable the original dependency. Even though
   // it may be pointing into a discarded block, it's still valid for the
   // purposes of detecting congruent loads.
-  if (dep != nullptr) {
-    def->setDependency(dep);
-  }
+  if (dep != nullptr) def->setDependency(dep);
 
   // Look for a dominating def which makes |def| redundant.
   MDefinition* rep = leader(def);
   if (rep != def) {
-    if (rep == nullptr) {
-      return false;
-    }
+    if (rep == nullptr) return false;
     if (rep->updateForReplacement(def)) {
 #ifdef JS_JITSPEW
       JitSpew(JitSpew_GVN, "      Replacing %s%u with %s%u", def->opName(),
@@ -874,13 +793,9 @@ bool ValueNumberer::visitControlInstruction(MBasicBlock* block) {
   // Look for a simplified form of the control instruction.
   MControlInstruction* control = block->lastIns();
   MDefinition* rep = simplified(control);
-  if (rep == control) {
-    return true;
-  }
+  if (rep == control) return true;
 
-  if (rep == nullptr) {
-    return false;
-  }
+  if (rep == nullptr) return false;
 
   MControlInstruction* newControl = rep->toControlInstruction();
   MOZ_ASSERT(!newControl->block(),
@@ -900,34 +815,21 @@ bool ValueNumberer::visitControlInstruction(MBasicBlock* block) {
                "New control instruction has too many successors");
     for (size_t i = 0; i != oldNumSuccs; ++i) {
       MBasicBlock* succ = control->getSuccessor(i);
-      if (HasSuccessor(newControl, succ)) {
-        continue;
-      }
-      if (succ->isMarked()) {
-        continue;
-      }
-      if (!removePredecessorAndCleanUp(succ, block)) {
-        return false;
-      }
-      if (succ->isMarked()) {
-        continue;
-      }
+      if (HasSuccessor(newControl, succ)) continue;
+      if (succ->isMarked()) continue;
+      if (!removePredecessorAndCleanUp(succ, block)) return false;
+      if (succ->isMarked()) continue;
       if (!rerun_) {
-        if (!remainingBlocks_.append(succ)) {
-          return false;
-        }
+        if (!remainingBlocks_.append(succ)) return false;
       }
     }
   }
 
-  if (!releaseOperands(control)) {
-    return false;
-  }
+  if (!releaseOperands(control)) return false;
   block->discardIgnoreOperands(control);
   block->end(newControl);
-  if (block->entryResumePoint() && newNumSuccs != oldNumSuccs) {
+  if (block->entryResumePoint() && newNumSuccs != oldNumSuccs)
     block->flagOperandsOfPrunedBranches(newControl);
-  }
   return processDeadDefs();
 }
 
@@ -950,21 +852,13 @@ bool ValueNumberer::visitUnreachableBlock(MBasicBlock* block) {
   // Disconnect all outgoing CFG edges.
   for (size_t i = 0, e = block->numSuccessors(); i < e; ++i) {
     MBasicBlock* succ = block->getSuccessor(i);
-    if (succ->isDead() || succ->isMarked()) {
-      continue;
-    }
-    if (!removePredecessorAndCleanUp(succ, block)) {
-      return false;
-    }
-    if (succ->isMarked()) {
-      continue;
-    }
+    if (succ->isDead() || succ->isMarked()) continue;
+    if (!removePredecessorAndCleanUp(succ, block)) return false;
+    if (succ->isMarked()) continue;
     // |succ| is still reachable. Make a note of it so that we can scan
     // it for interesting dominator tree changes later.
     if (!rerun_) {
-      if (!remainingBlocks_.append(succ)) {
-        return false;
-      }
+      if (!remainingBlocks_.append(succ)) return false;
     }
   }
 
@@ -973,13 +867,9 @@ bool ValueNumberer::visitUnreachableBlock(MBasicBlock* block) {
   MOZ_ASSERT(nextDef_ == nullptr);
   for (MDefinitionIterator iter(block); iter;) {
     MDefinition* def = *iter++;
-    if (def->hasUses()) {
-      continue;
-    }
+    if (def->hasUses()) continue;
     nextDef_ = iter ? *iter : nullptr;
-    if (!discardDefsRecursively(def)) {
-      return false;
-    }
+    if (!discardDefsRecursively(def)) return false;
   }
 
   nextDef_ = nullptr;
@@ -997,9 +887,7 @@ bool ValueNumberer::visitBlock(MBasicBlock* block) {
   // Visit the definitions in the block top-down.
   MOZ_ASSERT(nextDef_ == nullptr);
   for (MDefinitionIterator iter(block); iter;) {
-    if (!graph_.alloc().ensureBallast()) {
-      return false;
-    }
+    if (!graph_.alloc().ensureBallast()) return false;
     MDefinition* def = *iter++;
 
     // Remember where our iterator is so that we don't invalidate it.
@@ -1007,21 +895,15 @@ bool ValueNumberer::visitBlock(MBasicBlock* block) {
 
     // If the definition is dead, discard it.
     if (IsDiscardable(def)) {
-      if (!discardDefsRecursively(def)) {
-        return false;
-      }
+      if (!discardDefsRecursively(def)) return false;
       continue;
     }
 
-    if (!visitDefinition(def)) {
-      return false;
-    }
+    if (!visitDefinition(def)) return false;
   }
   nextDef_ = nullptr;
 
-  if (!graph_.alloc().ensureBallast()) {
-    return false;
-  }
+  if (!graph_.alloc().ensureBallast()) return false;
 
   return visitControlInstruction(block);
 }
@@ -1052,9 +934,7 @@ bool ValueNumberer::visitDominatorTree(MBasicBlock* dominatorRoot) {
     MOZ_ASSERT(iter != graph_.rpoEnd(), "Inconsistent dominator information");
     MBasicBlock* block = *iter++;
     // We're only visiting blocks in dominatorRoot's tree right now.
-    if (!dominatorRoot->dominates(block)) {
-      continue;
-    }
+    if (!dominatorRoot->dominates(block)) continue;
 
     // If this is a loop backedge, remember the header, as we may not be able
     // to find it after we simplify the block.
@@ -1063,15 +943,11 @@ bool ValueNumberer::visitDominatorTree(MBasicBlock* dominatorRoot) {
 
     if (block->isMarked()) {
       // This block has become unreachable; handle it specially.
-      if (!visitUnreachableBlock(block)) {
-        return false;
-      }
+      if (!visitUnreachableBlock(block)) return false;
       ++numDiscarded;
     } else {
       // Visit the block!
-      if (!visitBlock(block)) {
-        return false;
-      }
+      if (!visitBlock(block)) return false;
       ++numVisited;
     }
 
@@ -1087,9 +963,7 @@ bool ValueNumberer::visitDominatorTree(MBasicBlock* dominatorRoot) {
 
     MOZ_ASSERT(numVisited <= dominatorRoot->numDominated() - numDiscarded,
                "Visited blocks too many times");
-    if (numVisited >= dominatorRoot->numDominated() - numDiscarded) {
-      break;
-    }
+    if (numVisited >= dominatorRoot->numDominated() - numDiscarded) break;
   }
 
   totalNumVisited_ += numVisited;
@@ -1108,9 +982,7 @@ bool ValueNumberer::visitGraph() {
     MOZ_ASSERT(iter != graph_.rpoEnd(), "Inconsistent dominator information");
     MBasicBlock* block = *iter;
     if (block->immediateDominator() == block) {
-      if (!visitDominatorTree(block)) {
-        return false;
-      }
+      if (!visitDominatorTree(block)) return false;
 
       // Normally unreachable blocks would be removed by now, but if this
       // block is a dominator tree root, it has been special-cased and left
@@ -1132,9 +1004,7 @@ bool ValueNumberer::visitGraph() {
 
       MOZ_ASSERT(totalNumVisited_ <= graph_.numBlocks(),
                  "Visited blocks too many times");
-      if (totalNumVisited_ >= graph_.numBlocks()) {
-        break;
-      }
+      if (totalNumVisited_ >= graph_.numBlocks()) break;
     } else {
       // This block a dominator tree root. Proceed to the next one.
       ++iter;
@@ -1150,20 +1020,14 @@ bool ValueNumberer::insertOSRFixups() {
     MBasicBlock* block = *iter++;
 
     // Only add fixup block above for loops which can be reached from OSR.
-    if (!block->isLoopHeader()) {
-      continue;
-    }
+    if (!block->isLoopHeader()) continue;
 
     // If the loop header is not self-dominated, then this loop does not
     // have to deal with a second entry point, so there is no need to add a
     // second entry point with a fixup block.
-    if (block->immediateDominator() != block) {
-      continue;
-    }
+    if (block->immediateDominator() != block) continue;
 
-    if (!fixupOSROnlyLoop(block, block->backedge())) {
-      return false;
-    }
+    if (!fixupOSROnlyLoop(block, block->backedge())) return false;
   }
 
   return true;
@@ -1180,9 +1044,8 @@ bool ValueNumberer::cleanupOSRFixups() {
   graph_.entryBlock()->mark();
   graph_.osrBlock()->mark();
   if (!worklist.append(graph_.entryBlock()) ||
-      !worklist.append(graph_.osrBlock())) {
+      !worklist.append(graph_.osrBlock()))
     return false;
-  }
   while (!worklist.empty()) {
     MBasicBlock* block = worklist.popCopy();
     for (size_t i = 0, e = block->numSuccessors(); i != e; ++i) {
@@ -1190,9 +1053,7 @@ bool ValueNumberer::cleanupOSRFixups() {
       if (!succ->isMarked()) {
         ++numMarked;
         succ->mark();
-        if (!worklist.append(succ)) {
-          return false;
-        }
+        if (!worklist.append(succ)) return false;
       } else if (succ->isLoopHeader() && succ->loopPredecessor() == block &&
                  succ->numPredecessors() == 3) {
         // Unmark fixup blocks if the loop predecessor is marked after
@@ -1214,9 +1075,8 @@ bool ValueNumberer::cleanupOSRFixups() {
         maybeFixupBlock = block->getPredecessor(0);
       } else {
         MOZ_ASSERT(block->numPredecessors() == 3);
-        if (!block->loopPredecessor()->isMarked()) {
+        if (!block->loopPredecessor()->isMarked())
           maybeFixupBlock = block->getPredecessor(1);
-        }
       }
 
       if (maybeFixupBlock && !maybeFixupBlock->isMarked() &&
@@ -1239,12 +1099,6 @@ bool ValueNumberer::cleanupOSRFixups() {
 ValueNumberer::ValueNumberer(MIRGenerator* mir, MIRGraph& graph)
     : mir_(mir),
       graph_(graph),
-      // Initialize the value set. It's tempting to pass in a length that is a
-      // function of graph_.getNumInstructionIds(). But if we start out with a
-      // large capacity, it will be far larger than the actual element count for
-      // most of the pass, so when we remove elements, it would often think it
-      // needs to compact itself. Empirically, just letting the HashTable grow
-      // as needed on its own seems to work pretty well.
       values_(graph.alloc()),
       deadDefs_(graph.alloc()),
       remainingBlocks_(graph.alloc()),
@@ -1256,6 +1110,16 @@ ValueNumberer::ValueNumberer(MIRGenerator* mir, MIRGraph& graph)
       dependenciesBroken_(false),
       hasOSRFixups_(false) {}
 
+bool ValueNumberer::init() {
+  // Initialize the value set. It's tempting to pass in a size here of some
+  // function of graph_.getNumInstructionIds(), however if we start out with a
+  // large capacity, it will be far larger than the actual element count for
+  // most of the pass, so when we remove elements, it would often think it
+  // needs to compact itself. Empirically, just letting the HashTable grow as
+  // needed on its own seems to work pretty well.
+  return values_.init();
+}
+
 bool ValueNumberer::run(UpdateAliasAnalysisFlag updateAliasAnalysis) {
   updateAliasAnalysis_ = updateAliasAnalysis == UpdateAliasAnalysis;
 
@@ -1265,9 +1129,7 @@ bool ValueNumberer::run(UpdateAliasAnalysisFlag updateAliasAnalysis) {
   // Adding fixup blocks only make sense iff we have a second entry point into
   // the graph which cannot be reached any more from the entry point.
   if (graph_.osrBlock()) {
-    if (!insertOSRFixups()) {
-      return false;
-    }
+    if (!insertOSRFixups()) return false;
   }
 
   // Top level non-sparse iteration loop. If an iteration performs a
@@ -1276,9 +1138,7 @@ bool ValueNumberer::run(UpdateAliasAnalysisFlag updateAliasAnalysis) {
   // iteration.
   int runs = 0;
   for (;;) {
-    if (!visitGraph()) {
-      return false;
-    }
+    if (!visitGraph()) return false;
 
     // Test whether any block which was not removed but which had at least
     // one predecessor removed will have a new dominator parent.
@@ -1296,22 +1156,17 @@ bool ValueNumberer::run(UpdateAliasAnalysisFlag updateAliasAnalysis) {
 
     if (blocksRemoved_) {
       if (!AccountForCFGChanges(mir_, graph_, dependenciesBroken_,
-                                /* underValueNumberer = */ true)) {
+                                /* underValueNumberer = */ true))
         return false;
-      }
 
       blocksRemoved_ = false;
       dependenciesBroken_ = false;
     }
 
-    if (mir_->shouldCancel("GVN (outer loop)")) {
-      return false;
-    }
+    if (mir_->shouldCancel("GVN (outer loop)")) return false;
 
     // If no further opportunities have been discovered, we're done.
-    if (!rerun_) {
-      break;
-    }
+    if (!rerun_) break;
 
     rerun_ = false;
 
@@ -1333,9 +1188,7 @@ bool ValueNumberer::run(UpdateAliasAnalysisFlag updateAliasAnalysis) {
   }
 
   if (MOZ_UNLIKELY(hasOSRFixups_)) {
-    if (!cleanupOSRFixups()) {
-      return false;
-    }
+    if (!cleanupOSRFixups()) return false;
     hasOSRFixups_ = false;
   }
 

@@ -1,6 +1,6 @@
 // Check that {return:} resumption kills the current stack frame.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.debuggeeGlobal = this;
 g.eval("(" + function () {
         var dbg = new Debugger(debuggeeGlobal);

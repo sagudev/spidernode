@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +9,6 @@
 
 #include "mozilla/ArrayUtils.h"
 
-#include "js/UniquePtr.h"
 #include "vm/NativeObject.h"
 #include "vm/SavedStacks.h"
 #include "vm/Shape.h"
@@ -30,9 +29,10 @@ class ErrorObject : public NativeObject {
   friend JSObject* js::InitExceptionClasses(JSContext* cx, HandleObject global);
 
   static bool init(JSContext* cx, Handle<ErrorObject*> obj, JSExnType type,
-                   UniquePtr<JSErrorReport> errorReport, HandleString fileName,
-                   HandleObject stack, uint32_t sourceId, uint32_t lineNumber,
-                   uint32_t columnNumber, HandleString message);
+                   ScopedJSFreePtr<JSErrorReport>* errorReport,
+                   HandleString fileName, HandleObject stack,
+                   uint32_t lineNumber, uint32_t columnNumber,
+                   HandleString message);
 
   static const ClassSpec classSpecs[JSEXN_ERROR_LIMIT];
   static const Class protoClasses[JSEXN_ERROR_LIMIT];
@@ -45,10 +45,8 @@ class ErrorObject : public NativeObject {
   static const uint32_t LINENUMBER_SLOT = FILENAME_SLOT + 1;
   static const uint32_t COLUMNNUMBER_SLOT = LINENUMBER_SLOT + 1;
   static const uint32_t MESSAGE_SLOT = COLUMNNUMBER_SLOT + 1;
-  static const uint32_t SOURCEID_SLOT = MESSAGE_SLOT + 1;
-  static const uint32_t TIME_WARP_SLOT = SOURCEID_SLOT + 1;
 
-  static const uint32_t RESERVED_SLOTS = TIME_WARP_SLOT + 1;
+  static const uint32_t RESERVED_SLOTS = MESSAGE_SLOT + 1;
 
  public:
   static const Class classes[JSEXN_ERROR_LIMIT];
@@ -68,9 +66,9 @@ class ErrorObject : public NativeObject {
   // property with that value; otherwise the error will have no .message
   // property.
   static ErrorObject* create(JSContext* cx, JSExnType type, HandleObject stack,
-                             HandleString fileName, uint32_t sourceId,
-                             uint32_t lineNumber, uint32_t columnNumber,
-                             UniquePtr<JSErrorReport> report,
+                             HandleString fileName, uint32_t lineNumber,
+                             uint32_t columnNumber,
+                             ScopedJSFreePtr<JSErrorReport>* report,
                              HandleString message,
                              HandleObject proto = nullptr);
 
@@ -87,20 +85,16 @@ class ErrorObject : public NativeObject {
 
   JSErrorReport* getErrorReport() const {
     const Value& slot = getReservedSlot(ERROR_REPORT_SLOT);
-    if (slot.isUndefined()) {
-      return nullptr;
-    }
+    if (slot.isUndefined()) return nullptr;
     return static_cast<JSErrorReport*>(slot.toPrivate());
   }
 
   JSErrorReport* getOrCreateErrorReport(JSContext* cx);
 
   inline JSString* fileName(JSContext* cx) const;
-  inline uint32_t sourceId() const;
   inline uint32_t lineNumber() const;
   inline uint32_t columnNumber() const;
   inline JSObject* stack() const;
-  inline uint64_t timeWarpTarget() const;
 
   JSString* getMessage() const {
     const HeapSlot& slot = getReservedSlotRef(MESSAGE_SLOT);

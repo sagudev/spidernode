@@ -2,6 +2,7 @@ use mozprofile::prefreader::PrefReaderError;
 use mozprofile::profile::Profile;
 use std::collections::HashMap;
 use std::convert::From;
+use std::env;
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
@@ -12,8 +13,6 @@ use std::process;
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time;
-
-use crate::firefox_args::Arg;
 
 pub trait Runner {
     type Process;
@@ -138,21 +137,14 @@ impl RunnerProcess for FirefoxProcess {
     }
 
     fn wait(&mut self, timeout: time::Duration) -> io::Result<process::ExitStatus> {
-        let start = time::Instant::now();
-        loop {
-            match self.try_wait() {
-                // child has already exited, reap its exit code
-                Ok(Some(status)) => return Ok(status),
-
-                // child still running and timeout elapsed, kill it
-                Ok(None) if start.elapsed() >= timeout => return self.kill(),
-
-                // child still running, let's give it more time
-                Ok(None) => thread::sleep(time::Duration::from_millis(100)),
-
-                Err(e) => return Err(e),
+        let now = time::Instant::now();
+        while self.running() {
+            if now.elapsed() >= timeout {
+                break;
             }
+            thread::sleep(time::Duration::from_millis(100));
         }
+        self.kill()
     }
 
     fn running(&mut self) -> bool {
@@ -160,7 +152,6 @@ impl RunnerProcess for FirefoxProcess {
     }
 
     fn kill(&mut self) -> io::Result<process::ExitStatus> {
-        debug!("Killing process {}", self.process.id());
         self.process.kill()?;
         self.process.wait()
     }
@@ -168,7 +159,7 @@ impl RunnerProcess for FirefoxProcess {
 
 #[derive(Debug)]
 pub struct FirefoxRunner {
-    path: PathBuf,
+    binary: PathBuf,
     profile: Profile,
     args: Vec<OsString>,
     envs: HashMap<OsString, OsString>,
@@ -177,17 +168,13 @@ pub struct FirefoxRunner {
 }
 
 impl FirefoxRunner {
-    /// Initialise Firefox process runner.
-    ///
-    /// On macOS, `path` can optionally point to an application bundle,
-    /// i.e. _/Applications/Firefox.app_, as well as to an executable program
-    /// such as _/Applications/Firefox.app/Content/MacOS/firefox-bin_.
-    pub fn new(path: &Path, profile: Profile) -> FirefoxRunner {
+    pub fn new(binary: &Path, profile: Profile) -> FirefoxRunner {
         let mut envs: HashMap<OsString, OsString> = HashMap::new();
         envs.insert("MOZ_NO_REMOTE".into(), "1".into());
+        envs.insert("NO_EM_RESTART".into(), "1".into());
 
         FirefoxRunner {
-            path: path.to_path_buf(),
+            binary: binary.to_path_buf(),
             envs: envs,
             profile: profile,
             args: vec![],
@@ -257,58 +244,110 @@ impl Runner for FirefoxRunner {
     }
 
     fn start(mut self) -> Result<FirefoxProcess, RunnerError> {
-        self.profile.user_prefs()?.write()?;
-
         let stdout = self.stdout.unwrap_or_else(|| Stdio::inherit());
         let stderr = self.stderr.unwrap_or_else(|| Stdio::inherit());
 
-        let binary_path = platform::resolve_binary_path(&mut self.path);
-        let mut cmd = Command::new(binary_path);
+        let mut cmd = Command::new(&self.binary);
         cmd.args(&self.args[..])
             .envs(&self.envs)
             .stdout(stdout)
             .stderr(stderr);
 
-        let mut seen_foreground = false;
-        let mut seen_no_remote = false;
-        let mut seen_profile = false;
-        for arg in self.args.iter() {
-            match arg.into() {
-                Arg::Foreground => seen_foreground = true,
-                Arg::NoRemote => seen_no_remote = true,
-                Arg::Profile | Arg::NamedProfile | Arg::ProfileManager => seen_profile = true,
-                Arg::Other(_) | Arg::None => {},
-            }
-        }
-        if !seen_foreground {
-            cmd.arg("-foreground");
-        }
-        if !seen_no_remote {
-            cmd.arg("-no-remote");
-        }
-        if !seen_profile {
+        if !self.args.iter().any(|x| is_profile_arg(x)) {
             cmd.arg("-profile").arg(&self.profile.path);
         }
+        cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+
+        self.profile.user_prefs()?.write()?;
 
         info!("Running command: {:?}", cmd);
         let process = cmd.spawn()?;
         Ok(FirefoxProcess {
-            process,
-            profile: self.profile,
+            process: process,
+            profile: self.profile
         })
     }
 }
 
-#[cfg(target_os = "linux")]
-pub mod platform {
-    use path::find_binary;
-    use std::path::PathBuf;
+fn parse_arg_name<T>(arg: T) -> Option<String>
+where
+    T: AsRef<OsStr>,
+{
+    let arg_os_str: &OsStr = arg.as_ref();
+    let arg_str = arg_os_str.to_string_lossy();
 
-    pub fn resolve_binary_path(path: &mut PathBuf) -> &PathBuf {
-        path
+    let mut start = 0;
+    let mut end = 0;
+
+    for (i, c) in arg_str.chars().enumerate() {
+        if i == 0 {
+            if !platform::arg_prefix_char(c) {
+                break;
+            }
+        } else if i == 1 {
+            if name_end_char(c) {
+                break;
+            } else if c != '-' {
+                start = i;
+                end = start + 1;
+            } else {
+                start = i + 1;
+                end = start;
+            }
+        } else {
+            end += 1;
+            if name_end_char(c) {
+                end -= 1;
+                break;
+            }
+        }
     }
 
-    /// Searches the system path for `firefox`.
+    if start > 0 && end > start {
+        Some(arg_str[start..end].into())
+    } else {
+        None
+    }
+}
+
+fn name_end_char(c: char) -> bool {
+    c == ' ' || c == '='
+}
+
+/// Check if an argument string affects the Firefox profile
+///
+/// Returns a boolean indicating whether a given string
+/// contains one of the `-P`, `-Profile` or `-ProfileManager`
+/// arguments, respecting the various platform-specific conventions.
+pub fn is_profile_arg<T>(arg: T) -> bool
+where
+    T: AsRef<OsStr>,
+{
+    if let Some(name) = parse_arg_name(arg) {
+        name.eq_ignore_ascii_case("profile") || name.eq_ignore_ascii_case("p")
+            || name.eq_ignore_ascii_case("profilemanager")
+    } else {
+        false
+    }
+}
+
+fn find_binary(name: &str) -> Option<PathBuf> {
+    env::var("PATH").ok().and_then(|path_env| {
+        for mut path in env::split_paths(&*path_env) {
+            path.push(name);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+        None
+    })
+}
+
+#[cfg(target_os = "linux")]
+pub mod platform {
+    use super::find_binary;
+    use std::path::PathBuf;
+
     pub fn firefox_default_path() -> Option<PathBuf> {
         find_binary("firefox")
     }
@@ -320,52 +359,21 @@ pub mod platform {
 
 #[cfg(target_os = "macos")]
 pub mod platform {
-    use crate::path::{find_binary, is_binary};
-    use dirs;
+    use super::find_binary;
+    use std::env;
     use std::path::PathBuf;
-    use plist::Value;
 
-    /// Searches for the binary file inside the path passed as parameter.
-    /// If the binary is not found, the path remains unaltered.
-    /// Else, it gets updated by the new binary path.
-    pub fn resolve_binary_path(path: &mut PathBuf) -> &PathBuf {
-        if path.as_path().is_dir() {
-            let mut info_plist = path.clone();
-            info_plist.push("Contents");
-            info_plist.push("Info.plist");
-            if let Ok(plist) = Value::from_file(&info_plist) {
-                if let Some(dict) = plist.as_dictionary() {
-                    if let Some(binary_file) = dict.get("CFBundleExecutable") {
-                        match binary_file {
-                            Value::String(s) => {
-                                path.push("Contents");
-                                path.push("MacOS");
-                                path.push(s);
-                            },
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-        path
-    }
-
-    /// Searches the system path for `firefox-bin`, then looks for
-    /// `Applications/Firefox.app/Contents/MacOS/firefox-bin` as well
-    /// as `Applications/Firefox Nightly.app/Contents/MacOS/firefox-bin`
-    /// under both `/` (system root) and the user home directory.
     pub fn firefox_default_path() -> Option<PathBuf> {
         if let Some(path) = find_binary("firefox-bin") {
             return Some(path);
         }
-
-        let home = dirs::home_dir();
+        let home = env::home_dir();
         for &(prefix_home, trial_path) in [
-            (false, "/Applications/Firefox.app/Contents/MacOS/firefox-bin"),
+            (
+                false,
+                "/Applications/Firefox.app/Contents/MacOS/firefox-bin",
+            ),
             (true, "Applications/Firefox.app/Contents/MacOS/firefox-bin"),
-            (false, "/Applications/Firefox Nightly.app/Contents/MacOS/firefox-bin"),
-            (true, "Applications/Firefox Nightly.app/Contents/MacOS/firefox-bin"),
         ].iter()
         {
             let path = match (home.as_ref(), prefix_home) {
@@ -373,11 +381,10 @@ pub mod platform {
                 (None, true) => continue,
                 (_, false) => PathBuf::from(trial_path),
             };
-            if is_binary(&path) {
+            if path.exists() {
                 return Some(path);
             }
         }
-
         None
     }
 
@@ -388,22 +395,16 @@ pub mod platform {
 
 #[cfg(target_os = "windows")]
 pub mod platform {
-    use path::{find_binary, is_binary};
+    use super::find_binary;
     use std::io::Error;
     use std::path::PathBuf;
     use winreg::RegKey;
     use winreg::enums::*;
 
-    pub fn resolve_binary_path(path: &mut PathBuf) -> &PathBuf {
-        path
-    }
-
-    /// Searches the Windows registry, then the system path for `firefox.exe`.
-    ///
-    /// It _does not_ currently check the `HKEY_CURRENT_USER` tree.
     pub fn firefox_default_path() -> Option<PathBuf> {
-        if let Ok(Some(path)) = firefox_registry_path() {
-            if is_binary(&path) {
+        let opt_path = firefox_registry_path().unwrap_or(None);
+        if let Some(path) = opt_path {
+            if path.exists() {
                 return Some(path);
             }
         };
@@ -413,28 +414,25 @@ pub mod platform {
     fn firefox_registry_path() -> Result<Option<PathBuf>, Error> {
         let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
         for subtree_key in ["SOFTWARE", "SOFTWARE\\WOW6432Node"].iter() {
-            let subtree = hklm.open_subkey_with_flags(subtree_key, KEY_READ)?;
+            let subtree = try!(hklm.open_subkey_with_flags(subtree_key, KEY_READ));
             let mozilla_org = match subtree.open_subkey_with_flags("mozilla.org\\Mozilla", KEY_READ) {
                 Ok(val) => val,
-                Err(_) => continue,
+                Err(_) => continue
             };
-            let current_version: String = mozilla_org.get_value("CurrentVersion")?;
-            let mozilla = subtree.open_subkey_with_flags("Mozilla", KEY_READ)?;
+            let current_version: String = try!(mozilla_org.get_value("CurrentVersion"));
+            let mozilla = try!(subtree.open_subkey_with_flags("Mozilla", KEY_READ));
             for key_res in mozilla.enum_keys() {
-                let key = key_res?;
-                let section_data = mozilla.open_subkey_with_flags(&key, KEY_READ)?;
+                let key = try!(key_res);
+                let section_data = try!(mozilla.open_subkey_with_flags(&key, KEY_READ));
                 let version: Result<String, _> = section_data.get_value("GeckoVer");
                 if let Ok(ver) = version {
                     if ver == current_version {
                         let mut bin_key = key.to_owned();
                         bin_key.push_str("\\bin");
                         if let Ok(bin_subtree) = mozilla.open_subkey_with_flags(bin_key, KEY_READ) {
-                            let path_to_exe: Result<String, _> = bin_subtree.get_value("PathToExe");
-                            if let Ok(path_to_exe) = path_to_exe {
-                                let path = PathBuf::from(path_to_exe);
-                                if is_binary(&path) {
-                                    return Ok(Some(path));
-                                }
+                            let path: Result<String, _> = bin_subtree.get_value("PathToExe");
+                            if let Ok(path) = path {
+                                return Ok(Some(PathBuf::from(path)));
                             }
                         }
                     }
@@ -453,18 +451,68 @@ pub mod platform {
 pub mod platform {
     use std::path::PathBuf;
 
-    /// Returns an unaltered path for all operating systems other than macOS.
-    pub fn resolve_binary_path(path: &mut PathBuf) -> &PathBuf {
-        path
-    }
-
-    /// Returns `None` for all other operating systems than Linux, macOS, and
-    /// Windows.
     pub fn firefox_default_path() -> Option<PathBuf> {
         None
     }
 
     pub fn arg_prefix_char(c: char) -> bool {
         c == '-'
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_profile_arg, parse_arg_name};
+
+    fn parse(arg: &str, name: Option<&str>) {
+        let result = parse_arg_name(arg);
+        assert_eq!(result, name.map(|x| x.to_string()));
+    }
+
+    #[test]
+    fn test_parse_arg_name() {
+        parse("-p", Some("p"));
+        parse("--p", Some("p"));
+        parse("--profile foo", Some("profile"));
+        parse("--profile", Some("profile"));
+        parse("--", None);
+        parse("", None);
+        parse("-=", None);
+        parse("--=", None);
+        parse("-- foo", None);
+        parse("foo", None);
+        parse("/ foo", None);
+        parse("/- foo", None);
+        parse("/=foo", None);
+        parse("foo", None);
+        parse("-profile", Some("profile"));
+        parse("-profile=foo", Some("profile"));
+        parse("-profile = foo", Some("profile"));
+        parse("-profile abc", Some("profile"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_parse_arg_name_windows() {
+        parse("/profile", Some("profile"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn test_parse_arg_name_non_windows() {
+        parse("/profile", None);
+    }
+
+    #[test]
+    fn test_is_profile_arg() {
+        assert!(is_profile_arg("--profile"));
+        assert!(is_profile_arg("-p"));
+        assert!(is_profile_arg("-PROFILEMANAGER"));
+        assert!(is_profile_arg("-ProfileMANAGER"));
+        assert!(!is_profile_arg("-- profile"));
+        assert!(!is_profile_arg("-profiled"));
+        assert!(!is_profile_arg("-p1"));
+        assert!(is_profile_arg("-p test"));
+        assert!(is_profile_arg("-profile /foo"));
     }
 }

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,7 +30,7 @@ using JS::TrackedStrategy;
 using JS::TrackedTypeSite;
 
 bool TrackedOptimizations::trackTypeInfo(OptimizationTypeInfo&& ty) {
-  return types_.append(std::move(ty));
+  return types_.append(mozilla::Move(ty));
 }
 
 bool TrackedOptimizations::trackAttempt(TrackedStrategy strategy) {
@@ -53,14 +53,10 @@ void TrackedOptimizations::trackSuccess() {
 
 template <class Vec>
 static bool VectorContentsMatch(const Vec* xs, const Vec* ys) {
-  if (xs->length() != ys->length()) {
-    return false;
-  }
+  if (xs->length() != ys->length()) return false;
   for (auto x = xs->begin(), y = ys->begin(); x != xs->end(); x++, y++) {
     MOZ_ASSERT(y != ys->end());
-    if (*x != *y) {
-      return false;
-    }
+    if (*x != *y) return false;
   }
   return true;
 }
@@ -122,9 +118,8 @@ void SpewTempOptimizationTypeInfoVector(
     JitSpewStart(channel, "   %s%s of type %s, type set", indent ? indent : "",
                  TrackedTypeSiteString(t->site()),
                  StringFromMIRType(t->mirType()));
-    for (uint32_t i = 0; i < t->types().length(); i++) {
+    for (uint32_t i = 0; i < t->types().length(); i++)
       JitSpewCont(channel, " %s", TypeSet::TypeString(t->types()[i]).get());
-    }
     JitSpewFin(channel);
   }
 #endif
@@ -151,9 +146,7 @@ void TrackedOptimizations::spew(JitSpewChannel channel) const {
 }
 
 bool OptimizationTypeInfo::trackTypeSet(TemporaryTypeSet* typeSet) {
-  if (!typeSet) {
-    return true;
-  }
+  if (!typeSet) return true;
   return typeSet->enumerateTypes(&types_);
 }
 
@@ -178,17 +171,15 @@ static inline HashNumber CombineHash(HashNumber h, HashNumber n) {
 }
 
 static inline HashNumber HashType(TypeSet::Type ty) {
-  if (ty.isObjectUnchecked()) {
+  if (ty.isObjectUnchecked())
     return PointerHasher<TypeSet::ObjectKey*>::hash(ty.objectKey());
-  }
   return mozilla::HashGeneric(ty.raw());
 }
 
 static HashNumber HashTypeList(const TempTypeList& types) {
   HashNumber h = 0;
-  for (uint32_t i = 0; i < types.length(); i++) {
+  for (uint32_t i = 0; i < types.length(); i++)
     h = CombineHash(h, HashType(types[i]));
-  }
   return h;
 }
 
@@ -199,14 +190,12 @@ HashNumber OptimizationTypeInfo::hash() const {
 
 template <class Vec>
 static HashNumber HashVectorContents(const Vec* xs, HashNumber h) {
-  for (auto x = xs->begin(); x != xs->end(); x++) {
-    h = CombineHash(h, x->hash());
-  }
+  for (auto x = xs->begin(); x != xs->end(); x++) h = CombineHash(h, x->hash());
   return h;
 }
 
-/* static */
-HashNumber UniqueTrackedOptimizations::Key::hash(const Lookup& lookup) {
+/* static */ HashNumber UniqueTrackedOptimizations::Key::hash(
+    const Lookup& lookup) {
   HashNumber h = HashVectorContents(lookup.types, 0);
   h = HashVectorContents(lookup.attempts, h);
   h += (h << 3);
@@ -215,9 +204,8 @@ HashNumber UniqueTrackedOptimizations::Key::hash(const Lookup& lookup) {
   return h;
 }
 
-/* static */
-bool UniqueTrackedOptimizations::Key::match(const Key& key,
-                                            const Lookup& lookup) {
+/* static */ bool UniqueTrackedOptimizations::Key::match(const Key& key,
+                                                         const Lookup& lookup) {
   return VectorContentsMatch(key.attempts, lookup.attempts) &&
          VectorContentsMatch(key.types, lookup.types);
 }
@@ -261,21 +249,15 @@ bool UniqueTrackedOptimizations::sortByFrequency(JSContext* cx) {
     entry.types = r.front().key().types;
     entry.attempts = r.front().key().attempts;
     entry.frequency = r.front().value().frequency;
-    if (!entries.append(entry)) {
-      return false;
-    }
+    if (!entries.append(entry)) return false;
   }
 
   // The compact table stores indices as a max of uint8_t. In practice each
   // script has fewer unique optimization attempts than UINT8_MAX.
-  if (entries.length() >= UINT8_MAX - 1) {
-    return false;
-  }
+  if (entries.length() >= UINT8_MAX - 1) return false;
 
   Vector<SortEntry> scratch(cx);
-  if (!scratch.resize(entries.length())) {
-    return false;
-  }
+  if (!scratch.resize(entries.length())) return false;
 
   FrequencyComparator comparator;
   MOZ_ALWAYS_TRUE(MergeSort(entries.begin(), entries.length(), scratch.begin(),
@@ -294,9 +276,7 @@ bool UniqueTrackedOptimizations::sortByFrequency(JSContext* cx) {
             "   Entry %zu has frequency %" PRIu32, sorted_.length(),
             p->value().frequency);
 
-    if (!sorted_.append(entries[i])) {
-      return false;
-    }
+    if (!sorted_.append(entries[i])) return false;
   }
 
   return true;
@@ -336,6 +316,7 @@ class jit::UniqueTrackedTypes {
  public:
   explicit UniqueTrackedTypes(JSContext* cx) : map_(cx), list_(cx) {}
 
+  bool init() { return map_.init(); }
   bool getIndexOf(TypeSet::Type ty, uint8_t* indexp);
 
   uint32_t count() const {
@@ -354,17 +335,11 @@ bool UniqueTrackedTypes::getIndexOf(TypeSet::Type ty, uint8_t* indexp) {
 
   // Store indices as max of uint8_t. In practice each script has fewer than
   // UINT8_MAX of unique observed types.
-  if (count() >= UINT8_MAX) {
-    return false;
-  }
+  if (count() >= UINT8_MAX) return false;
 
   uint8_t index = (uint8_t)count();
-  if (!map_.add(p, ty, index)) {
-    return false;
-  }
-  if (!list_.append(ty)) {
-    return false;
-  }
+  if (!map_.add(p, ty, index)) return false;
+  if (!list_.append(ty)) return false;
   *indexp = index;
   return true;
 }
@@ -413,9 +388,7 @@ Maybe<uint8_t> JitcodeGlobalEntry::IonEntry::trackedOptimizationIndexAtAddr(
   uint32_t ptrOffset = ((uint8_t*)ptr) - ((uint8_t*)nativeStartAddr());
   Maybe<IonTrackedOptimizationsRegion> region =
       optsRegionTable_->findRegion(ptrOffset);
-  if (region.isNothing()) {
-    return Nothing();
-  }
+  if (region.isNothing()) return Nothing();
   return region->findIndex(ptrOffset, entryOffsetOut);
 }
 
@@ -453,9 +426,8 @@ void IonTrackedOptimizationsTypeInfo::forEach(
     MOZ_ASSERT(site < JS::TrackedTypeSite::Count);
     MIRType mirType = MIRType(reader.readUnsigned());
     uint32_t length = reader.readUnsigned();
-    for (uint32_t i = 0; i < length; i++) {
+    for (uint32_t i = 0; i < length; i++)
       op.readType((*allTypes)[reader.readByte()]);
-    }
     op(site, mirType);
     cur = reader.currentPosition();
     MOZ_ASSERT(cur <= end_);
@@ -464,9 +436,7 @@ void IonTrackedOptimizationsTypeInfo::forEach(
 
 Maybe<uint8_t> IonTrackedOptimizationsRegion::findIndex(
     uint32_t offset, uint32_t* entryOffsetOut) const {
-  if (offset <= startOffset_ || offset > endOffset_) {
-    return Nothing();
-  }
+  if (offset <= startOffset_ || offset > endOffset_) return Nothing();
 
   // Linear search through the run.
   RangeIterator iter = ranges();
@@ -527,8 +497,7 @@ IonTrackedOptimizationsRegionTable::findRegion(uint32_t offset) const {
   return Nothing();
 }
 
-/* static */
-uint32_t IonTrackedOptimizationsRegion::ExpectedRunLength(
+/* static */ uint32_t IonTrackedOptimizationsRegion::ExpectedRunLength(
     const NativeToTrackedOptimizations* start,
     const NativeToTrackedOptimizations* end) {
   MOZ_ASSERT(start < end);
@@ -544,14 +513,10 @@ uint32_t IonTrackedOptimizationsRegion::ExpectedRunLength(
     uint32_t startDelta = startOffset - prevEndOffset;
     uint32_t length = endOffset - startOffset;
 
-    if (!IsDeltaEncodeable(startDelta, length)) {
-      break;
-    }
+    if (!IsDeltaEncodeable(startDelta, length)) break;
 
     runLength++;
-    if (runLength == MAX_RUN_LENGTH) {
-      break;
-    }
+    if (runLength == MAX_RUN_LENGTH) break;
 
     prevEndOffset = endOffset;
   }
@@ -571,19 +536,15 @@ bool OptimizationTypeInfo::writeCompact(CompactBufferWriter& writer,
   writer.writeUnsigned(types_.length());
   for (uint32_t i = 0; i < types_.length(); i++) {
     uint8_t index;
-    if (!uniqueTypes.getIndexOf(types_[i], &index)) {
-      return false;
-    }
+    if (!uniqueTypes.getIndexOf(types_[i], &index)) return false;
     writer.writeByte(index);
   }
   return true;
 }
 
-/* static */
-void IonTrackedOptimizationsRegion::ReadDelta(CompactBufferReader& reader,
-                                              uint32_t* startDelta,
-                                              uint32_t* length,
-                                              uint8_t* index) {
+/* static */ void IonTrackedOptimizationsRegion::ReadDelta(
+    CompactBufferReader& reader, uint32_t* startDelta, uint32_t* length,
+    uint8_t* index) {
   // 2 bytes
   // SSSS-SSSL LLLL-LII0
   const uint32_t firstByte = reader.readByte();
@@ -634,10 +595,9 @@ void IonTrackedOptimizationsRegion::ReadDelta(CompactBufferReader& reader,
   MOZ_ASSERT(length != 0);
 }
 
-/* static */
-void IonTrackedOptimizationsRegion::WriteDelta(CompactBufferWriter& writer,
-                                               uint32_t startDelta,
-                                               uint32_t length, uint8_t index) {
+/* static */ void IonTrackedOptimizationsRegion::WriteDelta(
+    CompactBufferWriter& writer, uint32_t startDelta, uint32_t length,
+    uint8_t index) {
   // 2 bytes
   // SSSS-SSSL LLLL-LII0
   if (startDelta <= ENC1_START_DELTA_MAX && length <= ENC1_LENGTH_MAX &&
@@ -697,8 +657,7 @@ void IonTrackedOptimizationsRegion::WriteDelta(CompactBufferWriter& writer,
   MOZ_CRASH("startDelta,length,index triple too large to encode.");
 }
 
-/* static */
-bool IonTrackedOptimizationsRegion::WriteRun(
+/* static */ bool IonTrackedOptimizationsRegion::WriteRun(
     CompactBufferWriter& writer, const NativeToTrackedOptimizations* start,
     const NativeToTrackedOptimizations* end,
     const UniqueTrackedOptimizations& unique) {
@@ -736,9 +695,7 @@ bool IonTrackedOptimizationsRegion::WriteRun(
     prevEndOffset = endOffset;
   }
 
-  if (writer.oom()) {
-    return false;
-  }
+  if (writer.oom()) return false;
 
   return true;
 }
@@ -748,14 +705,10 @@ static bool WriteOffsetsTable(CompactBufferWriter& writer,
                               uint32_t* tableOffsetp) {
   // 4-byte align for the uint32s.
   uint32_t padding = sizeof(uint32_t) - (writer.length() % sizeof(uint32_t));
-  if (padding == sizeof(uint32_t)) {
-    padding = 0;
-  }
+  if (padding == sizeof(uint32_t)) padding = 0;
   JitSpew(JitSpew_OptimizationTrackingExtended, "   Padding %u byte%s", padding,
           padding == 1 ? "" : "s");
-  for (uint32_t i = 0; i < padding; i++) {
-    writer.writeByte(0);
-  }
+  for (uint32_t i = 0; i < padding; i++) writer.writeByte(0);
 
   // Record the start of the table to compute reverse offsets for entries.
   uint32_t tableOffset = writer.length();
@@ -772,21 +725,18 @@ static bool WriteOffsetsTable(CompactBufferWriter& writer,
     writer.writeNativeEndianUint32_t(tableOffset - padding - offsets[i]);
   }
 
-  if (writer.oom()) {
-    return false;
-  }
+  if (writer.oom()) return false;
 
   *tableOffsetp = tableOffset;
   return true;
 }
 
 static JSFunction* MaybeConstructorFromType(TypeSet::Type ty) {
-  if (ty.isUnknown() || ty.isAnyObject() || !ty.isGroup()) {
-    return nullptr;
-  }
+  if (ty.isUnknown() || ty.isAnyObject() || !ty.isGroup()) return nullptr;
   ObjectGroup* obj = ty.group();
-  AutoSweepObjectGroup sweep(obj);
-  TypeNewScript* newScript = obj->newScript(sweep);
+  TypeNewScript* newScript = obj->newScript();
+  if (!newScript && obj->maybeUnboxedLayout())
+    newScript = obj->unboxedLayout().newScript();
   return newScript ? newScript->function() : nullptr;
 }
 
@@ -815,11 +765,10 @@ static void SpewConstructor(TypeSet::Type ty, JSFunction* constructor) {
   }
 
   char buf[512];
-  if (constructor->displayAtom()) {
+  if (constructor->displayAtom())
     PutEscapedString(buf, 512, constructor->displayAtom(), 0);
-  } else {
+  else
     snprintf(buf, mozilla::ArrayLength(buf), "??");
-  }
 
   const char* filename;
   Maybe<unsigned> lineno;
@@ -835,9 +784,7 @@ static void SpewConstructor(TypeSet::Type ty, JSFunction* constructor) {
 static void SpewAllocationSite(TypeSet::Type ty, JSScript* script,
                                uint32_t offset) {
 #ifdef JS_JITSPEW
-  if (!JitSpewEnabled(JitSpew_OptimizationTrackingExtended)) {
-    return;
-  }
+  if (!JitSpewEnabled(JitSpew_OptimizationTrackingExtended)) return;
 
   JitSpew(JitSpew_OptimizationTrackingExtended,
           "   Unique type %s has alloc site %s:%u",
@@ -882,23 +829,18 @@ bool jit::WriteIonTrackedOptimizationsTable(
             "   Run at entry %zu, length %" PRIu32 ", offset %zu",
             size_t(entry - start), runLength, writer.length());
 
-    if (!offsets.append(writer.length())) {
-      return false;
-    }
+    if (!offsets.append(writer.length())) return false;
 
     if (!IonTrackedOptimizationsRegion::WriteRun(writer, entry,
-                                                 entry + runLength, unique)) {
+                                                 entry + runLength, unique))
       return false;
-    }
 
     entry += runLength;
   }
 
   // Write out the table indexing into the payloads. 4-byte align for the
   // uint32s.
-  if (!WriteOffsetsTable(writer, offsets, regionTableOffsetp)) {
-    return false;
-  }
+  if (!WriteOffsetsTable(writer, offsets, regionTableOffsetp)) return false;
 
   *numRegions = offsets.length();
 
@@ -913,6 +855,7 @@ bool jit::WriteIonTrackedOptimizationsTable(
 
   // Write out type info payloads.
   UniqueTrackedTypes uniqueTypes(cx);
+  if (!uniqueTypes.init()) return false;
 
   for (const UniqueTrackedOptimizations::SortEntry* p = vec.begin();
        p != vec.end(); p++) {
@@ -923,14 +866,10 @@ bool jit::WriteIonTrackedOptimizationsTable(
     SpewTempOptimizationTypeInfoVector(JitSpew_OptimizationTrackingExtended, v,
                                        "  ");
 
-    if (!offsets.append(writer.length())) {
-      return false;
-    }
+    if (!offsets.append(writer.length())) return false;
 
     for (const OptimizationTypeInfo* t = v->begin(); t != v->end(); t++) {
-      if (!t->writeCompact(writer, uniqueTypes)) {
-        return false;
-      }
+      if (!t->writeCompact(writer, uniqueTypes)) return false;
     }
   }
 
@@ -940,36 +879,28 @@ bool jit::WriteIonTrackedOptimizationsTable(
   // profiling. Additionally, TypeNewScript is subject to GC in the
   // meantime.
   TypeSet::TypeList uniqueTypeList;
-  if (!uniqueTypes.enumerate(&uniqueTypeList)) {
-    return false;
-  }
+  if (!uniqueTypes.enumerate(&uniqueTypeList)) return false;
   for (uint32_t i = 0; i < uniqueTypeList.length(); i++) {
     TypeSet::Type ty = uniqueTypeList[i];
     if (JSFunction* constructor = MaybeConstructorFromType(ty)) {
-      if (!allTypes->append(IonTrackedTypeWithAddendum(ty, constructor))) {
+      if (!allTypes->append(IonTrackedTypeWithAddendum(ty, constructor)))
         return false;
-      }
       SpewConstructor(ty, constructor);
     } else {
       JSScript* script;
       uint32_t offset;
       if (!ty.isUnknown() && !ty.isAnyObject() && ty.isGroup() &&
           ObjectGroup::findAllocationSite(cx, ty.group(), &script, &offset)) {
-        if (!allTypes->append(IonTrackedTypeWithAddendum(ty, script, offset))) {
+        if (!allTypes->append(IonTrackedTypeWithAddendum(ty, script, offset)))
           return false;
-        }
         SpewAllocationSite(ty, script, offset);
       } else {
-        if (!allTypes->append(IonTrackedTypeWithAddendum(ty))) {
-          return false;
-        }
+        if (!allTypes->append(IonTrackedTypeWithAddendum(ty))) return false;
       }
     }
   }
 
-  if (!WriteOffsetsTable(writer, offsets, typesTableOffsetp)) {
-    return false;
-  }
+  if (!WriteOffsetsTable(writer, offsets, typesTableOffsetp)) return false;
   offsets.clear();
 
   // Write out attempts payloads.
@@ -984,13 +915,10 @@ bool jit::WriteIonTrackedOptimizationsTable(
                                          v, "  ");
     }
 
-    if (!offsets.append(writer.length())) {
-      return false;
-    }
+    if (!offsets.append(writer.length())) return false;
 
-    for (const OptimizationAttempt* a = v->begin(); a != v->end(); a++) {
+    for (const OptimizationAttempt* a = v->begin(); a != v->end(); a++)
       a->writeCompact(writer);
-    }
   }
 
   return WriteOffsetsTable(writer, offsets, optimizationTableOffsetp);
@@ -1027,9 +955,7 @@ void IonBuilder::startTrackingOptimizations() {
       site = current->trackedSite();
       site->setOptimizations(new (alloc()) TrackedOptimizations(alloc()));
       // OOMs are handled as if optimization tracking were turned off.
-      if (!trackedOptimizationSites_.append(site)) {
-        site = nullptr;
-      }
+      if (!trackedOptimizationSites_.append(site)) site = nullptr;
     } else if (site->hasOptimizations()) {
       // The same bytecode may be visited multiple times (see
       // restartLoop). Only the last time matters, so clear any previous
@@ -1041,9 +967,7 @@ void IonBuilder::startTrackingOptimizations() {
     // previously attempting to track optimizations. Leave
     // site->optimizations_ nullptr to leave optimization tracking off.
 
-    if (site) {
-      current->updateTrackedSite(site);
-    }
+    if (site) current->updateTrackedSite(site);
   }
 }
 
@@ -1056,21 +980,17 @@ void IonBuilder::trackTypeInfoUnchecked(TrackedTypeSite kind, MIRType mirType,
     site->setOptimizations(nullptr);
     return;
   }
-  if (!site->optimizations()->trackTypeInfo(std::move(typeInfo))) {
+  if (!site->optimizations()->trackTypeInfo(mozilla::Move(typeInfo)))
     site->setOptimizations(nullptr);
-  }
 }
 
 void IonBuilder::trackTypeInfoUnchecked(TrackedTypeSite kind, JSObject* obj) {
   BytecodeSite* site = current->trackedSite();
   // OOMs are handled as if optimization tracking were turned off.
   OptimizationTypeInfo typeInfo(alloc(), kind, MIRType::Object);
-  if (!typeInfo.trackType(TypeSet::ObjectType(obj))) {
-    return;
-  }
-  if (!site->optimizations()->trackTypeInfo(std::move(typeInfo))) {
+  if (!typeInfo.trackType(TypeSet::ObjectType(obj))) return;
+  if (!site->optimizations()->trackTypeInfo(mozilla::Move(typeInfo)))
     site->setOptimizations(nullptr);
-  }
 }
 
 void IonBuilder::trackTypeInfoUnchecked(CallInfo& callInfo) {
@@ -1092,9 +1012,8 @@ void IonBuilder::trackTypeInfoUnchecked(CallInfo& callInfo) {
 void IonBuilder::trackOptimizationAttemptUnchecked(TrackedStrategy strategy) {
   BytecodeSite* site = current->trackedSite();
   // OOMs are handled as if optimization tracking were turned off.
-  if (!site->optimizations()->trackAttempt(strategy)) {
+  if (!site->optimizations()->trackAttempt(strategy))
     site->setOptimizations(nullptr);
-  }
 }
 
 void IonBuilder::amendOptimizationAttemptUnchecked(uint32_t index) {
@@ -1113,16 +1032,13 @@ void IonBuilder::trackOptimizationSuccessUnchecked() {
 }
 
 void IonBuilder::trackInlineSuccessUnchecked(InliningStatus status) {
-  if (status == InliningStatus_Inlined) {
+  if (status == InliningStatus_Inlined)
     trackOptimizationOutcome(TrackedOutcome::Inlined);
-  }
 }
 
 static JSFunction* FunctionFromTrackedType(
     const IonTrackedTypeWithAddendum& tracked) {
-  if (tracked.hasConstructor()) {
-    return tracked.constructor;
-  }
+  if (tracked.hasConstructor()) return tracked.constructor;
 
   TypeSet::Type ty = tracked.type;
 
@@ -1173,9 +1089,8 @@ void IonTrackedOptimizationsTypeInfo::ForEachOpAdapter::readType(
       //   void* addr = JS_FUNC_TO_DATA_PTR(void*, fun->native());
       //   uintptr_t offset;
       //   Dl_info info;
-      //   if (dladdr(addr, &info) != 0) {
+      //   if (dladdr(addr, &info) != 0)
       //       offset = uintptr_t(addr) - uintptr_t(info.dli_fbase);
-      //   }
       //
       char locationBuf[20];
       if (!name) {
@@ -1225,19 +1140,14 @@ void FrameHandle::updateHasTrackedOptimizations() {
   // All inlined frames will have the same optimization information by
   // virtue of sharing the JitcodeGlobalEntry, but such information is
   // only interpretable on the youngest frame.
-  if (depth() != 0) {
-    return;
-  }
-  if (!entry_.hasTrackedOptimizations()) {
-    return;
-  }
+  if (depth() != 0) return;
+  if (!entry_.hasTrackedOptimizations()) return;
 
   uint32_t entryOffset;
   optsIndex_ = entry_.trackedOptimizationIndexAtAddr(rt_, addr_, &entryOffset);
-  if (optsIndex_.isSome()) {
+  if (optsIndex_.isSome())
     canonicalAddr_ =
         (void*)(((uint8_t*)entry_.nativeStartAddr()) + entryOffset);
-  }
 }
 
 JS_PUBLIC_API void FrameHandle::forEachOptimizationAttempt(

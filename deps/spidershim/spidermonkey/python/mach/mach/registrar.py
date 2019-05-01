@@ -5,7 +5,6 @@
 from __future__ import absolute_import, unicode_literals
 
 from .base import MachError
-import time
 
 INVALID_COMMAND_CONTEXT = r'''
 It looks like you tried to run a mach command from an invalid context. The %s
@@ -24,7 +23,6 @@ class MachRegistrar(object):
         self.settings_providers = set()
         self.categories = {}
         self.require_conditions = False
-        self.command_depth = 0
 
     def register_command_handler(self, handler):
         name = handler.name
@@ -69,7 +67,6 @@ class MachRegistrar(object):
                 prerun(context, handler, args=kwargs)
 
         if handler.pass_context:
-            context.handler = handler
             instance = cls(context)
         else:
             instance = cls()
@@ -84,10 +81,7 @@ class MachRegistrar(object):
                 print(self._condition_failed_message(handler.name, fail_conditions))
                 return 1
 
-        self.command_depth += 1
         fn = getattr(instance, handler.method)
-
-        start_time = time.time()
 
         if debug_command:
             import pdb
@@ -95,17 +89,13 @@ class MachRegistrar(object):
         else:
             result = fn(**kwargs)
 
-        end_time = time.time()
-
         result = result or 0
         assert isinstance(result, (int, long))
 
-        if context and not debug_command:
+        if context:
             postrun = getattr(context, 'post_dispatch_handler', None)
             if postrun:
-                postrun(context, handler, instance, result,
-                        start_time, end_time, self.command_depth, args=kwargs)
-        self.command_depth -= 1
+                postrun(context, handler, args=kwargs)
 
         return result
 

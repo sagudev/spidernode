@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,10 +31,9 @@ class LDivI : public LBinaryMath<1> {
       return mir()->canBeNegativeOverflow() ? "Truncate_NegativeOverflow"
                                             : "Truncate";
     }
-    if (mir()->canBeNegativeZero()) {
+    if (mir()->canBeNegativeZero())
       return mir()->canBeNegativeOverflow() ? "NegativeZero_NegativeOverflow"
                                             : "NegativeZero";
-    }
     return mir()->canBeNegativeOverflow() ? "NegativeOverflow" : nullptr;
   }
 
@@ -86,9 +85,7 @@ class LDivOrModConstantI : public LInstructionHelper<1, 1, 1> {
     return static_cast<MBinaryArithInstruction*>(mir_);
   }
   bool canBeNegativeDividend() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->canBeNegativeDividend();
-    }
+    if (mir_->isMod()) return mir_->toMod()->canBeNegativeDividend();
     return mir_->toDiv()->canBeNegativeDividend();
   }
 };
@@ -139,23 +136,17 @@ class LUDivOrMod : public LBinaryMath<1> {
   }
 
   bool canBeDivideByZero() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->canBeDivideByZero();
-    }
+    if (mir_->isMod()) return mir_->toMod()->canBeDivideByZero();
     return mir_->toDiv()->canBeDivideByZero();
   }
 
   bool trapOnError() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->trapOnError();
-    }
+    if (mir_->isMod()) return mir_->toMod()->trapOnError();
     return mir_->toDiv()->trapOnError();
   }
 
   wasm::BytecodeOffset bytecodeOffset() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->bytecodeOffset();
-    }
+    if (mir_->isMod()) return mir_->toMod()->bytecodeOffset();
     return mir_->toDiv()->bytecodeOffset();
   }
 };
@@ -180,21 +171,15 @@ class LUDivOrModConstant : public LInstructionHelper<1, 1, 1> {
     return static_cast<MBinaryArithInstruction*>(mir_);
   }
   bool canBeNegativeDividend() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->canBeNegativeDividend();
-    }
+    if (mir_->isMod()) return mir_->toMod()->canBeNegativeDividend();
     return mir_->toDiv()->canBeNegativeDividend();
   }
   bool trapOnError() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->trapOnError();
-    }
+    if (mir_->isMod()) return mir_->toMod()->trapOnError();
     return mir_->toDiv()->trapOnError();
   }
   wasm::BytecodeOffset bytecodeOffset() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->bytecodeOffset();
-    }
+    if (mir_->isMod()) return mir_->toMod()->bytecodeOffset();
     return mir_->toDiv()->bytecodeOffset();
   }
 };
@@ -281,6 +266,41 @@ class LMulI : public LBinaryMath<0, 1> {
 
   MMul* mir() const { return mir_->toMul(); }
   const LAllocation* lhsCopy() { return this->getOperand(2); }
+};
+
+// Constructs an int32x4 SIMD value.
+class LSimdValueInt32x4 : public LInstructionHelper<1, 4, 0> {
+ public:
+  LIR_HEADER(SimdValueInt32x4)
+  LSimdValueInt32x4(const LAllocation& x, const LAllocation& y,
+                    const LAllocation& z, const LAllocation& w)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, x);
+    setOperand(1, y);
+    setOperand(2, z);
+    setOperand(3, w);
+  }
+
+  MSimdValueX4* mir() const { return mir_->toSimdValueX4(); }
+};
+
+// Constructs a float32x4 SIMD value, optimized for x86 family
+class LSimdValueFloat32x4 : public LInstructionHelper<1, 4, 1> {
+ public:
+  LIR_HEADER(SimdValueFloat32x4)
+  LSimdValueFloat32x4(const LAllocation& x, const LAllocation& y,
+                      const LAllocation& z, const LAllocation& w,
+                      const LDefinition& copyY)
+      : LInstructionHelper(classOpcode) {
+    setOperand(0, x);
+    setOperand(1, y);
+    setOperand(2, z);
+    setOperand(3, w);
+
+    setTemp(0, copyY);
+  }
+
+  MSimdValueX4* mir() const { return mir_->toSimdValueX4(); }
 };
 
 class LInt64ToFloatingPoint : public LInstructionHelper<1, INT64_PIECES, 1> {

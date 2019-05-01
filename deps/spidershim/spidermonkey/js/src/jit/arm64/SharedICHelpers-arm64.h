@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,20 +27,21 @@ inline void EmitRepushTailCallReg(MacroAssembler& masm) {
   // No-op on ARM because link register is always holding the return address.
 }
 
-inline void EmitCallIC(MacroAssembler& masm, const ICEntry* entry,
-                       CodeOffset* callOffset) {
-  // Load stub pointer into ICStubReg.
-  masm.loadPtr(AbsoluteAddress(entry).offset(ICEntry::offsetOfFirstStub()),
-               ICStubReg);
+inline void EmitCallIC(CodeOffset* patchOffset, MacroAssembler& masm) {
+  // Move ICEntry offset into ICStubReg
+  CodeOffset offset = masm.movWithPatch(ImmWord(-1), ICStubReg);
+  *patchOffset = offset;
 
-  // Load stubcode pointer from the ICStub.
+  // Load stub pointer into ICStubReg
+  masm.loadPtr(Address(ICStubReg, ICEntry::offsetOfFirstStub()), ICStubReg);
+
+  // Load stubcode pointer from BaselineStubEntry.
   // R2 won't be active when we call ICs, so we can use r0.
   MOZ_ASSERT(R2 == ValueOperand(r0));
   masm.loadPtr(Address(ICStubReg, ICStub::offsetOfStubCode()), r0);
 
   // Call the stubcode via a direct branch-and-link.
   masm.Blr(x0);
-  *callOffset = CodeOffset(masm.currentOffset());
 }
 
 inline void EmitEnterTypeMonitorIC(
@@ -61,6 +62,10 @@ inline void EmitEnterTypeMonitorIC(
 
 inline void EmitReturnFromIC(MacroAssembler& masm) {
   masm.abiret();  // Defaults to lr.
+}
+
+inline void EmitChangeICReturnAddress(MacroAssembler& masm, Register reg) {
+  masm.movePtr(reg, lr);
 }
 
 inline void EmitBaselineLeaveStubFrame(MacroAssembler& masm,

@@ -1,6 +1,6 @@
 // Test that OSR respect debuggeeness.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 
 g.eval("" + function f(c) {

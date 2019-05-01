@@ -1,8 +1,9 @@
-// |jit-test| skip-if: helperThreadCount() === 0
-
 // Check that scripts' introduction types are properly marked.
 
-var g = newGlobal({newCompartment: true});
+if (helperThreadCount() === 0)
+  quit(0);
+
+var g = newGlobal();
 var dbg = new Debugger();
 var gDO = dbg.addDebuggee(g);
 var log;

@@ -8,7 +8,6 @@ build = "build.rs"
 [features]
 debugmozjs = []
 promises = []
-bigint = []
 
 [lib]
 name = "mozjs_sys"
@@ -16,7 +15,6 @@ path = "lib.rs"
 
 [build-dependencies]
 num_cpus = "1.1.0"
-glob = "0.2.11"
 
 [dependencies]
 libc = "0.2"

@@ -1,5 +1,5 @@
 
-g = newGlobal({newCompartment: true});
+g = newGlobal();
 g.parent = this;
 g.eval("(" + function() {
     Debugger(parent).onExceptionUnwind = function(frame) {

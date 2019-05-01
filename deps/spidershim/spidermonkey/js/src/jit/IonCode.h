@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +9,7 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/PodOperations.h"
 
 #include "jstypes.h"
 
@@ -19,17 +20,19 @@
 #include "jit/IonTypes.h"
 #include "js/UbiNode.h"
 #include "vm/TraceLogging.h"
+#include "vm/TypeInference.h"
 
 namespace js {
 namespace jit {
 
-class IonBuilder;
-class JitAllocPolicy;
-class JitCode;
 class MacroAssembler;
+class PatchableBackedge;
+class IonBuilder;
+class IonICEntry;
+class JitCode;
 
-using ObjectVector = Vector<JSObject*, 4, JitAllocPolicy>;
-using TraceLoggerEventVector = Vector<TraceLoggerEvent, 0, SystemAllocPolicy>;
+typedef Vector<JSObject*, 4, JitAllocPolicy> ObjectVector;
+typedef Vector<TraceLoggerEvent, 0, SystemAllocPolicy> TraceLoggerEventVector;
 
 // Header at start of raw code buffer
 struct JitCodeHeader {
@@ -65,7 +68,7 @@ class JitCode : public gc::TenuredCell {
   bool hasBytecodeMap_ : 1;  // Whether the code object has been registered with
                              // native=>bytecode mapping tables.
 
-  JitCode() = delete;
+  JitCode() : code_(nullptr), pool_(nullptr) {}
   JitCode(uint8_t* code, uint32_t bufferSize, uint32_t headerSize,
           ExecutablePool* pool, CodeKind kind)
       : code_(code),
@@ -106,6 +109,8 @@ class JitCode : public gc::TenuredCell {
 
   void setHasBytecodeMap() { hasBytecodeMap_ = true; }
 
+  void togglePreBarriers(bool enabled, ReprotectCode reprotect);
+
   // If this JitCode object has been, effectively, corrupted due to
   // invalidation patching, then we have to remember this so we don't try and
   // trace relocation entries that may now be corrupt.
@@ -145,12 +150,13 @@ class SafepointWriter;
 class SafepointIndex;
 class OsiIndex;
 class IonIC;
+struct PatchableBackedgeInfo;
 
 // An IonScript attaches Ion-generated information to a JSScript.
 struct IonScript {
  private:
   // Code pointer containing the actual method.
-  HeapPtrJitCode method_;
+  PreBarrieredJitCode method_;
 
   // Entrypoint for OSR, or nullptr.
   jsbytecode* osrPc_;
@@ -230,11 +236,19 @@ struct IonScript {
   uint32_t constantTable_;
   uint32_t constantEntries_;
 
+  // List of patchable backedges which are threaded into the runtime's list.
+  uint32_t backedgeList_;
+  uint32_t backedgeEntries_;
+
+  // List of entries to the shared stub.
+  uint32_t sharedStubList_;
+  uint32_t sharedStubEntries_;
+
   // Number of references from invalidation records.
   uint32_t invalidationCount_;
 
   // Identifier of the compilation which produced this code.
-  IonCompilationId compilationId_;
+  RecompileInfo recompileInfo_;
 
   // The optimization level this script was compiled in.
   OptimizationLevel optimizationLevel_;
@@ -242,6 +256,9 @@ struct IonScript {
   // Number of times we tried to enter this script via OSR but failed due to
   // a LOOPENTRY pc other than osrPc_.
   uint32_t osrPcMismatchCounter_;
+
+  // Allocated space for fallback stubs.
+  FallbackICStubSpace fallbackStubSpace_;
 
   // TraceLogger events that are baked into the IonScript.
   TraceLoggerEventVector traceLoggerEvents_;
@@ -257,8 +274,6 @@ struct IonScript {
     return (SnapshotOffset*)&bottomBuffer()[bailoutTable_];
   }
   PreBarrieredValue* constants() {
-    // Nursery constants are manually barriered in CodeGenerator::link() so a
-    // post barrier is not required..
     return (PreBarrieredValue*)&bottomBuffer()[constantTable_];
   }
   const SafepointIndex* safepointIndices() const {
@@ -273,22 +288,32 @@ struct IonScript {
   OsiIndex* osiIndices() { return (OsiIndex*)&bottomBuffer()[osiIndexOffset_]; }
   uint32_t* icIndex() { return (uint32_t*)&bottomBuffer()[icIndex_]; }
   uint8_t* runtimeData() { return &bottomBuffer()[runtimeData_]; }
+  PatchableBackedge* backedgeList() {
+    return (PatchableBackedge*)&bottomBuffer()[backedgeList_];
+  }
 
  private:
   void trace(JSTracer* trc);
 
  public:
   // Do not call directly, use IonScript::New. This is public for cx->new_.
-  explicit IonScript(IonCompilationId compilationId);
+  IonScript();
 
-  static IonScript* New(JSContext* cx, IonCompilationId compilationId,
+  ~IonScript() {
+    // The contents of the fallback stub space are removed and freed
+    // separately after the next minor GC. See IonScript::Destroy.
+    MOZ_ASSERT(fallbackStubSpace_.isEmpty());
+  }
+
+  static IonScript* New(JSContext* cx, RecompileInfo recompileInfo,
                         uint32_t frameSlots, uint32_t argumentSlots,
                         uint32_t frameSize, size_t snapshotsListSize,
                         size_t snapshotsRVATableSize, size_t recoversSize,
                         size_t bailoutEntries, size_t constants,
                         size_t safepointIndexEntries, size_t osiIndexEntries,
                         size_t icEntries, size_t runtimeSize,
-                        size_t safepointsSize,
+                        size_t safepointsSize, size_t backedgeEntries,
+                        size_t sharedStubEntries,
                         OptimizationLevel optimizationLevel);
   static void Trace(JSTracer* trc, IonScript* script);
   static void Destroy(FreeOp* fop, IonScript* script);
@@ -366,7 +391,7 @@ struct IonScript {
   }
   MOZ_MUST_USE bool addTraceLoggerEvent(TraceLoggerEvent& event) {
     MOZ_ASSERT(event.hasTextId());
-    return traceLoggerEvents_.append(std::move(event));
+    return traceLoggerEvents_.append(mozilla::Move(event));
   }
   const uint8_t* snapshots() const {
     return reinterpret_cast<const uint8_t*>(this) + snapshots_;
@@ -414,8 +439,13 @@ struct IonScript {
     return *(IonIC*)&runtimeData()[offset];
   }
   size_t numICs() const { return icEntries_; }
+  IonICEntry* sharedStubList() {
+    return (IonICEntry*)&bottomBuffer()[sharedStubList_];
+  }
+  size_t numSharedStubs() const { return sharedStubEntries_; }
   size_t runtimeSize() const { return runtimeSize_; }
   void purgeICs(Zone* zone);
+  void unlinkFromRuntime(FreeOp* fop);
   void copySnapshots(const SnapshotWriter* writer);
   void copyRecovers(const RecoverWriter* writer);
   void copyBailoutTable(const SnapshotOffset* table);
@@ -423,25 +453,26 @@ struct IonScript {
   void copySafepointIndices(const SafepointIndex* firstSafepointIndex);
   void copyOsiIndices(const OsiIndex* firstOsiIndex);
   void copyRuntimeData(const uint8_t* data);
-  void copyICEntries(const uint32_t* caches);
+  void copyICEntries(const uint32_t* caches, MacroAssembler& masm);
   void copySafepoints(const SafepointWriter* writer);
+  void copyPatchableBackedges(JSContext* cx, JitCode* code,
+                              PatchableBackedgeInfo* backedges,
+                              MacroAssembler& masm);
 
   bool invalidated() const { return invalidationCount_ != 0; }
 
   // Invalidate the current compilation.
-  void invalidate(JSContext* cx, JSScript* script, bool resetUses,
-                  const char* reason);
+  void invalidate(JSContext* cx, bool resetUses, const char* reason);
 
   size_t invalidationCount() const { return invalidationCount_; }
   void incrementInvalidationCount() { invalidationCount_++; }
   void decrementInvalidationCount(FreeOp* fop) {
     MOZ_ASSERT(invalidationCount_);
     invalidationCount_--;
-    if (!invalidationCount_) {
-      Destroy(fop, this);
-    }
+    if (!invalidationCount_) Destroy(fop, this);
   }
-  IonCompilationId compilationId() const { return compilationId_; }
+  const RecompileInfo& recompileInfo() const { return recompileInfo_; }
+  RecompileInfo& recompileInfoRef() { return recompileInfo_; }
   OptimizationLevel optimizationLevel() const { return optimizationLevel_; }
   uint32_t incrOsrPcMismatchCounter() { return ++osrPcMismatchCounter_; }
   void resetOsrPcMismatchCounter() { osrPcMismatchCounter_ = 0; }
@@ -451,6 +482,10 @@ struct IonScript {
   bool isRecompiling() const { return recompiling_; }
 
   void clearRecompiling() { recompiling_ = false; }
+
+  FallbackICStubSpace* fallbackStubSpace() { return &fallbackStubSpace_; }
+  void adoptFallbackStubs(FallbackICStubSpace* stubSpace);
+  void purgeOptimizedStubs(Zone* zone);
 
   enum ShouldIncreaseAge { IncreaseAge = true, KeepAge = false };
 
@@ -489,9 +524,7 @@ struct IonBlockCounts {
     numSuccessors_ = numSuccessors;
     if (numSuccessors) {
       successors_ = js_pod_calloc<uint32_t>(numSuccessors);
-      if (!successors_) {
-        return false;
-      }
+      if (!successors_) return false;
     }
     return true;
   }
@@ -545,19 +578,17 @@ struct IonBlockCounts {
 struct IonScriptCounts {
  private:
   // Any previous invalidated compilation(s) for the script.
-  IonScriptCounts* previous_ = nullptr;
+  IonScriptCounts* previous_;
 
   // Information about basic blocks in this script.
-  size_t numBlocks_ = 0;
-  IonBlockCounts* blocks_ = nullptr;
+  size_t numBlocks_;
+  IonBlockCounts* blocks_;
 
  public:
-  IonScriptCounts() = default;
+  IonScriptCounts() { mozilla::PodZero(this); }
 
   ~IonScriptCounts() {
-    for (size_t i = 0; i < numBlocks_; i++) {
-      blocks_[i].destroy();
-    }
+    for (size_t i = 0; i < numBlocks_; i++) blocks_[i].destroy();
     js_free(blocks_);
     // The list can be long in some corner cases (bug 1140084), so
     // unroll the recursion.
@@ -572,9 +603,7 @@ struct IonScriptCounts {
 
   MOZ_MUST_USE bool init(size_t numBlocks) {
     blocks_ = js_pod_calloc<IonBlockCounts>(numBlocks);
-    if (!blocks_) {
-      return false;
-    }
+    if (!blocks_) return false;
 
     numBlocks_ = numBlocks;
     return true;
@@ -604,9 +633,8 @@ struct IonScriptCounts {
 
   size_t sizeOfOneIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
     size_t size = mallocSizeOf(this) + mallocSizeOf(blocks_);
-    for (size_t i = 0; i < numBlocks_; i++) {
+    for (size_t i = 0; i < numBlocks_; i++)
       blocks_[i].sizeOfExcludingThis(mallocSizeOf);
-    }
     return size;
   }
 };
@@ -619,9 +647,9 @@ struct AutoFlushICache {
     defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
   uintptr_t start_;
   uintptr_t stop_;
-#  ifdef JS_JITSPEW
+#ifdef JS_JITSPEW
   const char* name_;
-#  endif
+#endif
   bool inhibit_;
   AutoFlushICache* prev_;
 #endif

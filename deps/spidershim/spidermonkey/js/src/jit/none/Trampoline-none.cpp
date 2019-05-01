@@ -1,12 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "jit/Bailouts.h"
 #include "jit/BaselineIC.h"
-#include "vm/Realm.h"
+#include "vm/JSCompartment.h"
 
 using namespace js;
 using namespace js::jit;
@@ -40,7 +40,7 @@ void JitRuntime::generateProfilerExitFrameTailStub(MacroAssembler&, Label*) {
 }
 
 bool JitRuntime::generateVMWrapper(JSContext*, MacroAssembler&,
-                                   const VMFunctionData&, void*, uint32_t*) {
+                                   const VMFunction&) {
   MOZ_CRASH();
 }
 
@@ -55,5 +55,18 @@ BailoutFrameInfo::BailoutFrameInfo(const JitActivationIterator& iter,
 
 BailoutFrameInfo::BailoutFrameInfo(const JitActivationIterator& iter,
                                    InvalidationBailoutStack* bailout) {
+  MOZ_CRASH();
+}
+
+bool ICCompare_Int32::Compiler::generateStubCode(MacroAssembler&) {
+  MOZ_CRASH();
+}
+bool ICCompare_Double::Compiler::generateStubCode(MacroAssembler&) {
+  MOZ_CRASH();
+}
+bool ICBinaryArith_Int32::Compiler::generateStubCode(MacroAssembler&) {
+  MOZ_CRASH();
+}
+bool ICUnaryArith_Int32::Compiler::generateStubCode(MacroAssembler&) {
   MOZ_CRASH();
 }

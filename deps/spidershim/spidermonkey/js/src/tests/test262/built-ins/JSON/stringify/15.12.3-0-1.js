@@ -4,15 +4,21 @@
 /*---
 info: |
     This test should be run without any built-ins being added/augmented.
-    The initial value of [[Configurable]] on JSON is true. This means we
-    should be able to delete (8.6.2.5) the stringify and parse properties.
+    The name JSON must be bound to an object.
+    Section 15 says that every built-in Function object described in this
+    section � whether as a constructor, an ordinary function, or both � has
+    a length property whose value is an integer. Unless otherwise specified,
+    this value is equal to the largest number of named arguments shown in
+    the section headings for the function description, including optional
+    parameters.
+    This default applies to JSON.stringify, and it must exist as a function
+    taking 3 parameters.
 es5id: 15.12.3-0-1
-description: JSON.stringify must be deletable (configurable)
+description: JSON.stringify must exist as be a function
 ---*/
 
-var o = JSON;
-var desc = Object.getOwnPropertyDescriptor(o, "stringify");
+  var f = JSON.stringify;
 
-assert.sameValue(desc.configurable, true, 'desc.configurable');
+assert.sameValue(typeof(f), "function", 'typeof(f)');
 
 reportCompare(0, 0);

@@ -3,7 +3,7 @@
 load(libdir + "asserts.js");
 
 const dbg = new Debugger();
-const root = newGlobal({newCompartment: true});
+const root = newGlobal();
 dbg.addDebuggee(root);
 
 dbg.memory.trackingAllocationSites = true;

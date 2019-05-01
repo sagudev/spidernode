@@ -7,7 +7,7 @@
 
 var lfLogBuffer = `
 function testResumptionVal(resumptionVal, turnOffDebugMode) {
-  var g = newGlobal({newCompartment: true});
+  var g = newGlobal();
   var dbg = new Debugger;
   setInterruptCallback(function () {
     dbg.addDebuggee(g);

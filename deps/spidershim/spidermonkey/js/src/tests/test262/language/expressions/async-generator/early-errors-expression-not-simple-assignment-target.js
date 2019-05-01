@@ -4,7 +4,7 @@
 
 /*---
 author: Caitlin Potter <caitp@igalia.com>
-esid: prod-LeftHandSideExpression
+esid: pending
 description: >
   Async generator function expressions are not a simple assignment target.
 negative:
@@ -13,6 +13,6 @@ negative:
 features: [async-iteration]
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 (async function*() { } = 1);

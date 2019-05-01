@@ -10,11 +10,11 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/HashFunctions.h"
+#include "mozilla/IndexSequence.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Tuple.h"
 
 #include <stdint.h>
-#include <utility>
 
 #include "jsutil.h"
 
@@ -23,11 +23,11 @@
 #include "vm/MutexIDs.h"
 
 #ifdef XP_WIN
-#  define THREAD_RETURN_TYPE unsigned int
-#  define THREAD_CALL_API __stdcall
+#define THREAD_RETURN_TYPE unsigned int
+#define THREAD_CALL_API __stdcall
 #else
-#  define THREAD_RETURN_TYPE void*
-#  define THREAD_CALL_API
+#define THREAD_RETURN_TYPE void*
+#define THREAD_CALL_API
 #endif
 
 namespace js {
@@ -101,14 +101,14 @@ class Thread {
   explicit Thread(O&& options = Options())
       : idMutex_(mutexid::ThreadId),
         id_(Id()),
-        options_(std::forward<O>(options)) {
+        options_(mozilla::Forward<O>(options)) {
     MOZ_ASSERT(js::IsInitialized());
   }
 
   // Start a thread of execution at functor |f| with parameters |args|. This
   // method will return false if thread creation fails. This Thread must not
   // already have been created. Note that the arguments must be either POD or
-  // rvalue references (std::move). Attempting to pass a reference will
+  // rvalue references (mozilla::Move). Attempting to pass a reference will
   // result in the value being copied, which may not be the intended behavior.
   // See the comment below on ThreadTrampoline::args for an explanation.
   template <typename F, typename... Args>
@@ -116,11 +116,9 @@ class Thread {
     MOZ_RELEASE_ASSERT(id_ == Id());
     using Trampoline = detail::ThreadTrampoline<F, Args...>;
     AutoEnterOOMUnsafeRegion oom;
-    auto trampoline =
-        js_new<Trampoline>(std::forward<F>(f), std::forward<Args>(args)...);
-    if (!trampoline) {
-      oom.crash("js::Thread::init");
-    }
+    auto trampoline = js_new<Trampoline>(mozilla::Forward<F>(f),
+                                         mozilla::Forward<Args>(args)...);
+    if (!trampoline) oom.crash("js::Thread::init");
     return create(Trampoline::Start, trampoline);
   }
 
@@ -225,17 +223,17 @@ class ThreadTrampoline {
   // even if the class template arguments are correct.
   template <typename G, typename... ArgsT>
   explicit ThreadTrampoline(G&& aG, ArgsT&&... aArgsT)
-      : f(std::forward<F>(aG)), args(std::forward<Args>(aArgsT)...) {}
+      : f(mozilla::Forward<F>(aG)), args(mozilla::Forward<Args>(aArgsT)...) {}
 
   static THREAD_RETURN_TYPE THREAD_CALL_API Start(void* aPack) {
     auto* pack = static_cast<ThreadTrampoline<F, Args...>*>(aPack);
-    pack->callMain(std::index_sequence_for<Args...>{});
+    pack->callMain(typename mozilla::IndexSequenceFor<Args...>::Type());
     js_delete(pack);
     return 0;
   }
 
   template <size_t... Indices>
-  void callMain(std::index_sequence<Indices...>) {
+  void callMain(mozilla::IndexSequence<Indices...>) {
     f(mozilla::Get<Indices>(args)...);
   }
 };

@@ -1,6 +1,7 @@
-// |jit-test| skip-if: helperThreadCount() === 0
-
 // Test off thread module compilation.
+
+if (helperThreadCount() == 0)
+    quit();
 
 load(libdir + "asserts.js");
 load(libdir + "dummyModuleResolveHook.js");

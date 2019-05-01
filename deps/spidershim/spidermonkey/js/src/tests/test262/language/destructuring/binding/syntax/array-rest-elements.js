@@ -15,7 +15,6 @@ info: |
 
   BindingRestElement[Yield] :
     ... BindingIdentifier[?Yield]
-features: [destructuring-binding]
 ---*/
 
 function fn1([...args]) {}

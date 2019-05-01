@@ -1,6 +1,6 @@
 // Basic tests for obj.{seal,freeze,preventExtensions,isSealed,isFrozen,isExtensible}.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger;
 var gw = dbg.addDebuggee(g);
 

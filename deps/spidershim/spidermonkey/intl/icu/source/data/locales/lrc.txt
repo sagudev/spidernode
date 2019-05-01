@@ -13,11 +13,6 @@ lrc{
     ExemplarCharactersNumbers{"[\\- , . % ‰ + 0 1 2 3 4 5 6 7 8 9]"}
     ExemplarCharactersPunctuation{"[\\- ‐ ، ٫ ٬ ؛ \\: ! ؟ . … ‹ › « » ( ) \\[ \\] * / \\\\]"}
     NumberElements{
-        arabext{
-            symbols{
-                timeSeparator{":"}
-            }
-        }
         default{"arabext"}
         latn{
             patterns{
@@ -36,7 +31,7 @@ lrc{
         }
         native{"arabext"}
     }
-    Version{"2.1.47.82"}
+    Version{"2.1.37.1"}
     calendar{
         default{"persian"}
         generic{
@@ -82,66 +77,6 @@ lrc{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
-            }
-            dayNames{
-                format{
-                    abbreviated{
-                        "Sun",
-                        "Mon",
-                        "Tue",
-                        "Wed",
-                        "Thu",
-                        "Fri",
-                        "Sat",
-                    }
-                    narrow{
-                        "S",
-                        "M",
-                        "T",
-                        "W",
-                        "T",
-                        "F",
-                        "S",
-                    }
-                    wide{
-                        "Sun",
-                        "Mon",
-                        "Tue",
-                        "Wed",
-                        "Thu",
-                        "Fri",
-                        "Sat",
-                    }
-                }
-                stand-alone{
-                    abbreviated{
-                        "Sun",
-                        "Mon",
-                        "Tue",
-                        "Wed",
-                        "Thu",
-                        "Fri",
-                        "Sat",
-                    }
-                    narrow{
-                        "S",
-                        "M",
-                        "T",
-                        "W",
-                        "T",
-                        "F",
-                        "S",
-                    }
-                    wide{
-                        "Sun",
-                        "Mon",
-                        "Tue",
-                        "Wed",
-                        "Thu",
-                        "Fri",
-                        "Sat",
-                    }
-                }
             }
             eras{
                 abbreviated{

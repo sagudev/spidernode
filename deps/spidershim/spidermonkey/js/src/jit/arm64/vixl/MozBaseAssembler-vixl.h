@@ -169,7 +169,7 @@ class MozBaseAssembler : public js::jit::AssemblerShared {
 
     bool hasTarget = target.valid;
     if (!hasTarget)
-      SprintfLiteral(labelBuf, "-> (link-time target)");
+      snprintf(labelBuf, sizeof(labelBuf), "-> (link-time target)");
 
     if (instr->IsImmBranch() && hasTarget) {
       // The target information in the instruction is likely garbage, so remove it.
@@ -182,7 +182,7 @@ class MozBaseAssembler : public js::jit::AssemblerShared {
 	;
       buffer[i] = 0;
 
-      SprintfLiteral(labelBuf, "-> %d%s", target.doc, !target.bound ? "f" : "");
+      snprintf(labelBuf, sizeof(labelBuf), "-> %d%s", target.doc, !target.bound ? "f" : "");
       hasTarget = false;
     }
 
@@ -284,13 +284,6 @@ class MozBaseAssembler : public js::jit::AssemblerShared {
   // Marks the end of a no-pool region.
   void leaveNoPool() {
     armbuffer_.leaveNoPool();
-  }
-
-  void enterNoNops() {
-    armbuffer_.enterNoNops();
-  }
-  void leaveNoNops() {
-    armbuffer_.leaveNoNops();
   }
 
  public:

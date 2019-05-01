@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,7 +20,6 @@
   _(GC)                                        \
   _(GCAllocation)                              \
   _(GCSweeping)                                \
-  _(GCFree)                                    \
   _(Interpreter)                               \
   _(InlinedScripts)                            \
   _(IonAnalysis)                               \
@@ -94,7 +93,7 @@ enum TraceLoggerTextId {
   TraceLogger_Error = 0,
   TraceLogger_Internal,
 #define DEFINE_TEXT_ID(textId) TraceLogger_##textId,
-  TRACELOGGER_TREE_ITEMS(DEFINE_TEXT_ID) TraceLogger_TreeItemEnd,
+  TRACELOGGER_TREE_ITEMS(DEFINE_TEXT_ID) TraceLogger_LastTreeItem,
   TRACELOGGER_LOG_ITEMS(DEFINE_TEXT_ID)
 #undef DEFINE_TEXT_ID
       TraceLogger_Last
@@ -105,8 +104,7 @@ inline const char* TLTextIdString(TraceLoggerTextId id) {
     case TraceLogger_Error:
       return "TraceLogger failed to process text";
     case TraceLogger_Internal:
-    case TraceLogger_TreeItemEnd:
-      return "TraceLogger internal event";
+      return "TraceLogger overhead";
 #define NAME(textId)         \
   case TraceLogger_##textId: \
     return #textId;
@@ -122,48 +120,25 @@ uint32_t TLStringToTextId(JSLinearString* str);
 
 // Return whether a given item id can be enabled/disabled.
 inline bool TLTextIdIsTogglable(uint32_t id) {
-  if (id == TraceLogger_Error) {
-    return false;
-  }
-  if (id == TraceLogger_Internal) {
-    return false;
-  }
-  if (id == TraceLogger_Stop) {
-    return false;
-  }
+  if (id == TraceLogger_Error) return false;
+  if (id == TraceLogger_Internal) return false;
+  if (id == TraceLogger_Stop) return false;
   // Actually never used. But added here so it doesn't show as toggle
-  if (id == TraceLogger_TreeItemEnd) {
-    return false;
-  }
-  if (id == TraceLogger_Last) {
-    return false;
-  }
+  if (id == TraceLogger_LastTreeItem) return false;
+  if (id == TraceLogger_Last) return false;
   // Cannot toggle the logging of one engine on/off, because at the stop
   // event it is sometimes unknown which engine was running.
   if (id == TraceLogger_IonMonkey || id == TraceLogger_Baseline ||
-      id == TraceLogger_Interpreter) {
+      id == TraceLogger_Interpreter)
     return false;
-  }
   return true;
 }
 
 inline bool TLTextIdIsTreeEvent(uint32_t id) {
-  // Everything between TraceLogger_Error and TraceLogger_TreeItemEnd are tree
+  // Everything between TraceLogger_Error and TraceLogger_LastTreeItem are tree
   // events and atm also every custom event.
-  return (id > TraceLogger_Error && id < TraceLogger_TreeItemEnd) ||
+  return (id > TraceLogger_Error && id < TraceLogger_LastTreeItem) ||
          id >= TraceLogger_Last;
-}
-
-inline bool TLTextIdIsLogEvent(uint32_t id) {
-  // These id's do not have start & stop events.
-  return (id > TraceLogger_TreeItemEnd && id < TraceLogger_Last);
-}
-
-inline bool TLTextIdIsInternalEvent(uint32_t id) {
-  // Id's used for bookkeeping.  Does not correspond to real events.
-  return (id == TraceLogger_Error || id == TraceLogger_Last ||
-          id == TraceLogger_TreeItemEnd || id == TraceLogger_Internal ||
-          id == TraceLogger_Stop);
 }
 
 template <class T>
@@ -176,15 +151,13 @@ class ContinuousSpace {
   static const uint32_t LIMIT = 200 * 1024 * 1024;
 
  public:
-  ContinuousSpace() : data_(nullptr), size_(0), capacity_(0) {}
+  ContinuousSpace() : data_(nullptr) {}
 
   bool init() {
     capacity_ = 64;
     size_ = 0;
-    data_ = js_pod_malloc<T>(capacity_);
-    if (!data_) {
-      return false;
-    }
+    data_ = (T*)js_malloc(capacity_ * sizeof(T));
+    if (!data_) return false;
 
     return true;
   }
@@ -212,30 +185,22 @@ class ContinuousSpace {
   T& lastEntry() { return data()[lastEntryId()]; }
 
   bool hasSpaceForAdd(uint32_t count = 1) {
-    if (size_ + count <= capacity_) {
-      return true;
-    }
+    if (size_ + count <= capacity_) return true;
     return false;
   }
 
   bool ensureSpaceBeforeAdd(uint32_t count = 1) {
     MOZ_ASSERT(data_);
-    if (hasSpaceForAdd(count)) {
-      return true;
-    }
+    if (hasSpaceForAdd(count)) return true;
 
     // Limit the size of a continuous buffer.
-    if (size_ + count > maxSize()) {
-      return false;
-    }
+    if (size_ + count > maxSize()) return false;
 
     uint32_t nCapacity = capacity_ * 2;
     nCapacity = (nCapacity < maxSize()) ? nCapacity : maxSize();
 
-    T* entries = js_pod_realloc<T>(data_, capacity_, nCapacity);
-    if (!entries) {
-      return false;
-    }
+    T* entries = (T*)js_realloc(data_, nCapacity * sizeof(T));
+    if (!entries) return false;
 
     data_ = entries;
     capacity_ = nCapacity;
@@ -265,19 +230,6 @@ class ContinuousSpace {
 
   void clear() { size_ = 0; }
 
-  bool reset() {
-    size_t oldCapacity = data_ ? capacity_ : 0;
-    capacity_ = 64;
-    size_ = 0;
-    data_ = js_pod_realloc<T>(data_, oldCapacity, capacity_);
-
-    if (!data_) {
-      return false;
-    }
-
-    return true;
-  }
-
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
     return mallocSizeOf(data_);
   }
@@ -286,9 +238,9 @@ class ContinuousSpace {
 // The layout of the event log in memory and in the log file.
 // Readable by JS using TypedArrays.
 struct EventEntry {
-  mozilla::TimeStamp time;
+  uint64_t time;
   uint32_t textId;
-  EventEntry() : textId(0) {}
+  EventEntry(uint64_t time, uint32_t textId) : time(time), textId(textId) {}
 };
 
 #endif /* TraceLoggingTypes_h */

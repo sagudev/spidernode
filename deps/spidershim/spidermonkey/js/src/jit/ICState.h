@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,6 +34,9 @@ class ICState {
   // Number of times we failed to attach a stub.
   uint8_t numFailures_;
 
+  // This is only used for shared Baseline ICs and stored here to save space.
+  bool invalid_ : 1;
+
   static const size_t MaxOptimizedStubs = 6;
 
   void transition(Mode mode) {
@@ -52,21 +55,21 @@ class ICState {
   }
 
  public:
-  ICState() { reset(); }
+  ICState() : invalid_(false) { reset(); }
 
   Mode mode() const { return mode_; }
   size_t numOptimizedStubs() const { return numOptimizedStubs_; }
-  bool hasFailures() const { return (numFailures_ != 0); }
 
   MOZ_ALWAYS_INLINE bool canAttachStub() const {
     // Note: we cannot assert that numOptimizedStubs_ <= MaxOptimizedStubs
     // because old-style baseline ICs may attach more stubs than
     // MaxOptimizedStubs allows.
-    if (mode_ == Mode::Generic || JitOptions.disableCacheIR) {
-      return false;
-    }
+    if (mode_ == Mode::Generic || JitOptions.disableCacheIR) return false;
     return true;
   }
+
+  bool invalid() const { return invalid_; }
+  void setInvalid() { invalid_ = true; }
 
   // If this returns true, we transitioned to a new mode and the caller
   // should discard all stubs.
@@ -74,13 +77,9 @@ class ICState {
     // Note: we cannot assert that numOptimizedStubs_ <= MaxOptimizedStubs
     // because old-style baseline ICs may attach more stubs than
     // MaxOptimizedStubs allows.
-    if (mode_ == Mode::Generic) {
+    if (mode_ == Mode::Generic) return false;
+    if (numOptimizedStubs_ < MaxOptimizedStubs && numFailures_ < maxFailures())
       return false;
-    }
-    if (numOptimizedStubs_ < MaxOptimizedStubs &&
-        numFailures_ < maxFailures()) {
-      return false;
-    }
     if (numFailures_ == maxFailures() || mode_ == Mode::Megamorphic) {
       transition(Mode::Generic);
       return true;
@@ -101,10 +100,7 @@ class ICState {
     // methods, because they are only used by CacheIR ICs.
     MOZ_ASSERT(numOptimizedStubs_ < 16);
     numOptimizedStubs_++;
-    // As a heuristic, reduce the failure count after each successful attach
-    // to delay hitting Generic mode. Reset to 1 instead of 0 so that
-    // BaselineInspector can distinguish no-failures from rare-failures.
-    numFailures_ = std::min(numFailures_, static_cast<uint8_t>(1));
+    numFailures_ = 0;
   }
   void trackNotAttached() {
     // Note: we can't assert numFailures_ < maxFailures() because

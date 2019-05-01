@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,7 +39,7 @@ static const uint32_t VREG_INCREMENT = 1;
 static const uint32_t THIS_FRAME_ARGSLOT = 0;
 
 #if defined(JS_NUNBOX32)
-#  define BOX_PIECES 2
+#define BOX_PIECES 2
 static const uint32_t VREG_TYPE_OFFSET = 0;
 static const uint32_t VREG_DATA_OFFSET = 1;
 static const uint32_t TYPE_INDEX = 0;
@@ -47,9 +47,9 @@ static const uint32_t PAYLOAD_INDEX = 1;
 static const uint32_t INT64LOW_INDEX = 0;
 static const uint32_t INT64HIGH_INDEX = 1;
 #elif defined(JS_PUNBOX64)
-#  define BOX_PIECES 1
+#define BOX_PIECES 1
 #else
-#  error "Unknown!"
+#error "Unknown!"
 #endif
 
 static const uint32_t INT64_PIECES = sizeof(int64_t) / sizeof(uintptr_t);
@@ -152,12 +152,9 @@ class LAllocation : public TempObject {
 
   HashNumber hash() const { return bits_; }
 
-  bool aliases(const LAllocation& other) const;
-
-#ifdef JS_JITSPEW
   UniqueChars toString() const;
+  bool aliases(const LAllocation& other) const;
   void dump() const;
-#endif
 };
 
 class LUse : public LAllocation {
@@ -458,24 +455,16 @@ class LDefinition {
   }
   bool isCompatibleReg(const AnyRegister& r) const {
     if (isFloatReg() && r.isFloat()) {
-      if (type() == FLOAT32) {
-        return r.fpu().isSingle();
-      }
-      if (type() == DOUBLE) {
-        return r.fpu().isDouble();
-      }
-      if (isSimdType()) {
-        return r.fpu().isSimd128();
-      }
+      if (type() == FLOAT32) return r.fpu().isSingle();
+      if (type() == DOUBLE) return r.fpu().isDouble();
+      if (isSimdType()) return r.fpu().isSimd128();
       MOZ_CRASH("Unexpected MDefinition type");
     }
     return !isFloatReg() && !r.isFloat();
   }
   bool isCompatibleDef(const LDefinition& other) const {
 #if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS32)
-    if (isFloatReg() && other.isFloatReg()) {
-      return type() == other.type();
-    }
+    if (isFloatReg() && other.isFloatReg()) return type() == other.type();
     return !isFloatReg() && !other.isFloatReg();
 #else
     return isFloatReg() == other.isFloatReg();
@@ -525,10 +514,8 @@ class LDefinition {
         return LDefinition::INT32;
       case MIRType::String:
       case MIRType::Symbol:
-      case MIRType::BigInt:
       case MIRType::Object:
       case MIRType::ObjectOrNull:
-      case MIRType::RefOrNull:
         return LDefinition::OBJECT;
       case MIRType::Double:
         return LDefinition::DOUBLE;
@@ -565,9 +552,7 @@ class LDefinition {
 
   UniqueChars toString() const;
 
-#ifdef JS_JITSPEW
   void dump() const;
-#endif
 };
 
 using LInt64Definition = LInt64Value<LDefinition>;
@@ -582,8 +567,6 @@ class LSafepoint;
 class LInstruction;
 class LElementVisitor;
 
-constexpr size_t MaxNumLInstructionOperands = 63;
-
 // The common base class for LPhi and LInstruction.
 class LNode {
  protected:
@@ -597,13 +580,9 @@ class LNode {
   // Bitfields below are all uint32_t to make sure MSVC packs them correctly.
   uint32_t op_ : 10;
   uint32_t isCall_ : 1;
-
   // LPhi::numOperands() may not fit in this bitfield, so we only use this
   // field for LInstruction.
   uint32_t nonPhiNumOperands_ : 6;
-  static_assert((1 << 6) - 1 == MaxNumLInstructionOperands,
-                "packing constraints");
-
   // For LInstruction, the first operand is stored at offset
   // sizeof(LInstruction) + nonPhiOperandsOffset_ * sizeof(uintptr_t).
   uint32_t nonPhiOperandsOffset_ : 5;
@@ -611,11 +590,11 @@ class LNode {
   uint32_t numTemps_ : 4;
 
  public:
-  enum class Opcode {
-#define LIROP(name) name,
+  enum Opcode {
+#define LIROP(name) LOp_##name,
     LIR_OPCODE_LIST(LIROP)
 #undef LIROP
-        Invalid
+        LOp_Invalid
   };
 
   LNode(Opcode op, uint32_t nonPhiNumOperands, uint32_t numDefs,
@@ -623,14 +602,14 @@ class LNode {
       : mir_(nullptr),
         block_(nullptr),
         id_(0),
-        op_(uint32_t(op)),
+        op_(op),
         isCall_(false),
         nonPhiNumOperands_(nonPhiNumOperands),
         nonPhiOperandsOffset_(0),
         numDefs_(numDefs),
         numTemps_(numTemps) {
-    MOZ_ASSERT(op < Opcode::Invalid);
-    MOZ_ASSERT(op_ == uint32_t(op), "opcode must fit in bitfield");
+    MOZ_ASSERT(op_ < LOp_Invalid);
+    MOZ_ASSERT(op_ == op, "opcode must fit in bitfield");
     MOZ_ASSERT(nonPhiNumOperands_ == nonPhiNumOperands,
                "nonPhiNumOperands must fit in bitfield");
     MOZ_ASSERT(numDefs_ == numDefs, "numDefs must fit in bitfield");
@@ -640,12 +619,12 @@ class LNode {
   const char* opName() {
     switch (op()) {
 #define LIR_NAME_INS(name) \
-  case Opcode::name:       \
+  case LOp_##name:         \
     return #name;
       LIR_OPCODE_LIST(LIR_NAME_INS)
 #undef LIR_NAME_INS
       default:
-        MOZ_CRASH("Invalid op");
+        return "Invalid";
     }
   }
 
@@ -655,13 +634,11 @@ class LNode {
   const char* extraName() const { return nullptr; }
 
  public:
-#ifdef JS_JITSPEW
   const char* getExtraName() const;
-#endif
 
   Opcode op() const { return Opcode(op_); }
 
-  bool isInstruction() const { return op() != Opcode::Phi; }
+  bool isInstruction() const { return op() != LOp_Phi; }
   inline LInstruction* toInstruction();
   inline const LInstruction* toInstruction() const;
 
@@ -693,26 +670,23 @@ class LNode {
   // output register will be restored to its original value when bailing out.
   inline bool recoversInput() const;
 
-#ifdef JS_JITSPEW
   void dump(GenericPrinter& out);
   void dump();
   static void printName(GenericPrinter& out, Opcode op);
   void printName(GenericPrinter& out);
   void printOperands(GenericPrinter& out);
-#endif
 
  public:
   // Opcode testing and casts.
-#define LIROP(name)                                      \
-  bool is##name() const { return op() == Opcode::name; } \
-  inline L##name* to##name();                            \
+#define LIROP(name)                                    \
+  bool is##name() const { return op() == LOp_##name; } \
+  inline L##name* to##name();                          \
   inline const L##name* to##name() const;
   LIR_OPCODE_LIST(LIROP)
 #undef LIROP
 
-// Note: GenerateOpcodeFiles.py generates LOpcodes.h based on this macro.
 #define LIR_HEADER(opcode) \
-  static constexpr LNode::Opcode classOpcode = LNode::Opcode::opcode;
+  static constexpr LNode::Opcode classOpcode = LNode::LOp_##opcode;
 };
 
 class LInstruction : public LNode,
@@ -811,14 +785,18 @@ class LElementVisitor {
     ins_ = ins;
     if (ins->mirRaw()) {
       lastPC_ = ins->mirRaw()->trackedPc();
-      if (ins->mirRaw()->trackedTree()) {
+      if (ins->mirRaw()->trackedTree())
         lastNotInlinedPC_ = ins->mirRaw()->profilerLeavePc();
-      }
     }
   }
 
   LElementVisitor()
       : ins_(nullptr), lastPC_(nullptr), lastNotInlinedPC_(nullptr) {}
+
+#define VISIT_INS(op) \
+  void visit##op(L##op*) { MOZ_CRASH("NYI: " #op); }
+  LIR_OPCODE_LIST(VISIT_INS)
+#undef VISIT_INS
 };
 
 typedef InlineList<LInstruction>::iterator LInstructionIterator;
@@ -936,10 +914,8 @@ class LBlock {
   // which is not forming a loop. No code will be emitted for such blocks.
   bool isTrivial() { return begin()->isGoto() && !mir()->isLoopHeader(); }
 
-#ifdef JS_JITSPEW
   void dump(GenericPrinter& out);
   void dump();
-#endif
 };
 
 namespace details {
@@ -1170,35 +1146,27 @@ class LRecoverInfo : public TempObject {
         opEnd_ = (*it_)->numOperands();
       }
       node_ = *it_;
-      if (node_->isResumePoint()) {
-        rp_ = node_->toResumePoint();
-      }
+      if (node_->isResumePoint()) rp_ = node_->toResumePoint();
     }
 
     MDefinition* operator*() {
-      if (rp_) {  // de-virtualize MResumePoint::getOperand calls.
+      if (rp_)  // de-virtualize MResumePoint::getOperand calls.
         return rp_->getOperand(op_);
-      }
       return node_->getOperand(op_);
     }
     MDefinition* operator->() {
-      if (rp_) {  // de-virtualize MResumePoint::getOperand calls.
+      if (rp_)  // de-virtualize MResumePoint::getOperand calls.
         return rp_->getOperand(op_);
-      }
       return node_->getOperand(op_);
     }
 
     OperandIter& operator++() {
       ++op_;
-      if (op_ != opEnd_) {
-        return *this;
-      }
+      if (op_ != opEnd_) return *this;
       op_ = 0;
       ++it_;
       node_ = rp_ = nullptr;
-      if (!*this) {
-        settle();
-      }
+      if (!*this) settle();
       return *this;
     }
 
@@ -1276,7 +1244,7 @@ struct SafepointSlotEntry {
   // Byte offset of the slot, as in LStackSlot or LArgument.
   uint32_t slot : 31;
 
-  SafepointSlotEntry() : stack(0), slot(0) {}
+  SafepointSlotEntry() {}
   SafepointSlotEntry(bool stack, uint32_t slot) : stack(stack), slot(slot) {}
   explicit SafepointSlotEntry(const LAllocation* a)
       : stack(a->isStackSlot()), slot(a->memorySlot()) {}
@@ -1287,7 +1255,7 @@ struct SafepointNunboxEntry {
   LAllocation type;
   LAllocation payload;
 
-  SafepointNunboxEntry() : typeVreg(0) {}
+  SafepointNunboxEntry() {}
   SafepointNunboxEntry(uint32_t typeVreg, LAllocation type, LAllocation payload)
       : typeVreg(typeVreg), type(type), payload(payload) {}
 };
@@ -1352,28 +1320,9 @@ class LSafepoint : public TempObject {
   // List of slots which have slots/elements pointers.
   SlotList slotsOrElementsSlots_;
 
-  // Wasm only: with what kind of instruction is this LSafepoint associated?
-  // true => wasm trap, false => wasm call.
-  bool isWasmTrap_;
-
-  // Wasm only: what is the value of masm.framePushed() that corresponds to
-  // the lowest-addressed word covered by the StackMap that we will generate
-  // from this LSafepoint?  This depends on the instruction:
-  //
-  // if isWasmTrap_ == true:
-  //    masm.framePushed() unmodified.  Note that when constructing the
-  //    StackMap we will add entries below this point to take account of
-  //    registers dumped on the stack as a result of the trap.
-  //
-  // if isWasmTrap_ == false:
-  //    masm.framePushed() - StackArgAreaSizeUnaligned(arg types for the call),
-  //    because the map does not include the outgoing args themselves, but
-  //    it does cover any and all alignment space above them.
-  uint32_t framePushedAtStackMapBase_;
-
  public:
   void assertInvariants() {
-    // Every register in valueRegs and gcRegs should also be in liveRegs.
+  // Every register in valueRegs and gcRegs should also be in liveRegs.
 #ifndef JS_NUNBOX32
     MOZ_ASSERT((valueRegs().bits() & ~liveRegs().gprs().bits()) == 0);
 #endif
@@ -1390,9 +1339,7 @@ class LSafepoint : public TempObject {
         nunboxParts_(alloc)
 #endif
         ,
-        slotsOrElementsSlots_(alloc),
-        isWasmTrap_(false),
-        framePushedAtStackMapBase_(0) {
+        slotsOrElementsSlots_(alloc) {
     assertInvariants();
   }
   void addLiveRegister(AnyRegister reg) {
@@ -1414,9 +1361,7 @@ class LSafepoint : public TempObject {
   LiveGeneralRegisterSet gcRegs() const { return gcRegs_; }
   MOZ_MUST_USE bool addGcSlot(bool stack, uint32_t slot) {
     bool result = gcSlots_.append(SlotEntry(stack, slot));
-    if (result) {
-      assertInvariants();
-    }
+    if (result) assertInvariants();
     return result;
   }
   SlotList& gcSlots() { return gcSlots_; }
@@ -1431,73 +1376,59 @@ class LSafepoint : public TempObject {
   }
   MOZ_MUST_USE bool addSlotsOrElementsSlot(bool stack, uint32_t slot) {
     bool result = slotsOrElementsSlots_.append(SlotEntry(stack, slot));
-    if (result) {
-      assertInvariants();
-    }
+    if (result) assertInvariants();
     return result;
   }
   MOZ_MUST_USE bool addSlotsOrElementsPointer(LAllocation alloc) {
-    if (alloc.isMemory()) {
+    if (alloc.isMemory())
       return addSlotsOrElementsSlot(alloc.isStackSlot(), alloc.memorySlot());
-    }
     MOZ_ASSERT(alloc.isRegister());
     addSlotsOrElementsRegister(alloc.toRegister().gpr());
     assertInvariants();
     return true;
   }
   bool hasSlotsOrElementsPointer(LAllocation alloc) const {
-    if (alloc.isRegister()) {
+    if (alloc.isRegister())
       return slotsOrElementsRegs().has(alloc.toRegister().gpr());
-    }
     for (size_t i = 0; i < slotsOrElementsSlots_.length(); i++) {
       const SlotEntry& entry = slotsOrElementsSlots_[i];
       if (entry.stack == alloc.isStackSlot() &&
-          entry.slot == alloc.memorySlot()) {
+          entry.slot == alloc.memorySlot())
         return true;
-      }
     }
     return false;
   }
 
   MOZ_MUST_USE bool addGcPointer(LAllocation alloc) {
-    if (alloc.isMemory()) {
+    if (alloc.isMemory())
       return addGcSlot(alloc.isStackSlot(), alloc.memorySlot());
-    }
-    if (alloc.isRegister()) {
-      addGcRegister(alloc.toRegister().gpr());
-    }
+    if (alloc.isRegister()) addGcRegister(alloc.toRegister().gpr());
     assertInvariants();
     return true;
   }
 
   bool hasGcPointer(LAllocation alloc) const {
-    if (alloc.isRegister()) {
-      return gcRegs().has(alloc.toRegister().gpr());
-    }
+    if (alloc.isRegister()) return gcRegs().has(alloc.toRegister().gpr());
     MOZ_ASSERT(alloc.isMemory());
     for (size_t i = 0; i < gcSlots_.length(); i++) {
       if (gcSlots_[i].stack == alloc.isStackSlot() &&
-          gcSlots_[i].slot == alloc.memorySlot()) {
+          gcSlots_[i].slot == alloc.memorySlot())
         return true;
-      }
     }
     return false;
   }
 
   MOZ_MUST_USE bool addValueSlot(bool stack, uint32_t slot) {
     bool result = valueSlots_.append(SlotEntry(stack, slot));
-    if (result) {
-      assertInvariants();
-    }
+    if (result) assertInvariants();
     return result;
   }
   SlotList& valueSlots() { return valueSlots_; }
 
   bool hasValueSlot(bool stack, uint32_t slot) const {
     for (size_t i = 0; i < valueSlots_.length(); i++) {
-      if (valueSlots_[i].stack == stack && valueSlots_[i].slot == slot) {
+      if (valueSlots_[i].stack == stack && valueSlots_[i].slot == slot)
         return true;
-      }
     }
     return false;
   }
@@ -1507,17 +1438,13 @@ class LSafepoint : public TempObject {
   MOZ_MUST_USE bool addNunboxParts(uint32_t typeVreg, LAllocation type,
                                    LAllocation payload) {
     bool result = nunboxParts_.append(NunboxEntry(typeVreg, type, payload));
-    if (result) {
-      assertInvariants();
-    }
+    if (result) assertInvariants();
     return result;
   }
 
   MOZ_MUST_USE bool addNunboxType(uint32_t typeVreg, LAllocation type) {
     for (size_t i = 0; i < nunboxParts_.length(); i++) {
-      if (nunboxParts_[i].type == type) {
-        return true;
-      }
+      if (nunboxParts_[i].type == type) return true;
       if (nunboxParts_[i].type == LUse(typeVreg, LUse::ANY)) {
         nunboxParts_[i].type = type;
         return true;
@@ -1528,18 +1455,14 @@ class LSafepoint : public TempObject {
     uint32_t payloadVreg = typeVreg + 1;
     bool result = nunboxParts_.append(
         NunboxEntry(typeVreg, type, LUse(payloadVreg, LUse::ANY)));
-    if (result) {
-      assertInvariants();
-    }
+    if (result) assertInvariants();
     return result;
   }
 
   MOZ_MUST_USE bool addNunboxPayload(uint32_t payloadVreg,
                                      LAllocation payload) {
     for (size_t i = 0; i < nunboxParts_.length(); i++) {
-      if (nunboxParts_[i].payload == payload) {
-        return true;
-      }
+      if (nunboxParts_[i].payload == payload) return true;
       if (nunboxParts_[i].payload == LUse(payloadVreg, LUse::ANY)) {
         nunboxParts_[i].payload = payload;
         return true;
@@ -1550,9 +1473,7 @@ class LSafepoint : public TempObject {
     uint32_t typeVreg = payloadVreg - 1;
     bool result = nunboxParts_.append(
         NunboxEntry(typeVreg, LUse(typeVreg, LUse::ANY), payload));
-    if (result) {
-      assertInvariants();
-    }
+    if (result) assertInvariants();
     return result;
   }
 
@@ -1562,28 +1483,23 @@ class LSafepoint : public TempObject {
     // look at the value slots in the safepoint, as these aren't used by
     // register allocators which add partial nunbox entries.
     for (size_t i = 0; i < nunboxParts_.length(); i++) {
-      if (nunboxParts_[i].typeVreg == typeVreg &&
-          !nunboxParts_[i].type.isUse()) {
+      if (nunboxParts_[i].typeVreg == typeVreg && !nunboxParts_[i].type.isUse())
         return nunboxParts_[i].type;
-      }
     }
     return LUse(typeVreg, LUse::ANY);
   }
 
-#  ifdef DEBUG
+#ifdef DEBUG
   bool hasNunboxPayload(LAllocation payload) const {
     if (payload.isMemory() &&
-        hasValueSlot(payload.isStackSlot(), payload.memorySlot())) {
+        hasValueSlot(payload.isStackSlot(), payload.memorySlot()))
       return true;
-    }
     for (size_t i = 0; i < nunboxParts_.length(); i++) {
-      if (nunboxParts_[i].payload == payload) {
-        return true;
-      }
+      if (nunboxParts_[i].payload == payload) return true;
     }
     return false;
   }
-#  endif
+#endif
 
   NunboxList& nunboxParts() { return nunboxParts_; }
 
@@ -1598,21 +1514,15 @@ class LSafepoint : public TempObject {
   MOZ_MUST_USE bool addBoxedValue(LAllocation alloc) {
     if (alloc.isRegister()) {
       Register reg = alloc.toRegister().gpr();
-      if (!valueRegs().has(reg)) {
-        addValueRegister(reg);
-      }
+      if (!valueRegs().has(reg)) addValueRegister(reg);
       return true;
     }
-    if (hasValueSlot(alloc.isStackSlot(), alloc.memorySlot())) {
-      return true;
-    }
+    if (hasValueSlot(alloc.isStackSlot(), alloc.memorySlot())) return true;
     return addValueSlot(alloc.isStackSlot(), alloc.memorySlot());
   }
 
   bool hasBoxedValue(LAllocation alloc) const {
-    if (alloc.isRegister()) {
-      return valueRegs().has(alloc.toRegister().gpr());
-    }
+    if (alloc.isRegister()) return valueRegs().has(alloc.toRegister().gpr());
     return hasValueSlot(alloc.isStackSlot(), alloc.memorySlot());
   }
 
@@ -1634,17 +1544,6 @@ class LSafepoint : public TempObject {
   void setOsiCallPointOffset(uint32_t osiCallPointOffset) {
     MOZ_ASSERT(!osiCallPointOffset_);
     osiCallPointOffset_ = osiCallPointOffset;
-  }
-
-  bool isWasmTrap() const { return isWasmTrap_; }
-  void setIsWasmTrap() { isWasmTrap_ = true; }
-
-  uint32_t framePushedAtStackMapBase() const {
-    return framePushedAtStackMapBase_;
-  }
-  void setFramePushedAtStackMapBase(uint32_t n) {
-    MOZ_ASSERT(framePushedAtStackMapBase_ == 0);
-    framePushedAtStackMapBase_ = n;
   }
 };
 
@@ -1669,15 +1568,9 @@ class LInstruction::InputIterator {
   }
 
   bool more() const {
-    if (snapshot_) {
-      return idx_ < ins_.snapshot()->numEntries();
-    }
-    if (idx_ < ins_.numOperands()) {
-      return true;
-    }
-    if (ins_.snapshot() && ins_.snapshot()->numEntries()) {
-      return true;
-    }
+    if (snapshot_) return idx_ < ins_.snapshot()->numEntries();
+    if (idx_ < ins_.numOperands()) return true;
+    if (ins_.snapshot() && ins_.snapshot()->numEntries()) return true;
     return false;
   }
 
@@ -1690,17 +1583,14 @@ class LInstruction::InputIterator {
   }
 
   void replace(const LAllocation& alloc) {
-    if (snapshot_) {
+    if (snapshot_)
       ins_.snapshot()->setEntry(idx_, alloc);
-    } else {
+    else
       ins_.setOperand(idx_, alloc);
-    }
   }
 
   LAllocation* operator*() const {
-    if (snapshot_) {
-      return ins_.snapshot()->getEntry(idx_);
-    }
+    if (snapshot_) return ins_.snapshot()->getEntry(idx_);
     return ins_.getOperand(idx_);
   }
 
@@ -1715,12 +1605,7 @@ class LIRGraph {
   };
 
   FixedList<LBlock> blocks_;
-
-  // constantPool_ is a mozilla::Vector, not a js::Vector, because
-  // js::Vector<Value> is prohibited as unsafe. This particular Vector of
-  // Values is safe because it is only used within the scope of an
-  // AutoEnterAnalysis (in IonCompile), which inhibits GC.
-  mozilla::Vector<Value, 0, JitAllocPolicy> constantPool_;
+  Vector<Value, 0, JitAllocPolicy> constantPool_;
   typedef HashMap<Value, uint32_t, ValueHasher, JitAllocPolicy> ConstantPoolMap;
   ConstantPoolMap constantPoolMap_;
   Vector<LInstruction*, 0, JitAllocPolicy> safepoints_;
@@ -1742,7 +1627,8 @@ class LIRGraph {
   explicit LIRGraph(MIRGraph* mir);
 
   MOZ_MUST_USE bool init() {
-    return blocks_.init(mir_.alloc(), mir_.numBlocks());
+    return constantPoolMap_.init() &&
+           blocks_.init(mir_.alloc(), mir_.numBlocks());
   }
   MIRGraph& mir() const { return mir_; }
   size_t numBlocks() const { return blocks_.length(); }
@@ -1807,25 +1693,20 @@ class LIRGraph {
   size_t numSafepoints() const { return safepoints_.length(); }
   LInstruction* getSafepoint(size_t i) const { return safepoints_[i]; }
 
-#ifdef JS_JITSPEW
   void dump(GenericPrinter& out);
   void dump();
-#endif
 };
 
 LAllocation::LAllocation(AnyRegister reg) {
-  if (reg.isFloat()) {
+  if (reg.isFloat())
     *this = LFloatReg(reg.fpu());
-  } else {
+  else
     *this = LGeneralReg(reg.gpr());
-  }
 }
 
 AnyRegister LAllocation::toRegister() const {
   MOZ_ASSERT(isRegister());
-  if (isFloatReg()) {
-    return AnyRegister(toFloatReg()->reg());
-  }
+  if (isFloatReg()) return AnyRegister(toFloatReg()->reg());
   return AnyRegister(toGeneralReg()->reg());
 }
 
@@ -1834,27 +1715,27 @@ AnyRegister LAllocation::toRegister() const {
 
 #include "jit/shared/LIR-shared.h"
 #if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
-#  if defined(JS_CODEGEN_X86)
-#    include "jit/x86/LIR-x86.h"
-#  elif defined(JS_CODEGEN_X64)
-#    include "jit/x64/LIR-x64.h"
-#  endif
-#  include "jit/x86-shared/LIR-x86-shared.h"
+#if defined(JS_CODEGEN_X86)
+#include "jit/x86/LIR-x86.h"
+#elif defined(JS_CODEGEN_X64)
+#include "jit/x64/LIR-x64.h"
+#endif
+#include "jit/x86-shared/LIR-x86-shared.h"
 #elif defined(JS_CODEGEN_ARM)
-#  include "jit/arm/LIR-arm.h"
+#include "jit/arm/LIR-arm.h"
 #elif defined(JS_CODEGEN_ARM64)
-#  include "jit/arm64/LIR-arm64.h"
+#include "jit/arm64/LIR-arm64.h"
 #elif defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
-#  if defined(JS_CODEGEN_MIPS32)
-#    include "jit/mips32/LIR-mips32.h"
-#  elif defined(JS_CODEGEN_MIPS64)
-#    include "jit/mips64/LIR-mips64.h"
-#  endif
-#  include "jit/mips-shared/LIR-mips-shared.h"
+#if defined(JS_CODEGEN_MIPS32)
+#include "jit/mips32/LIR-mips32.h"
+#elif defined(JS_CODEGEN_MIPS64)
+#include "jit/mips64/LIR-mips64.h"
+#endif
+#include "jit/mips-shared/LIR-mips-shared.h"
 #elif defined(JS_CODEGEN_NONE)
-#  include "jit/none/LIR-none.h"
+#include "jit/none/LIR-none.h"
 #else
-#  error "Unknown architecture!"
+#error "Unknown architecture!"
 #endif
 
 #undef LIR_HEADER
@@ -1910,18 +1791,14 @@ static inline void AssertTypesFormANunbox(LDefinition::Type type1,
 }
 
 static inline unsigned OffsetOfNunboxSlot(LDefinition::Type type) {
-  if (type == LDefinition::PAYLOAD) {
-    return NUNBOX32_PAYLOAD_OFFSET;
-  }
+  if (type == LDefinition::PAYLOAD) return NUNBOX32_PAYLOAD_OFFSET;
   return NUNBOX32_TYPE_OFFSET;
 }
 
 // Note that stack indexes for LStackSlot are modelled backwards, so a
 // double-sized slot starting at 2 has its next word at 1, *not* 3.
 static inline unsigned BaseOfNunboxSlot(LDefinition::Type type, unsigned slot) {
-  if (type == LDefinition::PAYLOAD) {
-    return slot + NUNBOX32_PAYLOAD_OFFSET;
-  }
+  if (type == LDefinition::PAYLOAD) return slot + NUNBOX32_PAYLOAD_OFFSET;
   return slot + NUNBOX32_TYPE_OFFSET;
 }
 #endif

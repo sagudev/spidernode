@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=4 et :
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: sw=4 ts=4 et :
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -23,23 +23,23 @@
 // below, and since clang does not allow mixing __attribute__((noreturn)) and
 // [[noreturn]], we have to explicitly use the latter here.  See bug 1329520.
 #if defined(__clang__)
-#  if __has_feature(cxx_attributes) && defined(_LIBCPP_VERSION) && \
-      _LIBCPP_VERSION >= 4000
-#    define MOZ_THROW_NORETURN [[noreturn]]
-#  endif
+#if __has_feature(cxx_attributes) && defined(_LIBCPP_VERSION) && \
+    _LIBCPP_VERSION >= 4000
+#define MOZ_THROW_NORETURN [[noreturn]]
+#endif
 #endif
 #ifndef MOZ_THROW_NORETURN
-#  define MOZ_THROW_NORETURN MOZ_NORETURN
+#define MOZ_THROW_NORETURN MOZ_NORETURN
 #endif
 
 // MinGW doesn't appropriately inline these functions in debug builds,
 // so we need to do some extra coercion for it to do so. Bug 1332747
 #ifdef __MINGW32__
-#  define MOZ_THROW_INLINE MOZ_ALWAYS_INLINE_EVEN_DEBUG
-#  define MOZ_THROW_EXPORT
+#define MOZ_THROW_INLINE MOZ_ALWAYS_INLINE_EVEN_DEBUG
+#define MOZ_THROW_EXPORT
 #else
-#  define MOZ_THROW_INLINE MOZ_ALWAYS_INLINE
-#  define MOZ_THROW_EXPORT MOZ_EXPORT
+#define MOZ_THROW_INLINE MOZ_ALWAYS_INLINE
+#define MOZ_THROW_EXPORT MOZ_EXPORT
 #endif
 
 namespace std {
@@ -128,14 +128,6 @@ MOZ_THROW_NORETURN MOZ_THROW_EXPORT MOZ_THROW_INLINE void __throw_system_error(
     int err) {
   char error[128];
   snprintf(error, sizeof(error) - 1, "fatal: STL threw system_error: %s (%d)",
-           strerror(err), err);
-  mozalloc_abort(error);
-}
-
-MOZ_THROW_NORETURN MOZ_EXPORT MOZ_ALWAYS_INLINE void __throw_regex_error(
-    int err) {
-  char error[128];
-  snprintf(error, sizeof(error) - 1, "fatal: STL threw regex_error: %s (%d)",
            strerror(err), err);
   mozalloc_abort(error);
 }

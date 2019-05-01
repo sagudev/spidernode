@@ -6,10 +6,8 @@
 
 from __future__ import absolute_import, print_function
 
-import json
 import os
 import mozinfo
-import sys
 from collections import namedtuple
 from distutils.spawn import find_executable
 from subprocess import check_output
@@ -17,8 +15,7 @@ from subprocess import check_output
 __all__ = ['get_debugger_info',
            'get_default_debugger_name',
            'DebuggerSearch',
-           'get_default_valgrind_args',
-           'DebuggerInfo']
+           'get_default_valgrind_args']
 
 '''
 Map of debugging programs to information about them, like default arguments
@@ -36,11 +33,6 @@ _DEBUGGER_INFO = {
     },
 
     'cgdb': {
-        'interactive': True,
-        'args': ['-q', '--args']
-    },
-
-    'rust-gdb': {
         'interactive': True,
         'args': ['-q', '--args']
     },
@@ -79,12 +71,6 @@ _DEBUGGER_PRIORITIES = {
 }
 
 
-DebuggerInfo = namedtuple(
-    'DebuggerInfo',
-    ['path', 'interactive', 'args', 'requiresEscapedArgs']
-)
-
-
 def _windbg_installation_paths():
     programFilesSuffixes = ['', ' (x86)']
     programFiles = "C:/Program Files"
@@ -96,19 +82,7 @@ def _windbg_installation_paths():
                                          'Windows Kits')
         for version in windowsKitsVersions:
             yield os.path.join(windowsKitsPrefix, version,
-                               'Debuggers', 'x64', 'windbg.exe')
-
-
-def _vswhere_path():
-    try:
-        import buildconfig
-        path = os.path.join(buildconfig.topsrcdir, 'build', 'win32', 'vswhere.exe')
-        if os.path.isfile(path):
-            return path
-    except ImportError:
-        pass
-    # Hope it's available on PATH!
-    return 'vswhere.exe'
+                               'Debuggers', 'x86', 'windbg.exe')
 
 
 def get_debugger_path(debugger):
@@ -129,18 +103,6 @@ def get_debugger_path(debugger):
             path = check_output(['xcrun', '--find', 'lldb']).strip()
             if path:
                 return path
-        except Exception:
-            # Just default to find_executable instead.
-            pass
-
-    if mozinfo.os == 'win' and debugger == 'devenv.exe':
-        # Attempt to use vswhere to find the path.
-        try:
-            encoding = 'mbcs' if sys.platform == 'win32' else 'utf-8'
-            vswhere = _vswhere_path()
-            vsinfo = check_output([vswhere, '-format', 'json', '-latest'])
-            vsinfo = json.loads(vsinfo.decode(encoding, 'replace'))
-            return os.path.join(vsinfo[0]['installationPath'], 'Common7', 'IDE', 'devenv.exe')
         except Exception:
             # Just default to find_executable instead.
             pass
@@ -201,6 +163,11 @@ def get_debugger_info(debugger, debuggerArgs=None, debuggerInteractive=False):
         return default
 
     # Define a namedtuple to access the debugger information from the outside world.
+    DebuggerInfo = namedtuple(
+        'DebuggerInfo',
+        ['path', 'interactive', 'args', 'requiresEscapedArgs']
+    )
+
     debugger_arguments = []
 
     if debuggerArgs:
@@ -248,7 +215,7 @@ def get_default_debugger_name(search=DebuggerSearch.OnlyFirst):
 
     # Finally get the debugger information.
     for debuggerName in debuggerPriorities:
-        debuggerPath = get_debugger_path(debuggerName)
+        debuggerPath = find_executable(debuggerName)
         if debuggerPath:
             return debuggerName
         elif not search == DebuggerSearch.KeepLooking:

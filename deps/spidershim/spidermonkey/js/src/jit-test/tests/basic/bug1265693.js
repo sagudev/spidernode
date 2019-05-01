@@ -1,2 +1,4 @@
-// |jit-test| skip-if: !('oomTest' in this)
+if (!('oomTest' in this))
+    quit();
+
 oomTest(Function("Function.hasOwnProperty(1.1)"));

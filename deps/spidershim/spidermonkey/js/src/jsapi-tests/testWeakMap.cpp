@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -7,7 +7,7 @@
 
 #include "gc/Zone.h"
 #include "jsapi-tests/tests.h"
-#include "vm/Realm.h"
+#include "vm/JSCompartment.h"
 
 JSObject* keyDelegate = nullptr;
 
@@ -65,24 +65,21 @@ BEGIN_TEST(testWeakMap_keyDelegates) {
   AutoLeaveZeal nozeal(cx);
 #endif /* JS_GC_ZEAL */
 
-  JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_ZONE_INCREMENTAL);
+  JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_INCREMENTAL);
   JS_GC(cx);
   JS::RootedObject map(cx, JS::NewWeakMapObject(cx));
   CHECK(map);
 
-  JS::RootedObject delegate(cx, newDelegate());
-  JS::RootedObject key(cx, delegate);
-  if (!JS_WrapObject(cx, &key)) {
-    return false;
-  }
+  JS::RootedObject key(cx, newKey());
   CHECK(key);
-  CHECK(delegate);
 
+  JS::RootedObject delegate(cx, newDelegate());
+  CHECK(delegate);
   keyDelegate = delegate;
 
   JS::RootedObject delegateRoot(cx);
   {
-    JSAutoRealm ar(cx, delegate);
+    JSAutoCompartment ac(cx, delegate);
     delegateRoot = JS_NewPlainObject(cx);
     CHECK(delegateRoot);
     JS::RootedValue delegateValue(cx, JS::ObjectValue(*delegate));
@@ -97,9 +94,8 @@ BEGIN_TEST(testWeakMap_keyDelegates) {
   CHECK(newCCW(map, delegateRoot));
   js::SliceBudget budget(js::WorkBudget(1000000));
   cx->runtime()->gc.startDebugGC(GC_NORMAL, budget);
-  while (JS::IsIncrementalGCInProgress(cx)) {
+  while (JS::IsIncrementalGCInProgress(cx))
     cx->runtime()->gc.debugGCSlice(budget);
-  }
 #ifdef DEBUG
   CHECK(map->zone()->lastSweepGroupIndex() <
         delegateRoot->zone()->lastSweepGroupIndex());
@@ -116,9 +112,8 @@ BEGIN_TEST(testWeakMap_keyDelegates) {
   CHECK(newCCW(map, delegateRoot));
   budget = js::SliceBudget(js::WorkBudget(100000));
   cx->runtime()->gc.startDebugGC(GC_NORMAL, budget);
-  while (JS::IsIncrementalGCInProgress(cx)) {
+  while (JS::IsIncrementalGCInProgress(cx))
     cx->runtime()->gc.debugGCSlice(budget);
-  }
   CHECK(checkSize(map, 1));
 
   /*
@@ -140,25 +135,26 @@ BEGIN_TEST(testWeakMap_keyDelegates) {
 }
 
 static size_t DelegateObjectMoved(JSObject* obj, JSObject* old) {
-  if (!keyDelegate) {
+  if (!keyDelegate)
     return 0;  // Object got moved before we set keyDelegate to point to it.
-  }
 
   MOZ_RELEASE_ASSERT(keyDelegate == old);
   keyDelegate = obj;
   return 0;
 }
 
+static JSObject* GetKeyDelegate(JSObject* obj) { return keyDelegate; }
+
 JSObject* newKey() {
+  static const js::ClassExtension keyClassExtension = {GetKeyDelegate};
+
   static const js::Class keyClass = {
-      "keyWithDelegate", JSCLASS_HAS_PRIVATE | JSCLASS_HAS_RESERVED_SLOTS(1),
-      JS_NULL_CLASS_OPS, JS_NULL_CLASS_SPEC,
-      JS_NULL_CLASS_EXT, JS_NULL_OBJECT_OPS};
+      "keyWithDelegate",  JSCLASS_HAS_PRIVATE | JSCLASS_HAS_RESERVED_SLOTS(1),
+      JS_NULL_CLASS_OPS,  JS_NULL_CLASS_SPEC,
+      &keyClassExtension, JS_NULL_OBJECT_OPS};
 
   JS::RootedObject key(cx, JS_NewObject(cx, Jsvalify(&keyClass)));
-  if (!key) {
-    return nullptr;
-  }
+  if (!key) return nullptr;
 
   return key;
 }
@@ -166,22 +162,18 @@ JSObject* newKey() {
 JSObject* newCCW(JS::HandleObject sourceZone, JS::HandleObject destZone) {
   /*
    * Now ensure that this zone will be swept first by adding a cross
-   * compartment wrapper to a new object in the same zone as the
-   * delegate object.
+   * compartment wrapper to a new objct in the same zone as the
+   * delegate obejct.
    */
   JS::RootedObject object(cx);
   {
-    JSAutoRealm ar(cx, destZone);
+    JSAutoCompartment ac(cx, destZone);
     object = JS_NewPlainObject(cx);
-    if (!object) {
-      return nullptr;
-    }
+    if (!object) return nullptr;
   }
   {
-    JSAutoRealm ar(cx, sourceZone);
-    if (!JS_WrapObject(cx, &object)) {
-      return nullptr;
-    }
+    JSAutoCompartment ac(cx, sourceZone);
+    if (!JS_WrapObject(cx, &object)) return nullptr;
   }
 
   // In order to test the SCC algorithm, we need the wrapper/wrappee to be
@@ -207,7 +199,7 @@ JSObject* newDelegate() {
   };
 
   static const js::ClassExtension delegateClassExtension = {
-      DelegateObjectMoved};
+      nullptr, DelegateObjectMoved};
 
   static const js::Class delegateClass = {
       "delegate",
@@ -218,13 +210,11 @@ JSObject* newDelegate() {
       JS_NULL_OBJECT_OPS};
 
   /* Create the global object. */
-  JS::RealmOptions options;
+  JS::CompartmentOptions options;
   JS::RootedObject global(
       cx, JS_NewGlobalObject(cx, Jsvalify(&delegateClass), nullptr,
                              JS::FireOnNewGlobalHook, options));
-  if (!global) {
-    return nullptr;
-  }
+  if (!global) return nullptr;
 
   JS_SetReservedSlot(global, 0, JS::Int32Value(42));
   return global;

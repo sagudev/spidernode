@@ -3,6 +3,9 @@
  * http://creativecommons.org/licenses/publicdomain/
  */
 
+if (!this.hasOwnProperty("TypedObject"))
+  quit();
+
 setJitCompilerOption("ion.warmup.trigger", 30);
 
 var Vec3u16Type = TypedObject.uint16.array(3);

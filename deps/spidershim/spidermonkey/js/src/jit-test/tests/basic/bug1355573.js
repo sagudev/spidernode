@@ -1,6 +1,7 @@
-// |jit-test| skip-if: getBuildConfiguration().debug === true
+if (getBuildConfiguration().debug === true)
+    quit(0);
 function f(){};
-Object.defineProperty(f, "name", {value: "a".repeat((1<<30)-2)});
+Object.defineProperty(f, "name", {value: "a".repeat((1<<28)-1)});
 var ex = null;
 try {
     len = f.bind().name.length;

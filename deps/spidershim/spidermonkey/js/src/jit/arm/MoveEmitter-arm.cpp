@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,9 +28,7 @@ void MoveEmitterARM::emit(const MoveResolver& moves) {
     pushedAtCycle_ = masm.framePushed();
   }
 
-  for (size_t i = 0; i < moves.numMoves(); i++) {
-    emit(moves.getMove(i));
-  }
+  for (size_t i = 0; i < moves.numMoves(); i++) emit(moves.getMove(i));
 }
 
 MoveEmitterARM::~MoveEmitterARM() { assertDone(); }
@@ -63,9 +61,7 @@ Address MoveEmitterARM::toAddress(const MoveOperand& operand) const {
 }
 
 Register MoveEmitterARM::tempReg() {
-  if (spilledReg_ != InvalidReg) {
-    return spilledReg_;
-  }
+  if (spilledReg_ != InvalidReg) return spilledReg_;
 
   // For now, just pick r12/ip as the eviction point. This is totally random,
   // and if it ends up being bad, we can use actual heuristics later. r12 is
@@ -175,9 +171,8 @@ void MoveEmitterARM::completeCycle(const MoveOperand& from,
         masm.ma_ldr(toAddress(from), to.reg(), scratch);
       } else {
         uint32_t offset = 0;
-        if ((!from.isMemory()) && from.floatReg().numAlignedAliased() == 1) {
+        if ((!from.isMemory()) && from.floatReg().numAlignedAliased() == 1)
           offset = sizeof(float);
-        }
         masm.ma_vldr(cycleSlot(slotId, offset), to.floatReg(), scratch);
       }
       break;
@@ -194,9 +189,8 @@ void MoveEmitterARM::completeCycle(const MoveOperand& from,
         masm.ma_vxfer(scratchDouble, to.evenReg(), to.oddReg());
       } else {
         uint32_t offset = 0;
-        if ((!from.isMemory()) && from.floatReg().numAlignedAliased() == 1) {
+        if ((!from.isMemory()) && from.floatReg().numAlignedAliased() == 1)
           offset = sizeof(float);
-        }
         masm.ma_vldr(cycleSlot(slotId, offset), to.floatReg(), scratch);
       }
       break;
@@ -240,28 +234,25 @@ void MoveEmitterARM::emitMove(const MoveOperand& from, const MoveOperand& to) {
       masm.ma_ldr(spillSlot(), spilledReg_, scratch);
       spilledReg_ = InvalidReg;
     }
-    if (to.isMemoryOrEffectiveAddress()) {
+    if (to.isMemoryOrEffectiveAddress())
       masm.ma_str(from.reg(), toAddress(to), scratch);
-    } else {
+    else
       masm.ma_mov(from.reg(), to.reg());
-    }
   } else if (to.isGeneralReg()) {
     MOZ_ASSERT(from.isMemoryOrEffectiveAddress());
-    if (from.isMemory()) {
+    if (from.isMemory())
       masm.ma_ldr(toAddress(from), to.reg(), scratch);
-    } else {
+    else
       masm.ma_add(from.base(), Imm32(from.disp()), to.reg(), scratch);
-    }
   } else {
     // Memory to memory gpr move.
     Register reg = tempReg();
 
     MOZ_ASSERT(from.isMemoryOrEffectiveAddress());
-    if (from.isMemory()) {
+    if (from.isMemory())
       masm.ma_ldr(toAddress(from), reg, scratch);
-    } else {
+    else
       masm.ma_add(from.base(), Imm32(from.disp()), reg, scratch);
-    }
     MOZ_ASSERT(to.base() != reg);
     masm.ma_str(reg, toAddress(to), scratch);
   }
@@ -276,14 +267,13 @@ void MoveEmitterARM::emitFloat32Move(const MoveOperand& from,
   ScratchRegisterScope scratch(masm);
 
   if (from.isFloatReg()) {
-    if (to.isFloatReg()) {
+    if (to.isFloatReg())
       masm.ma_vmov_f32(from.floatReg(), to.floatReg());
-    } else if (to.isGeneralReg()) {
+    else if (to.isGeneralReg())
       masm.ma_vxfer(from.floatReg(), to.reg());
-    } else {
+    else
       masm.ma_vstr(VFPRegister(from.floatReg()).singleOverlay(), toAddress(to),
                    scratch);
-    }
   } else if (from.isGeneralReg()) {
     if (to.isFloatReg()) {
       masm.ma_vxfer(from.reg(), to.floatReg());
@@ -315,17 +305,16 @@ void MoveEmitterARM::emitDoubleMove(const MoveOperand& from,
   ScratchRegisterScope scratch(masm);
 
   if (from.isFloatReg()) {
-    if (to.isFloatReg()) {
+    if (to.isFloatReg())
       masm.ma_vmov(from.floatReg(), to.floatReg());
-    } else if (to.isGeneralRegPair()) {
+    else if (to.isGeneralRegPair())
       masm.ma_vxfer(from.floatReg(), to.evenReg(), to.oddReg());
-    } else {
+    else
       masm.ma_vstr(from.floatReg(), toAddress(to), scratch);
-    }
   } else if (from.isGeneralRegPair()) {
-    if (to.isFloatReg()) {
+    if (to.isFloatReg())
       masm.ma_vxfer(from.evenReg(), from.oddReg(), to.floatReg());
-    } else if (to.isGeneralRegPair()) {
+    else if (to.isGeneralRegPair()) {
       MOZ_ASSERT(!from.aliases(to));
       masm.ma_mov(from.evenReg(), to.evenReg());
       masm.ma_mov(from.oddReg(), to.oddReg());

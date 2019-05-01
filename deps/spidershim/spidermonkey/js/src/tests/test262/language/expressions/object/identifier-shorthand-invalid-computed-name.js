@@ -25,6 +25,6 @@ negative:
 var x = "y";
 var y = 42;
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 ({[x]});

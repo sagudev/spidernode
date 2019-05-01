@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,8 +11,6 @@
 #include "mozilla/GuardObjects.h"
 #include "mozilla/OperatorNewExtensions.h"
 #include "mozilla/TypeTraits.h"
-
-#include <utility>
 
 #include "ds/LifoAlloc.h"
 #include "jit/InlineList.h"
@@ -43,18 +41,19 @@ class TempAllocator {
 
   MOZ_MUST_USE void* allocate(size_t bytes) {
     LifoAlloc::AutoFallibleScope fallibleAllocator(lifoAlloc());
-    return lifoScope_.alloc().allocEnsureUnused(bytes, BallastSize);
+    void* p = lifoScope_.alloc().alloc(bytes);
+    if (!ensureBallast()) return nullptr;
+    return p;
   }
 
   template <typename T>
   MOZ_MUST_USE T* allocateArray(size_t n) {
     LifoAlloc::AutoFallibleScope fallibleAllocator(lifoAlloc());
     size_t bytes;
-    if (MOZ_UNLIKELY(!CalculateAllocSize<T>(n, &bytes))) {
-      return nullptr;
-    }
-    return static_cast<T*>(
-        lifoScope_.alloc().allocEnsureUnused(bytes, BallastSize));
+    if (MOZ_UNLIKELY(!CalculateAllocSize<T>(n, &bytes))) return nullptr;
+    T* p = static_cast<T*>(lifoScope_.alloc().alloc(bytes));
+    if (MOZ_UNLIKELY(!ensureBallast())) return nullptr;
+    return p;
   }
 
   // View this allocator as a fallible allocator.
@@ -79,25 +78,19 @@ class JitAllocPolicy {
   template <typename T>
   T* maybe_pod_malloc(size_t numElems) {
     size_t bytes;
-    if (MOZ_UNLIKELY(!CalculateAllocSize<T>(numElems, &bytes))) {
-      return nullptr;
-    }
+    if (MOZ_UNLIKELY(!CalculateAllocSize<T>(numElems, &bytes))) return nullptr;
     return static_cast<T*>(alloc_.allocate(bytes));
   }
   template <typename T>
   T* maybe_pod_calloc(size_t numElems) {
     T* p = maybe_pod_malloc<T>(numElems);
-    if (MOZ_LIKELY(p)) {
-      memset(p, 0, numElems * sizeof(T));
-    }
+    if (MOZ_LIKELY(p)) memset(p, 0, numElems * sizeof(T));
     return p;
   }
   template <typename T>
   T* maybe_pod_realloc(T* p, size_t oldSize, size_t newSize) {
     T* n = pod_malloc<T>(newSize);
-    if (MOZ_UNLIKELY(!n)) {
-      return n;
-    }
+    if (MOZ_UNLIKELY(!n)) return n;
     MOZ_ASSERT(!(oldSize & mozilla::tl::MulOverflowMask<sizeof(T)>::value));
     memcpy(n, p, Min(oldSize * sizeof(T), newSize * sizeof(T)));
     return n;
@@ -114,8 +107,7 @@ class JitAllocPolicy {
   T* pod_realloc(T* ptr, size_t oldSize, size_t newSize) {
     return maybe_pod_realloc<T>(ptr, oldSize, newSize);
   }
-  template <typename T>
-  void free_(T* p, size_t numElems = 0) {}
+  void free_(void* p) {}
   void reportAllocOverflow() const {}
   MOZ_MUST_USE bool checkSimulatedOOM() const {
     return !js::oom::ShouldFailWithOOM();
@@ -175,14 +167,10 @@ class TempObjectPool {
     MOZ_ASSERT(freed_.empty());
     alloc_ = &alloc;
   }
-  template <typename... Args>
-  T* allocate(Args&&... args) {
+  T* allocate() {
     MOZ_ASSERT(alloc_);
-    if (freed_.empty()) {
-      return new (alloc_->fallible()) T(std::forward<Args>(args)...);
-    }
-    T* res = freed_.popFront();
-    return new (res) T(std::forward<Args>(args)...);
+    if (freed_.empty()) return new (alloc_->fallible()) T();
+    return freed_.popFront();
   }
   void free(T* obj) { freed_.pushFront(obj); }
   void clear() { freed_.clear(); }

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,26 +26,18 @@ static uint32_t get_mips_flags() {
   flags |= HWCAP_FPU;
   flags |= HWCAP_R2;
 #else
-#  ifdef __linux__
+#ifdef __linux__
   FILE* fp = fopen("/proc/cpuinfo", "r");
-  if (!fp) {
-    return flags;
-  }
+  if (!fp) return flags;
 
   char buf[1024];
   memset(buf, 0, sizeof(buf));
   (void)fread(buf, sizeof(char), sizeof(buf) - 1, fp);
   fclose(fp);
-  if (strstr(buf, "FPU")) {
-    flags |= HWCAP_FPU;
-  }
-  if (strstr(buf, "Loongson")) {
-    flags |= HWCAP_LOONGSON;
-  }
-  if (strstr(buf, "mips32r2") || strstr(buf, "mips64r2")) {
-    flags |= HWCAP_R2;
-  }
-#  endif
+  if (strstr(buf, "FPU")) flags |= HWCAP_FPU;
+  if (strstr(buf, "Loongson")) flags |= HWCAP_LOONGSON;
+  if (strstr(buf, "mips32r2") || strstr(buf, "mips64r2")) flags |= HWCAP_R2;
+#endif
 #endif  // JS_SIMULATOR_MIPS32 || JS_SIMULATOR_MIPS64
   return flags;
 }
@@ -67,9 +59,7 @@ bool hasR2 = check_r2();
 
 Registers::Code Registers::FromName(const char* name) {
   for (size_t i = 0; i < Total; i++) {
-    if (strcmp(GetName(i), name) == 0) {
-      return Code(i);
-    }
+    if (strcmp(GetName(i), name) == 0) return Code(i);
   }
 
   return Invalid;

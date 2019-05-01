@@ -31,7 +31,6 @@
 #include "unicode/decimfmt.h"
 #include "unicode/localpointer.h"
 #include "unicode/msgfmt.h"
-#include "unicode/numberformatter.h"
 #include "unicode/plurfmt.h"
 #include "unicode/rbnf.h"
 #include "unicode/selfmt.h"
@@ -49,7 +48,7 @@
 #include "ustrfmt.h"
 #include "util.h"
 #include "uvector.h"
-#include "number_decimalquantity.h"
+#include "visibledigits.h"
 
 // *****************************************************************************
 // class MessageFormat
@@ -810,31 +809,26 @@ MessageFormat::getFormats(int32_t& cnt) const
     // method on this object.  We construct and resize an array
     // on demand that contains aliases to the subformats[i].format
     // pointers.
-
-    // Get total required capacity first (it's refreshed on each call).
-    int32_t totalCapacity = 0;
-    for (int32_t partIndex = 0; (partIndex = nextTopLevelArgStart(partIndex)) >= 0; ++totalCapacity) {};
-
     MessageFormat* t = const_cast<MessageFormat*> (this);
     cnt = 0;
-    if (formatAliases == nullptr) {
-        t->formatAliasesCapacity = totalCapacity;
+    if (formatAliases == NULL) {
+        t->formatAliasesCapacity = (argTypeCount<10) ? 10 : argTypeCount;
         Format** a = (Format**)
             uprv_malloc(sizeof(Format*) * formatAliasesCapacity);
-        if (a == nullptr) {
+        if (a == NULL) {
             t->formatAliasesCapacity = 0;
-            return nullptr;
+            return NULL;
         }
         t->formatAliases = a;
-    } else if (totalCapacity > formatAliasesCapacity) {
+    } else if (argTypeCount > formatAliasesCapacity) {
         Format** a = (Format**)
-            uprv_realloc(formatAliases, sizeof(Format*) * totalCapacity);
-        if (a == nullptr) {
+            uprv_realloc(formatAliases, sizeof(Format*) * argTypeCount);
+        if (a == NULL) {
             t->formatAliasesCapacity = 0;
-            return nullptr;
+            return NULL;
         }
         t->formatAliases = a;
-        t->formatAliasesCapacity = totalCapacity;
+        t->formatAliasesCapacity = argTypeCount;
     }
 
     for (int32_t partIndex = 0; (partIndex = nextTopLevelArgStart(partIndex)) >= 0;) {
@@ -1083,7 +1077,7 @@ void MessageFormat::format(int32_t msgStart, const void *plNumber,
                 // that formats the number without subtracting the offset.
                 appendTo.formatAndAppend(pluralNumber.formatter, *arg, success);
             }
-        } else if ((formatter = getCachedFormatter(i -2)) != 0) {
+        } else if ((formatter = getCachedFormatter(i -2))) {
             // Handles all ArgType.SIMPLE, and formatters from setFormat() and its siblings.
             if (dynamic_cast<const ChoiceFormat*>(formatter) ||
                 dynamic_cast<const PluralFormat*>(formatter) ||
@@ -1678,6 +1672,7 @@ void MessageFormat::cacheExplicitFormats(UErrorCode& status) {
     }
 }
 
+
 Format* MessageFormat::createAppropriateFormat(UnicodeString& type, UnicodeString& style,
                                                Formattable::Type& formattableType, UParseError& parseError,
                                                UErrorCode& ec) {
@@ -1687,7 +1682,6 @@ Format* MessageFormat::createAppropriateFormat(UnicodeString& type, UnicodeStrin
     Format* fmt = NULL;
     int32_t typeID, styleID;
     DateFormat::EStyle date_style;
-    int32_t firstNonSpace;
 
     switch (typeID = findKeyword(type, TYPE_IDS)) {
     case 0: // number
@@ -1706,20 +1700,12 @@ Format* MessageFormat::createAppropriateFormat(UnicodeString& type, UnicodeStrin
             formattableType = Formattable::kLong;
             fmt = createIntegerFormat(fLocale, ec);
             break;
-        default: // pattern or skeleton
-            firstNonSpace = PatternProps::skipWhiteSpace(style, 0);
-            if (style.compare(firstNonSpace, 2, u"::", 0, 2) == 0) {
-                // Skeleton
-                UnicodeString skeleton = style.tempSubString(firstNonSpace + 2);
-                fmt = number::NumberFormatter::forSkeleton(skeleton, ec).locale(fLocale).toFormat(ec);
-            } else {
-                // Pattern
-                fmt = NumberFormat::createInstance(fLocale, ec);
-                if (fmt) {
-                    auto* decfmt = dynamic_cast<DecimalFormat*>(fmt);
-                    if (decfmt != nullptr) {
-                        decfmt->applyPattern(style, parseError, ec);
-                    }
+        default: // pattern
+            fmt = NumberFormat::createInstance(fLocale, ec);
+            if (fmt) {
+                DecimalFormat* decfmt = dynamic_cast<DecimalFormat*>(fmt);
+                if (decfmt != NULL) {
+                    decfmt->applyPattern(style,parseError,ec);
                 }
             }
             break;
@@ -1729,27 +1715,19 @@ Format* MessageFormat::createAppropriateFormat(UnicodeString& type, UnicodeStrin
     case 1: // date
     case 2: // time
         formattableType = Formattable::kDate;
-        firstNonSpace = PatternProps::skipWhiteSpace(style, 0);
-        if (style.compare(firstNonSpace, 2, u"::", 0, 2) == 0) {
-            // Skeleton
-            UnicodeString skeleton = style.tempSubString(firstNonSpace + 2);
-            fmt = DateFormat::createInstanceForSkeleton(skeleton, fLocale, ec);
+        styleID = findKeyword(style, DATE_STYLE_IDS);
+        date_style = (styleID >= 0) ? DATE_STYLES[styleID] : DateFormat::kDefault;
+
+        if (typeID == 1) {
+            fmt = DateFormat::createDateInstance(date_style, fLocale);
         } else {
-            // Pattern
-            styleID = findKeyword(style, DATE_STYLE_IDS);
-            date_style = (styleID >= 0) ? DATE_STYLES[styleID] : DateFormat::kDefault;
+            fmt = DateFormat::createTimeInstance(date_style, fLocale);
+        }
 
-            if (typeID == 1) {
-                fmt = DateFormat::createDateInstance(date_style, fLocale);
-            } else {
-                fmt = DateFormat::createTimeInstance(date_style, fLocale);
-            }
-
-            if (styleID < 0 && fmt != NULL) {
-                SimpleDateFormat* sdtfmt = dynamic_cast<SimpleDateFormat*>(fmt);
-                if (sdtfmt != NULL) {
-                    sdtfmt->applyPattern(style);
-                }
+        if (styleID < 0 && fmt != NULL) {
+            SimpleDateFormat* sdtfmt = dynamic_cast<SimpleDateFormat*>(fmt);
+            if (sdtfmt != NULL) {
+                sdtfmt->applyPattern(style);
             }
         }
         break;
@@ -1981,14 +1959,14 @@ UnicodeString MessageFormat::PluralSelectorProvider::select(void *ctx, double nu
         return UnicodeString(FALSE, OTHER_STRING, 5);
     }
     context.formatter->format(context.number, context.numberString, ec);
-    auto* decFmt = dynamic_cast<const DecimalFormat *>(context.formatter);
+    const DecimalFormat *decFmt = dynamic_cast<const DecimalFormat *>(context.formatter);
     if(decFmt != NULL) {
-        number::impl::DecimalQuantity dq;
-        decFmt->formatToDecimalQuantity(context.number, dq, ec);
+        VisibleDigitsWithExponent digits;
+        decFmt->initVisibleDigitsWithExponent(context.number, digits, ec);
         if (U_FAILURE(ec)) {
             return UnicodeString(FALSE, OTHER_STRING, 5);
         }
-        return rules->select(dq);
+        return rules->select(digits);
     } else {
         return rules->select(number);
     }

@@ -1,3 +1,7 @@
+
+if (typeof TypedObject === "undefined")
+    quit();
+
 // Test the relationships between prototypes for array typed objects.
 
 var arrA = new TypedObject.ArrayType(TypedObject.int32, 10);

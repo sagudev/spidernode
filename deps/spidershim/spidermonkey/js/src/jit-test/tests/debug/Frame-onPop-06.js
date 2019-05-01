@@ -1,6 +1,5 @@
 // dbg.getNewestFrame in an onPop handler returns the frame being popped.
-
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.eval("function f() { debugger; }");
 g.eval("function g() { f(); }");
 g.eval("function h() { g(); }");

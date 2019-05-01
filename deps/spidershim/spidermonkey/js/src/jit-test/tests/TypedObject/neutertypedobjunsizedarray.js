@@ -1,7 +1,10 @@
 // Test the case where we detach the buffer underlying a variable-length array.
 // Here we can fold the detached check into the bounds check.
 
-var {StructType, uint32} = TypedObject;
+if (!this.hasOwnProperty("TypedObject"))
+  quit();
+
+var {StructType, uint32, storage} = TypedObject;
 var S = new StructType({f: uint32, g: uint32});
 var A = S.array(10);
 
@@ -16,6 +19,20 @@ function main() {
 
   for (var i = 0; i < 10; i++)
     assertEq(readFrom(a), 66);
+
+  detachArrayBuffer(storage(a).buffer);
+
+  for (var i = 0; i < 10; i++) {
+    var ok = false;
+
+    try {
+      readFrom(a);
+    } catch (e) {
+      ok = e instanceof TypeError;
+    }
+
+    assertEq(ok, true);
+  }
 }
 
 main();

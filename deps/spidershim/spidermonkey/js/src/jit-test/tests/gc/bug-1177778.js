@@ -1,10 +1,11 @@
-// |jit-test| skip-if: !('setGCCallback' in this)
+if (!("setGCCallback" in this))
+    quit();
 
 setGCCallback({
     action: "majorGC",
     phases: "both"
 });
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger;
 var gw = dbg.addDebuggee(g);
 g.eval("function h() { debugger; }");

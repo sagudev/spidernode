@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,7 +22,7 @@ static inline bool CanBeFinalizedInBackground(AllocKind kind,
   MOZ_ASSERT(IsObjectAllocKind(kind));
   /* If the class has no finalizer or a finalizer that is safe to call on
    * a different thread, we change the alloc kind. For example,
-   * AllocKind::OBJECT0 calls the finalizer on the main thread,
+   * AllocKind::OBJECT0 calls the finalizer on the active thread,
    * AllocKind::OBJECT0_BACKGROUND calls the finalizer on the gcHelperThread.
    * IsBackgroundFinalized is called to prevent recursively incrementing
    * the alloc kind; kind may already be a background finalize kind.
@@ -45,23 +45,17 @@ extern const AllocKind slotsToThingKind[];
 
 /* Get the best kind to use when making an object with the given slot count. */
 static inline AllocKind GetGCObjectKind(size_t numSlots) {
-  if (numSlots >= SLOTS_TO_THING_KIND_LIMIT) {
-    return AllocKind::OBJECT16;
-  }
+  if (numSlots >= SLOTS_TO_THING_KIND_LIMIT) return AllocKind::OBJECT16;
   return slotsToThingKind[numSlots];
 }
 
 static inline AllocKind GetGCObjectKind(const Class* clasp) {
-  if (clasp == FunctionClassPtr) {
-    return AllocKind::FUNCTION;
-  }
+  if (clasp == FunctionClassPtr) return AllocKind::FUNCTION;
 
   MOZ_ASSERT(!clasp->isProxy(), "Proxies should use GetProxyGCObjectKind");
 
   uint32_t nslots = JSCLASS_RESERVED_SLOTS(clasp);
-  if (clasp->flags & JSCLASS_HAS_PRIVATE) {
-    nslots++;
-  }
+  if (clasp->flags & JSCLASS_HAS_PRIVATE) nslots++;
   return GetGCObjectKind(nslots);
 }
 
@@ -92,9 +86,7 @@ static inline AllocKind GetGCObjectFixedSlotsKind(size_t numFixedSlots) {
 static inline AllocKind GetGCObjectKindForBytes(size_t nbytes) {
   MOZ_ASSERT(nbytes <= JSObject::MAX_BYTE_SIZE);
 
-  if (nbytes <= sizeof(NativeObject)) {
-    return AllocKind::OBJECT0;
-  }
+  if (nbytes <= sizeof(NativeObject)) return AllocKind::OBJECT0;
   nbytes -= sizeof(NativeObject);
 
   size_t dataSlots = AlignBytes(nbytes, sizeof(Value)) / sizeof(Value);
@@ -104,8 +96,8 @@ static inline AllocKind GetGCObjectKindForBytes(size_t nbytes) {
 
 /* Get the number of fixed slots and initial capacity associated with a kind. */
 static inline size_t GetGCKindSlots(AllocKind thingKind) {
-  // Using a switch in hopes that thingKind will usually be a compile-time
-  // constant.
+  /* Using a switch in hopes that thingKind will usually be a compile-time
+   * constant. */
   switch (thingKind) {
     case AllocKind::FUNCTION:
     case AllocKind::OBJECT0:
@@ -145,9 +137,7 @@ static inline size_t GetGCKindSlots(AllocKind thingKind, const Class* clasp) {
    * Functions have a larger alloc kind than AllocKind::OBJECT to reserve
    * space for the extra fields in JSFunction, but have no fixed slots.
    */
-  if (clasp == FunctionClassPtr) {
-    nslots = 0;
-  }
+  if (clasp == FunctionClassPtr) nslots = 0;
 
   return nslots;
 }

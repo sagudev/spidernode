@@ -1,17 +1,8 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html#License
 tg{
-    Version{"2.1.47.96"}
+    Version{"2.1.37.4"}
     zoneStrings{
-        "Asia:Dushanbe"{
-            ec{"Душанбе"}
-        }
-        "Etc:UTC"{
-            ls{"Вақти ҷаҳонии ҳамоҳангсозӣ"}
-        }
-        "Etc:Unknown"{
-            ec{"Шаҳри номаълум"}
-        }
         "meta:America_Central"{
             ld{"Вақти рӯзонаи марказӣ"}
             lg{"Вақти марказӣ"}

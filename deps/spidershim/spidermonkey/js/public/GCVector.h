@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,10 +38,10 @@ class GCVector {
  public:
   explicit GCVector(AllocPolicy alloc = AllocPolicy()) : vector(alloc) {}
 
-  GCVector(GCVector&& vec) : vector(std::move(vec.vector)) {}
+  GCVector(GCVector&& vec) : vector(mozilla::Move(vec.vector)) {}
 
   GCVector& operator=(GCVector&& vec) {
-    vector = std::move(vec.vector);
+    vector = mozilla::Move(vec.vector);
     return *this;
   }
 
@@ -72,17 +72,17 @@ class GCVector {
 
   template <typename U>
   bool append(U&& item) {
-    return vector.append(std::forward<U>(item));
+    return vector.append(mozilla::Forward<U>(item));
   }
 
   template <typename... Args>
   MOZ_MUST_USE bool emplaceBack(Args&&... args) {
-    return vector.emplaceBack(std::forward<Args>(args)...);
+    return vector.emplaceBack(mozilla::Forward<Args>(args)...);
   }
 
   template <typename U>
   void infallibleAppend(U&& aU) {
-    return vector.infallibleAppend(std::forward<U>(aU));
+    return vector.infallibleAppend(mozilla::Forward<U>(aU));
   }
   void infallibleAppendN(const T& aT, size_t aN) {
     return vector.infallibleAppendN(aT, aN);
@@ -128,9 +128,7 @@ class GCVector {
   static void trace(GCVector* vec, JSTracer* trc) { vec->trace(trc); }
 
   void trace(JSTracer* trc) {
-    for (auto& elem : vector) {
-      GCPolicy<T>::trace(trc, &elem, "vector element");
-    }
+    for (auto& elem : vector) GCPolicy<T>::trace(trc, &elem, "vector element");
   }
 
   bool needsSweep() const { return !this->empty(); }
@@ -139,28 +137,13 @@ class GCVector {
     uint32_t src, dst = 0;
     for (src = 0; src < length(); src++) {
       if (!GCPolicy<T>::needsSweep(&vector[src])) {
-        if (dst != src) {
-          vector[dst] = vector[src].unbarrieredGet();
-        }
+        if (dst != src) vector[dst] = vector[src].unbarrieredGet();
         dst++;
       }
     }
 
-    if (dst != length()) {
-      vector.shrinkTo(dst);
-    }
+    if (dst != length()) vector.shrinkTo(dst);
   }
-};
-
-// AllocPolicy is optional. It has a default value declared in TypeDecls.h
-template <typename T, typename AllocPolicy>
-class MOZ_STACK_CLASS StackGCVector : public GCVector<T, 8, AllocPolicy> {
- public:
-  using Base = GCVector<T, 8, AllocPolicy>;
-
- private:
-  // Inherit constructor from GCVector.
-  using Base::Base;
 };
 
 }  // namespace JS
@@ -234,11 +217,11 @@ class MutableWrappedPtrOperations<JS::GCVector<T, Capacity, AllocPolicy>,
   void clearAndFree() { vec().clearAndFree(); }
   template <typename U>
   MOZ_MUST_USE bool append(U&& aU) {
-    return vec().append(std::forward<U>(aU));
+    return vec().append(mozilla::Forward<U>(aU));
   }
   template <typename... Args>
   MOZ_MUST_USE bool emplaceBack(Args&&... aArgs) {
-    return vec().emplaceBack(std::forward<Args>(aArgs)...);
+    return vec().emplaceBack(mozilla::Forward<Args...>(aArgs...));
   }
   template <typename U>
   MOZ_MUST_USE bool appendAll(const U& aU) {
@@ -257,7 +240,7 @@ class MutableWrappedPtrOperations<JS::GCVector<T, Capacity, AllocPolicy>,
   }
   template <typename U>
   void infallibleAppend(U&& aU) {
-    vec().infallibleAppend(std::forward<U>(aU));
+    vec().infallibleAppend(mozilla::Forward<U>(aU));
   }
   void infallibleAppendN(const T& aT, size_t aN) {
     vec().infallibleAppendN(aT, aN);
@@ -274,34 +257,24 @@ class MutableWrappedPtrOperations<JS::GCVector<T, Capacity, AllocPolicy>,
   T popCopy() { return vec().popCopy(); }
   template <typename U>
   T* insert(T* aP, U&& aVal) {
-    return vec().insert(aP, std::forward<U>(aVal));
+    return vec().insert(aP, mozilla::Forward<U>(aVal));
   }
   void erase(T* aT) { vec().erase(aT); }
   void erase(T* aBegin, T* aEnd) { vec().erase(aBegin, aEnd); }
 };
 
-template <typename Wrapper, typename T, typename AllocPolicy>
-class WrappedPtrOperations<JS::StackGCVector<T, AllocPolicy>, Wrapper>
-    : public WrappedPtrOperations<
-          typename JS::StackGCVector<T, AllocPolicy>::Base, Wrapper> {};
-
-template <typename Wrapper, typename T, typename AllocPolicy>
-class MutableWrappedPtrOperations<JS::StackGCVector<T, AllocPolicy>, Wrapper>
-    : public MutableWrappedPtrOperations<
-          typename JS::StackGCVector<T, AllocPolicy>::Base, Wrapper> {};
-
 }  // namespace js
 
 namespace JS {
 
-// An automatically rooted GCVector for stack use.
+// An automatically rooted vector for stack use.
 template <typename T>
-class RootedVector : public Rooted<StackGCVector<T>> {
-  using Vec = StackGCVector<T>;
+class AutoVector : public Rooted<GCVector<T, 8>> {
+  using Vec = GCVector<T, 8>;
   using Base = Rooted<Vec>;
 
  public:
-  explicit RootedVector(JSContext* cx) : Base(cx, Vec(cx)) {}
+  explicit AutoVector(JSContext* cx) : Base(cx, Vec(cx)) {}
 };
 
 }  // namespace JS

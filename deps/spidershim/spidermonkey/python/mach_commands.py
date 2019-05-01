@@ -9,7 +9,6 @@ import logging
 import os
 import sys
 import tempfile
-from multiprocessing import cpu_count
 
 from concurrent.futures import (
     ThreadPoolExecutor,
@@ -21,6 +20,7 @@ import mozinfo
 from manifestparser import TestManifest
 from manifestparser import filters as mpf
 
+import mozpack.path as mozpath
 from mozbuild.base import (
     MachCommandBase,
 )
@@ -31,8 +31,6 @@ from mach.decorators import (
     Command,
 )
 
-here = os.path.abspath(os.path.dirname(__file__))
-
 
 @CommandProvider
 class MachCommands(MachCommandBase):
@@ -40,11 +38,8 @@ class MachCommands(MachCommandBase):
              description='Run Python.')
     @CommandArgument('--no-virtualenv', action='store_true',
                      help='Do not set up a virtualenv')
-    @CommandArgument('--exec-file',
-                     default=None,
-                     help='Execute this Python file using `execfile`')
     @CommandArgument('args', nargs=argparse.REMAINDER)
-    def python(self, no_virtualenv, exec_file, args):
+    def python(self, no_virtualenv, args):
         # Avoid logging the command
         self.log_manager.terminal_handler.setLevel(logging.CRITICAL)
 
@@ -60,10 +55,6 @@ class MachCommands(MachCommandBase):
             self._activate_virtualenv()
             python_path = self.virtualenv_manager.python_path
 
-        if exec_file:
-            execfile(exec_file)
-            return 0
-
         return self.run_process([python_path] + args,
                                 pass_thru=True,  # Allow user to run Python interactively.
                                 ensure_exit_code=False,  # Don't throw on non-zero exit code.
@@ -75,16 +66,14 @@ class MachCommands(MachCommandBase):
                      default=False,
                      action='store_true',
                      help='Verbose output.')
-    @CommandArgument('--python',
-                     default='2.7',
-                     help='Version of Python for Pipenv to use. When given a '
-                          'Python version, Pipenv will automatically scan your '
-                          'system for a Python that matches that given version.')
+    @CommandArgument('--stop',
+                     default=False,
+                     action='store_true',
+                     help='Stop running tests after the first error or failure.')
     @CommandArgument('-j', '--jobs',
-                     default=None,
+                     default=1,
                      type=int,
-                     help='Number of concurrent jobs to run. Default is the number of CPUs '
-                          'in the system.')
+                     help='Number of concurrent jobs to run. Default is 1.')
     @CommandArgument('--subsuite',
                      default=None,
                      help=('Python subsuite to run. If not specified, all subsuites are run. '
@@ -102,26 +91,49 @@ class MachCommands(MachCommandBase):
             mozfile.remove(tempdir)
 
     def run_python_tests(self,
-                         tests=None,
+                         tests=[],
                          test_objects=None,
                          subsuite=None,
                          verbose=False,
-                         jobs=None,
-                         python=None,
+                         stop=False,
+                         jobs=1,
                          **kwargs):
-        python = python or self.virtualenv_manager.python_path
-        self.activate_pipenv(pipfile=None, populate=True, python=python)
+        self._activate_virtualenv()
 
+        def find_tests_by_path():
+            import glob
+            files = []
+            for t in tests:
+                if t.endswith('.py') and os.path.isfile(t):
+                    files.append(t)
+                elif os.path.isdir(t):
+                    for root, _, _ in os.walk(t):
+                        files += glob.glob(mozpath.join(root, 'test*.py'))
+                        files += glob.glob(mozpath.join(root, 'unit*.py'))
+                else:
+                    self.log(logging.WARN, 'python-test',
+                             {'test': t},
+                             'TEST-UNEXPECTED-FAIL | Invalid test: {test}')
+                    if stop:
+                        break
+            return files
+
+        # Python's unittest, and in particular discover, has problems with
+        # clashing namespaces when importing multiple test modules. What follows
+        # is a simple way to keep environments separate, at the price of
+        # launching Python multiple times. Most tests are run via mozunit,
+        # which produces output in the format Mozilla infrastructure expects.
+        # Some tests are run via pytest.
         if test_objects is None:
             from moztest.resolve import TestResolver
             resolver = self._spawn(TestResolver)
-            # If we were given test paths, try to find tests matching them.
-            test_objects = resolver.resolve_tests(paths=tests, flavor='python')
-        else:
-            # We've received test_objects from |mach test|. We need to ignore
-            # the subsuite because python-tests don't use this key like other
-            # harnesses do and |mach test| doesn't realize this.
-            subsuite = None
+            if tests:
+                # If we were given test paths, try to find tests matching them.
+                test_objects = resolver.resolve_tests(paths=tests,
+                                                      flavor='python')
+            else:
+                # Otherwise just run everything in PYTHON_UNITTEST_MANIFESTS
+                test_objects = resolver.resolve_tests(flavor='python')
 
         mp = TestManifest()
         mp.tests.extend(test_objects)
@@ -132,11 +144,7 @@ class MachCommands(MachCommandBase):
         elif subsuite:
             filters.append(mpf.subsuite(subsuite))
 
-        tests = mp.active_tests(
-            filters=filters,
-            disabled=False,
-            python=self.virtualenv_manager.version_info[0],
-            **mozinfo.info)
+        tests = mp.active_tests(filters=filters, disabled=False, **mozinfo.info)
 
         if not tests:
             submsg = "for subsuite '{}' ".format(subsuite) if subsuite else ""
@@ -153,7 +161,7 @@ class MachCommands(MachCommandBase):
             else:
                 parallel.append(test)
 
-        self.jobs = jobs or cpu_count()
+        self.jobs = jobs
         self.terminate = False
         self.verbose = verbose
 
@@ -171,7 +179,7 @@ class MachCommands(MachCommandBase):
             return return_code or ret
 
         with ThreadPoolExecutor(max_workers=self.jobs) as executor:
-            futures = [executor.submit(self._run_python_test, test)
+            futures = [executor.submit(self._run_python_test, test['path'])
                        for test in parallel]
 
             try:
@@ -185,17 +193,14 @@ class MachCommands(MachCommandBase):
                 raise
 
         for test in sequential:
-            return_code = on_test_finished(self._run_python_test(test))
+            return_code = on_test_finished(self._run_python_test(test['path']))
 
         self.log(logging.INFO, 'python-test', {'return_code': return_code},
                  'Return code from mach python-test: {return_code}')
         return return_code
 
-    def _run_python_test(self, test):
+    def _run_python_test(self, test_path):
         from mozprocess import ProcessHandler
-
-        if test.get('requirements'):
-            self.virtualenv_manager.install_pip_requirements(test['requirements'], quiet=True)
 
         output = []
 
@@ -221,8 +226,8 @@ class MachCommands(MachCommandBase):
 
             _log(line)
 
-        _log(test['path'])
-        cmd = [self.virtualenv_manager.python_path, test['path']]
+        _log(test_path)
+        cmd = [self.virtualenv_manager.python_path, test_path]
         env = os.environ.copy()
         env[b'PYTHONDONTWRITEBYTECODE'] = b'1'
 
@@ -233,12 +238,12 @@ class MachCommands(MachCommandBase):
 
         if not file_displayed_test:
             _log('TEST-UNEXPECTED-FAIL | No test output (missing mozunit.main() '
-                 'call?): {}'.format(test['path']))
+                 'call?): {}'.format(test_path))
 
         if self.verbose:
             if return_code != 0:
-                _log('Test failed: {}'.format(test['path']))
+                _log('Test failed: {}'.format(test_path))
             else:
-                _log('Test passed: {}'.format(test['path']))
+                _log('Test passed: {}'.format(test_path))
 
-        return output, return_code, test['path']
+        return output, return_code, test_path

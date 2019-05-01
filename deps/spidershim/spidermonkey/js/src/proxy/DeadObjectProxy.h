@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,7 +31,7 @@ class DeadObjectProxy : public BaseProxyHandler {
                               Handle<PropertyDescriptor> desc,
                               ObjectOpResult& result) const override;
   virtual bool ownPropertyKeys(JSContext* cx, HandleObject wrapper,
-                               MutableHandleIdVector props) const override;
+                               AutoIdVector& props) const override;
   virtual bool delete_(JSContext* cx, HandleObject wrapper, HandleId id,
                        ObjectOpResult& result) const override;
   virtual bool getPrototype(JSContext* cx, HandleObject proxy,
@@ -49,7 +49,9 @@ class DeadObjectProxy : public BaseProxyHandler {
                          const CallArgs& args) const override;
 
   /* SpiderMonkey extensions. */
-  // BaseProxyHandler::enumerate will throw by calling ownKeys.
+  // BaseProxyHandler::getPropertyDescriptor will throw by calling
+  // getOwnPropertyDescriptor. BaseProxyHandler::enumerate will throw by calling
+  // ownKeys.
   virtual bool nativeCall(JSContext* cx, IsAcceptableThis test, NativeImpl impl,
                           const CallArgs& args) const override;
   virtual bool hasInstance(JSContext* cx, HandleObject proxy,
@@ -88,12 +90,6 @@ bool IsDeadProxyObject(JSObject* obj);
 Value DeadProxyTargetValue(ProxyObject* obj);
 
 JSObject* NewDeadProxyObject(JSContext* cx, JSObject* origObj = nullptr);
-
-enum class IsCallableFlag : bool { False, True };
-enum class IsConstructorFlag : bool { False, True };
-
-JSObject* NewDeadProxyObject(JSContext* cx, IsCallableFlag isCallable,
-                             IsConstructorFlag isConstructor);
 
 } /* namespace js */
 

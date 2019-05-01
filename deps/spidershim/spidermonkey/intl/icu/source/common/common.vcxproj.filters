@@ -139,9 +139,6 @@
     <ClCompile Include="utrie.cpp">
       <Filter>collections</Filter>
     </ClCompile>
-    <ClCompile Include="utrie_swap.cpp">
-      <Filter>collections</Filter>
-    </ClCompile>
     <ClCompile Include="utrie2.cpp">
       <Filter>collections</Filter>
     </ClCompile>
@@ -361,9 +358,6 @@
     <ClCompile Include="resource.cpp">
       <Filter>locales &amp; resources</Filter>
     </ClCompile>
-    <ClCompile Include="localebuilder.cpp">
-      <Filter>locales &amp; resources</Filter>
-    </ClCompile>
     <ClCompile Include="caniter.cpp">
       <Filter>normalization</Filter>
     </ClCompile>
@@ -389,9 +383,6 @@
       <Filter>normalization</Filter>
     </ClCompile>
     <ClCompile Include="bmpset.cpp">
-      <Filter>properties &amp; sets</Filter>
-    </ClCompile>
-    <ClCompile Include="characterproperties.cpp">
       <Filter>properties &amp; sets</Filter>
     </ClCompile>
     <ClCompile Include="propname.cpp">
@@ -571,6 +562,12 @@
     <ClCompile Include="bytestriebuilder.cpp">
       <Filter>collections</Filter>
     </ClCompile>
+    <ClCompile Include="listformatter.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
+    <ClCompile Include="ulistformatter.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
     <ClCompile Include="messagepattern.cpp">
       <Filter>formatting</Filter>
     </ClCompile>
@@ -592,12 +589,6 @@
     <ClCompile Include="ucharstrieiterator.cpp">
       <Filter>collections</Filter>
     </ClCompile>
-    <ClCompile Include="ucptrie.cpp">
-      <Filter>collections</Filter>
-    </ClCompile>
-    <ClCompile Include="umutablecptrie.cpp">
-      <Filter>collections</Filter>
-    </ClCompile>
     <ClCompile Include="patternprops.cpp">
       <Filter>properties &amp; sets</Filter>
     </ClCompile>
@@ -615,9 +606,6 @@
     </ClCompile>
     <ClCompile Include="ubiditransform.cpp">
       <Filter>bidi</Filter>
-    </ClCompile>
-    <ClCompile Include="static_unicode_sets.cpp">
-      <Filter>formatting</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -855,9 +843,6 @@
     <ClInclude Include="ucase.h">
       <Filter>properties &amp; sets</Filter>
     </ClInclude>
-    <ClInclude Include="ulayout_props.h">
-      <Filter>properties &amp; sets</Filter>
-    </ClInclude>
     <ClInclude Include="unisetspan.h">
       <Filter>properties &amp; sets</Filter>
     </ClInclude>
@@ -951,12 +936,6 @@
     <ClInclude Include="unicode\ubiditransform.h">
       <Filter>bidi</Filter>
     </ClInclude>
-    <ClInclude Include="static_unicode_sets.h">
-      <Filter>formatting</Filter>
-    </ClInclude>
-    <CustomBuild Include="capi_helper.h">
-      <Filter>data &amp; memory</Filter>
-    </CustomBuild>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="common.rc">
@@ -1201,6 +1180,12 @@
     <CustomBuild Include="unicode\messagepattern.h">
       <Filter>formatting</Filter>
     </CustomBuild>
+    <CustomBuild Include="unicode\listformatter.h">
+      <Filter>formatting</Filter>
+    </CustomBuild>
+    <CustomBuild Include="unicode\ulistformatter.h">
+      <Filter>formatting</Filter>
+    </CustomBuild>
     <CustomBuild Include="unicode\appendable.h">
       <Filter>strings</Filter>
     </CustomBuild>
@@ -1211,12 +1196,6 @@
       <Filter>collections</Filter>
     </CustomBuild>
     <CustomBuild Include="unicode\ucharstriebuilder.h">
-      <Filter>collections</Filter>
-    </CustomBuild>
-    <CustomBuild Include="unicode\ucptrie.h">
-      <Filter>collections</Filter>
-    </CustomBuild>
-    <CustomBuild Include="unicode\umutablecptrie.h">
       <Filter>collections</Filter>
     </CustomBuild>
     <CustomBuild Include="unicode\enumset.h">
@@ -1230,9 +1209,6 @@
     </CustomBuild>
     <CustomBuild Include="unicode\stringoptions.h">
       <Filter>strings</Filter>
-    </CustomBuild>
-    <CustomBuild Include="unicode\localebuilder.h">
-      <Filter>locales &amp; resources</Filter>
     </CustomBuild>
   </ItemGroup>
 </Project>

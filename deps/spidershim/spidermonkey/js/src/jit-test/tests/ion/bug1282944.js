@@ -1,4 +1,7 @@
-// |jit-test| --ion-eager; skip-if: helperThreadCount() === 0
+// |jit-test| --ion-eager
+
+if (helperThreadCount() === 0)
+  quit(0);
 
 // (1) Poison an element in the ionLazyLinkList with a builder whose
 //     script is in a different compartment.

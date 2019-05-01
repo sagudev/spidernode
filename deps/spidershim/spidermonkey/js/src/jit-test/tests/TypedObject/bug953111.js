@@ -3,6 +3,9 @@
  * http://creativecommons.org/licenses/publicdomain/
  */
 
+if (!this.hasOwnProperty("TypedObject"))
+  quit();
+
 // bug 953111
 
 var A = TypedObject.uint8.array(0);

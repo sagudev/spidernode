@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,7 +20,7 @@
 // ABI target. The iOS toolchain doesn't define anything specific here,
 // but iOS always supports VFP.
 #if defined(__ARM_PCS_VFP) || defined(XP_IOS)
-#  define JS_CODEGEN_ARM_HARDFP
+#define JS_CODEGEN_ARM_HARDFP
 #endif
 
 namespace js {
@@ -344,34 +344,35 @@ class VFPRegister {
   // What type of data is being stored in this register? UInt / Int are
   // specifically for vcvt, where we need to know how the data is supposed to
   // be converted.
-  enum RegType : uint8_t { Single = 0x0, Double = 0x1, UInt = 0x2, Int = 0x3 };
+  enum RegType { Single = 0x0, Double = 0x1, UInt = 0x2, Int = 0x3 };
 
   typedef FloatRegisters Codes;
   typedef Codes::Code Code;
   typedef Codes::Encoding Encoding;
 
-  // Bitfields below are all uint32_t to make sure MSVC packs them correctly.
+ protected:
+  RegType kind : 2;
+
  public:
   // ARM doesn't have more than 32 registers of each type, so 5 bits should
   // suffice.
   uint32_t code_ : 5;
 
  protected:
-  uint32_t kind : 2;
-  uint32_t _isInvalid : 1;
-  uint32_t _isMissing : 1;
+  bool _isInvalid : 1;
+  bool _isMissing : 1;
 
  public:
   constexpr VFPRegister(uint32_t r, RegType k)
-      : code_(Code(r)), kind(k), _isInvalid(false), _isMissing(false) {}
+      : kind(k), code_(Code(r)), _isInvalid(false), _isMissing(false) {}
   constexpr VFPRegister()
-      : code_(Code(0)), kind(Double), _isInvalid(true), _isMissing(false) {}
+      : kind(Double), code_(Code(0)), _isInvalid(true), _isMissing(false) {}
 
   constexpr VFPRegister(RegType k, uint32_t id, bool invalid, bool missing)
-      : code_(Code(id)), kind(k), _isInvalid(invalid), _isMissing(missing) {}
+      : kind(k), code_(Code(id)), _isInvalid(invalid), _isMissing(missing) {}
 
   explicit constexpr VFPRegister(Code id)
-      : code_(id), kind(Double), _isInvalid(false), _isMissing(false) {}
+      : kind(Double), code_(id), _isInvalid(false), _isMissing(false) {}
   bool operator==(const VFPRegister& other) const {
     return kind == other.kind && code_ == other.code_ &&
            isInvalid() == other.isInvalid();
@@ -435,51 +436,46 @@ class VFPRegister {
     return VFPRegister(code, RegType(kind));
   }
   bool volatile_() const {
-    if (isDouble()) {
-      return !!((1ULL << (code_ >> 1)) & FloatRegisters::VolatileMask);
-    }
-    return !!((1ULL << code_) & FloatRegisters::VolatileMask);
+    if (isDouble())
+      return !!((1 << (code_ >> 1)) & FloatRegisters::VolatileMask);
+    return !!((1 << code_) & FloatRegisters::VolatileMask);
   }
   const char* name() const {
-    if (isDouble()) {
-      return FloatRegisters::GetDoubleName(Encoding(code_));
-    }
+    if (isDouble()) return FloatRegisters::GetDoubleName(Encoding(code_));
     return FloatRegisters::GetSingleName(Encoding(code_));
   }
   bool aliases(const VFPRegister& other) {
-    if (kind == other.kind) {
-      return code_ == other.code_;
-    }
+    if (kind == other.kind) return code_ == other.code_;
     return doubleOverlay() == other.doubleOverlay();
   }
   static const int NumAliasedDoubles = 16;
   uint32_t numAliased() const {
     if (isDouble()) {
-      if (code_ < NumAliasedDoubles) {
-        return 3;
-      }
+      if (code_ < NumAliasedDoubles) return 3;
       return 1;
     }
     return 2;
   }
 
-  VFPRegister aliased(uint32_t aliasIdx) {
+  // N.B. FloatRegister is an explicit outparam here because msvc-2010
+  // miscompiled it on win64 when the value was simply returned
+  void aliased(uint32_t aliasIdx, VFPRegister* ret) {
     if (aliasIdx == 0) {
-      return *this;
+      *ret = *this;
+      return;
     }
     if (isDouble()) {
       MOZ_ASSERT(code_ < NumAliasedDoubles);
       MOZ_ASSERT(aliasIdx <= 2);
-      return singleOverlay(aliasIdx - 1);
+      *ret = singleOverlay(aliasIdx - 1);
+      return;
     }
     MOZ_ASSERT(aliasIdx == 1);
-    return doubleOverlay(aliasIdx - 1);
+    *ret = doubleOverlay(aliasIdx - 1);
   }
   uint32_t numAlignedAliased() const {
     if (isDouble()) {
-      if (code_ < NumAliasedDoubles) {
-        return 2;
-      }
+      if (code_ < NumAliasedDoubles) return 2;
       return 1;
     }
     // s1 has 0 other aligned aliases, 1 total.
@@ -491,17 +487,20 @@ class VFPRegister {
   // If we've stored s0 and s1 in memory, we also want to say that d0 is
   // stored there, but it is only stored at the location where it is aligned
   // e.g. at s0, not s1.
-  VFPRegister alignedAliased(uint32_t aliasIdx) {
+  void alignedAliased(uint32_t aliasIdx, VFPRegister* ret) {
     if (aliasIdx == 0) {
-      return *this;
+      *ret = *this;
+      return;
     }
     MOZ_ASSERT(aliasIdx == 1);
     if (isDouble()) {
       MOZ_ASSERT(code_ < NumAliasedDoubles);
-      return singleOverlay(aliasIdx - 1);
+      *ret = singleOverlay(aliasIdx - 1);
+      return;
     }
     MOZ_ASSERT((code_ & 1) == 0);
-    return doubleOverlay(aliasIdx - 1);
+    *ret = doubleOverlay(aliasIdx - 1);
+    return;
   }
 
   typedef FloatRegisters::SetType SetType;
@@ -525,9 +524,7 @@ class VFPRegister {
   //
   SetType alignedOrDominatedAliasedSet() const {
     if (isSingle()) {
-      if (code_ % 2 != 0) {
-        return SetType(1) << code_;
-      }
+      if (code_ % 2 != 0) return SetType(1) << code_;
       return (SetType(1) << code_) | (SetType(1) << (32 + code_ / 2));
     }
 
@@ -713,11 +710,11 @@ uint32_t GetARMFlags();
 bool UseHardFpABI();
 #else
 static inline bool UseHardFpABI() {
-#  if defined(JS_CODEGEN_ARM_HARDFP)
+#if defined(JS_CODEGEN_ARM_HARDFP)
   return true;
-#  else
+#else
   return false;
-#  endif
+#endif
 }
 #endif
 

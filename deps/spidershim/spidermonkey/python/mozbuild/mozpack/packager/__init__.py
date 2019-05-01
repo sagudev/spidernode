@@ -16,32 +16,25 @@ from mozpack.chrome.manifest import (
     is_manifest,
     parse_manifest,
 )
-from mozpack.files import (
-    ExecutableFile,
-)
 import mozpack.path as mozpath
 from collections import deque
-import json
 
 
 class Component(object):
     '''
     Class that represents a component in a package manifest.
     '''
-
-    def __init__(self, name, destdir='', xz_compress=False):
+    def __init__(self, name, destdir=''):
         if name.find(' ') > 0:
-            errors.fatal('Malformed manifest: space in component name "%s"' % name)
+            errors.fatal('Malformed manifest: space in component name "%s"'
+                         % component)
         self._name = name
         self._destdir = destdir
-        self._xz_compress = xz_compress
 
     def __repr__(self):
         s = self.name
         if self.destdir:
             s += ' destdir="%s"' % self.destdir
-        if self.xz_compress:
-            s += ' xz_compress="1"'
         return s
 
     @property
@@ -51,10 +44,6 @@ class Component(object):
     @property
     def destdir(self):
         return self._destdir
-
-    @property
-    def xz_compress(self):
-        return self._xz_compress
 
     @staticmethod
     def _triples(lst):
@@ -127,11 +116,10 @@ class Component(object):
             errors.fatal('Malformed manifest: %s' % e)
             return
         destdir = options.pop('destdir', '')
-        xz_compress = options.pop('xz_compress', '0') != '0'
         if options:
             errors.fatal('Malformed manifest: options %s not recognized'
                          % options.keys())
-        return Component(name, destdir=destdir, xz_compress=xz_compress)
+        return Component(name, destdir=destdir)
 
 
 class PackageManifestParser(object):
@@ -151,7 +139,6 @@ class PackageManifestParser(object):
     The add and remove methods of the sink object are called with the
     current Component instance and a path.
     '''
-
     def __init__(self, sink):
         '''
         Initialize the package manifest parser with the given sink.
@@ -184,13 +171,13 @@ class PreprocessorOutputWrapper(object):
     File-like helper to handle the preprocessor output and send it to a parser.
     The parser's handle_line method is called in the relevant errors.context.
     '''
-
     def __init__(self, preprocessor, parser):
         self._parser = parser
         self._pp = preprocessor
 
     def write(self, str):
-        with errors.context(self._pp.context['FILE'], self._pp.context['LINE']):
+        file = os.path.normpath(os.path.abspath(self._pp.context['FILE']))
+        with errors.context(file, self._pp.context['LINE']):
             self._parser.handle_line(str)
 
 
@@ -219,7 +206,6 @@ class CallDeque(deque):
     '''
     Queue of function calls to make.
     '''
-
     def append(self, function, *args):
         deque.append(self, (errors.get_context(), function, args))
 
@@ -243,7 +229,6 @@ class SimplePackager(object):
     given first that the simple manifest contents can't guarantee before the
     end of the input.
     '''
-
     def __init__(self, formatter):
         self.formatter = formatter
         # Queue for formatter.add_interfaces()/add_manifest() calls.
@@ -284,30 +269,7 @@ class SimplePackager(object):
                 install_rdf = file.open().read()
                 if self.UNPACK_ADDON_RE.search(install_rdf):
                     addon = 'unpacked'
-                self._add_addon(mozpath.dirname(path), addon)
-            elif mozpath.basename(path) == 'manifest.json':
-                manifest = file.open().read()
-                try:
-                    parsed = json.loads(manifest)
-                except ValueError:
-                    pass
-                if isinstance(parsed, dict) and 'manifest_version' in parsed:
-                    self._add_addon(mozpath.dirname(path), True)
-
-    def _add_addon(self, path, addon_type):
-        '''
-        Add the given BaseFile to the collection of addons if a parent
-        directory is not already in the collection.
-        '''
-        if mozpath.basedir(path, self._addons) is not None:
-            return
-
-        for dir in self._addons:
-            if mozpath.basedir(dir, [path]) is not None:
-                del self._addons[dir]
-                break
-
-        self._addons[path] = addon_type
+                self._addons[mozpath.dirname(path)] = addon
 
     def _add_manifest_file(self, path, file):
         '''
@@ -349,7 +311,7 @@ class SimplePackager(object):
         '''
         all_bases = set(mozpath.dirname(m)
                         for m in self._manifests
-                        - set(self._included_manifests))
+                                 - set(self._included_manifests))
         if not addons:
             all_bases -= set(self._addons)
         else:
@@ -388,7 +350,6 @@ class SimpleManifestSink(object):
     Entries starting with bin/ are searched under bin/ in the FileFinder, but
     are packaged without the bin/ prefix.
     '''
-
     def __init__(self, finder, formatter):
         '''
         Initialize the SimpleManifestSink. The given FileFinder is used to
@@ -420,8 +381,6 @@ class SimpleManifestSink(object):
             if is_manifest(p):
                 self._manifests.add(p)
             dest = mozpath.join(component.destdir, SimpleManifestSink.normalize_path(p))
-            if isinstance(f, ExecutableFile):
-                f.xz_compress = component.xz_compress
             self.packager.add(dest, f)
         if not added:
             errors.error('Missing file(s): %s' % pattern)
@@ -443,7 +402,7 @@ class SimpleManifestSink(object):
             paths = [mozpath.dirname(m) for m in self._manifests]
             path = mozpath.dirname(mozpath.commonprefix(paths))
             for p, f in self._finder.find(mozpath.join(path,
-                                                       'chrome.manifest')):
-                if p not in self._manifests:
+                                          'chrome.manifest')):
+                if not p in self._manifests:
                     self.packager.add(SimpleManifestSink.normalize_path(p), f)
         self.packager.close()

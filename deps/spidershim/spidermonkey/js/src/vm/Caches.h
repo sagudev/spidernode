@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef vm_Caches_h
 #define vm_Caches_h
-
-#include <new>
 
 #include "jsmath.h"
 
@@ -43,6 +41,21 @@ struct GSNCache {
   void purge();
 };
 
+/*
+ * EnvironmentCoordinateName cache to avoid O(n^2) growth in finding the name
+ * associated with a given aliasedvar operation.
+ */
+struct EnvironmentCoordinateNameCache {
+  typedef HashMap<uint32_t, jsid, DefaultHasher<uint32_t>, SystemAllocPolicy>
+      Map;
+
+  Shape* shape;
+  Map map;
+
+  EnvironmentCoordinateNameCache() : shape(nullptr) {}
+  void purge();
+};
+
 struct EvalCacheEntry {
   JSLinearString* str;
   JSScript* script;
@@ -61,7 +74,7 @@ struct EvalCacheLookup {
   explicit EvalCacheLookup(JSContext* cx) : str(cx), callerScript(cx) {}
   RootedLinearString str;
   RootedScript callerScript;
-  MOZ_INIT_OUTSIDE_CTOR jsbytecode* pc;
+  jsbytecode* pc;
 };
 
 struct EvalCacheHashPolicy {
@@ -121,19 +134,13 @@ class NewObjectCache {
     char templateObject[MAX_OBJ_SIZE];
   };
 
-  using EntryArray = Entry[41];  // TODO: reconsider size;
-  EntryArray entries;
+  Entry entries[41];  // TODO: reconsider size
 
  public:
-  using EntryIndex = int;
+  typedef int EntryIndex;
 
-  NewObjectCache()
-      : entries{}  // zeroes out the array
-  {}
-
-  void purge() {
-    new (&entries) EntryArray{};  // zeroes out the array
-  }
+  NewObjectCache() { mozilla::PodZero(this); }
+  void purge() { mozilla::PodZero(this); }
 
   /* Remove any cached items keyed on moved objects. */
   void clearNurseryObjects(JSRuntime* rt);
@@ -189,8 +196,8 @@ class NewObjectCache {
     *pentry = makeIndex(clasp, key, kind);
     Entry* entry = &entries[*pentry];
 
-    // N.B. Lookups with the same clasp/key but different kinds map to
-    // different entries.
+    /* N.B. Lookups with the same clasp/key but different kinds map to different
+     * entries. */
     return entry->clasp == clasp && entry->key == key;
   }
 
@@ -222,11 +229,23 @@ class NewObjectCache {
 };
 
 class RuntimeCaches {
+  UniquePtr<js::MathCache> mathCache_;
+
+  js::MathCache* createMathCache(JSContext* cx);
+
  public:
   js::GSNCache gsnCache;
+  js::EnvironmentCoordinateNameCache envCoordinateNameCache;
   js::NewObjectCache newObjectCache;
   js::UncompressedSourceCache uncompressedSourceCache;
   js::EvalCache evalCache;
+
+  bool init();
+
+  js::MathCache* getMathCache(JSContext* cx) {
+    return mathCache_ ? mathCache_.get() : createMathCache(cx);
+  }
+  js::MathCache* maybeGetMathCache() { return mathCache_.get(); }
 
   void purgeForMinorGC(JSRuntime* rt) {
     newObjectCache.clearNurseryObjects(rt);
@@ -235,12 +254,13 @@ class RuntimeCaches {
 
   void purgeForCompaction() {
     newObjectCache.purge();
-    evalCache.clear();
+    if (evalCache.initialized()) evalCache.clear();
   }
 
   void purge() {
     purgeForCompaction();
     gsnCache.purge();
+    envCoordinateNameCache.purge();
     uncompressedSourceCache.purge();
   }
 };

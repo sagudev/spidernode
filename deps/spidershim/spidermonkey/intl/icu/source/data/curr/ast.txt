@@ -680,10 +680,6 @@ ast{
         }
         MRO{
             "MRO",
-            "ouguiya mauritanu (1973–2017)",
-        }
-        MRU{
-            "MRU",
             "ouguiya mauritanu",
         }
         MTL{
@@ -916,10 +912,6 @@ ast{
         }
         STD{
             "STD",
-            "dobra de Santu Tomé y Príncipe (1977–2017)",
-        }
-        STN{
-            "STN",
             "dobra de Santu Tomé y Príncipe",
         }
         SUR{
@@ -1040,10 +1032,6 @@ ast{
         }
         VEF{
             "VEF",
-            "bolívar venezolanu (2008–2018)",
-        }
-        VES{
-            "VES",
             "bolívar venezolanu",
         }
         VND{
@@ -1290,7 +1278,7 @@ ast{
         SHP{"£"}
         SRD{"$"}
         SSP{"£"}
-        STN{"Db"}
+        STD{"Db"}
         SYP{"£"}
         THB{"฿"}
         TOP{"T$"}
@@ -1988,10 +1976,6 @@ ast{
             other{"pataques de Macáu"}
         }
         MRO{
-            one{"ouguiya mauritanu (1973–2017)"}
-            other{"ouguiyas mauritanos (1973–2017)"}
-        }
-        MRU{
             one{"ouguiya mauritanu"}
             other{"ouguiyas mauritanos"}
         }
@@ -2224,10 +2208,6 @@ ast{
             other{"llibres sursudaneses"}
         }
         STD{
-            one{"dobra de Santu Tomé y Príncipe (1977–2017)"}
-            other{"dobras de Santu Tomé y Príncipe (1977–2017)"}
-        }
-        STN{
             one{"dobra de Santu Tomé y Príncipe"}
             other{"dobras de Santu Tomé y Príncipe"}
         }
@@ -2348,10 +2328,6 @@ ast{
             other{"bolívares venezolanos (1871–2008)"}
         }
         VEF{
-            one{"bolívar venezolanu (2008–2018)"}
-            other{"bolívares venezolanos (2008–2018)"}
-        }
-        VES{
             one{"bolívar venezolanu"}
             other{"bolívares venezolanos"}
         }
@@ -2520,5 +2496,5 @@ ast{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"2.1.47.82"}
+    Version{"2.1.37.1"}
 }

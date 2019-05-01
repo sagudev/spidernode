@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !('oomTest' in this)
+if (typeof oomTest === 'undefined')
+    quit();
 
 try {
     oomTest((function () {

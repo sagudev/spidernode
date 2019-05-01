@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,9 +33,15 @@ void CodeLocationJump::repoint(JitCode* code, MacroAssembler* masm) {
   setAbsolute();
 }
 
-void CodeLocationLabel::repoint(JitCode* code) {
+void CodeLocationLabel::repoint(JitCode* code, MacroAssembler* masm) {
   MOZ_ASSERT(state_ == Relative);
-  uintptr_t new_off = uintptr_t(raw_);
+  size_t new_off = (size_t)raw_;
+  if (masm != nullptr) {
+#ifdef JS_CODEGEN_X64
+    MOZ_ASSERT((uint64_t)raw_ <= UINT32_MAX);
+#endif
+    new_off = (uintptr_t)raw_;
+  }
   MOZ_ASSERT(new_off < code->instructionsSize());
 
   raw_ = code->raw() + new_off;

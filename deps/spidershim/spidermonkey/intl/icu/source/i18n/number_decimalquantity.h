@@ -3,21 +3,19 @@
 
 #include "unicode/utypes.h"
 
-#if !UCONFIG_NO_FORMATTING
+#if !UCONFIG_NO_FORMATTING && !UPRV_INCOMPLETE_CPP11_SUPPORT
 #ifndef __NUMBER_DECIMALQUANTITY_H__
 #define __NUMBER_DECIMALQUANTITY_H__
 
 #include <cstdint>
 #include "unicode/umachine.h"
+#include "decNumber.h"
 #include "standardplural.h"
 #include "plurrule_impl.h"
 #include "number_types.h"
 
 U_NAMESPACE_BEGIN namespace number {
 namespace impl {
-
-// Forward-declare (maybe don't want number_utils.h included here):
-class DecNum;
 
 /**
  * An class for representing a number to be processed by the decimal formatting pipeline. Includes
@@ -35,12 +33,9 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
     /** Copy constructor. */
     DecimalQuantity(const DecimalQuantity &other);
 
-    /** Move constructor. */
-    DecimalQuantity(DecimalQuantity &&src) U_NOEXCEPT;
-
     DecimalQuantity();
 
-    ~DecimalQuantity() override;
+    ~DecimalQuantity();
 
     /**
      * Sets this instance to be equal to another instance.
@@ -49,32 +44,23 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
      */
     DecimalQuantity &operator=(const DecimalQuantity &other);
 
-    /** Move assignment */
-    DecimalQuantity &operator=(DecimalQuantity&& src) U_NOEXCEPT;
-
     /**
-     * Sets the minimum integer digits that this {@link DecimalQuantity} should generate.
+     * Sets the minimum and maximum integer digits that this {@link DecimalQuantity} should generate.
      * This method does not perform rounding.
      *
      * @param minInt The minimum number of integer digits.
+     * @param maxInt The maximum number of integer digits.
      */
-    void setMinInteger(int32_t minInt);
+    void setIntegerLength(int32_t minInt, int32_t maxInt);
 
     /**
-     * Sets the minimum fraction digits that this {@link DecimalQuantity} should generate.
+     * Sets the minimum and maximum fraction digits that this {@link DecimalQuantity} should generate.
      * This method does not perform rounding.
      *
      * @param minFrac The minimum number of fraction digits.
+     * @param maxFrac The maximum number of fraction digits.
      */
-    void setMinFraction(int32_t minFrac);
-
-    /**
-     * Truncates digits from the upper magnitude of the number in order to satisfy the
-     * specified maximum number of integer digits.
-     *
-     * @param maxInt The maximum number of integer digits.
-     */
-    void applyMaxInteger(int32_t maxInt);
+    void setFractionLength(int32_t minFrac, int32_t maxFrac);
 
     /**
      * Rounds the number to a specified interval, such as 0.05.
@@ -82,29 +68,17 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
      * <p>If rounding to a power of ten, use the more efficient {@link #roundToMagnitude} instead.
      *
      * @param roundingIncrement The increment to which to round.
-     * @param roundingMode The {@link RoundingMode} to use if rounding is necessary.
+     * @param mathContext The {@link RoundingMode} to use if rounding is necessary.
      */
     void roundToIncrement(double roundingIncrement, RoundingMode roundingMode,
-                          UErrorCode& status);
-
-    /** Removes all fraction digits. */
-    void truncate();
-
-    /**
-     * Rounds the number to the nearest multiple of 5 at the specified magnitude.
-     * For example, when magnitude == -2, this performs rounding to the nearest 0.05.
-     *
-     * @param magnitude The magnitude at which the digit should become either 0 or 5.
-     * @param roundingMode Rounding strategy.
-     */
-    void roundToNickel(int32_t magnitude, RoundingMode roundingMode, UErrorCode& status);
+                          int32_t minMaxFrac, UErrorCode& status);
 
     /**
      * Rounds the number to a specified magnitude (power of ten).
      *
      * @param roundingMagnitude The power of ten to which to round. For example, a value of -2 will
      *     round to 2 decimal places.
-     * @param roundingMode The {@link RoundingMode} to use if rounding is necessary.
+     * @param mathContext The {@link RoundingMode} to use if rounding is necessary.
      */
     void roundToMagnitude(int32_t magnitude, RoundingMode roundingMode, UErrorCode& status);
 
@@ -115,30 +89,19 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
     void roundToInfinity();
 
     /**
-     * Multiply the internal value. Uses decNumber.
+     * Multiply the internal value.
      *
      * @param multiplicand The value by which to multiply.
      */
-    void multiplyBy(const DecNum& multiplicand, UErrorCode& status);
-
-    /**
-     * Divide the internal value. Uses decNumber.
-     *
-     * @param multiplicand The value by which to multiply.
-     */
-    void divideBy(const DecNum& divisor, UErrorCode& status);
-
-    /** Flips the sign from positive to negative and back. */
-    void negate();
+    void multiplyBy(int32_t multiplicand);
 
     /**
      * Scales the number by a power of ten. For example, if the value is currently "1234.56", calling
      * this method with delta=-3 will change the value to "1.23456".
      *
      * @param delta The number of magnitudes of ten to change by.
-     * @return true if integer overflow occured; false otherwise.
      */
-    bool adjustMagnitude(int32_t delta);
+    void adjustMagnitude(int32_t delta);
 
     /**
      * @return The power of ten corresponding to the most significant nonzero digit.
@@ -152,31 +115,18 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
     /** @return Whether the value represented by this {@link DecimalQuantity} is less than zero. */
     bool isNegative() const;
 
-    /** @return -1 if the value is negative; 1 if positive; or 0 if zero. */
-    int8_t signum() const;
-
     /** @return Whether the value represented by this {@link DecimalQuantity} is infinite. */
     bool isInfinite() const U_OVERRIDE;
 
     /** @return Whether the value represented by this {@link DecimalQuantity} is not a number. */
     bool isNaN() const U_OVERRIDE;
 
-    /** @param truncateIfOverflow if false and the number does NOT fit, fails with an assertion error. */
-    int64_t toLong(bool truncateIfOverflow = false) const;
+    int64_t toLong() const;
 
-    uint64_t toFractionLong(bool includeTrailingZeros) const;
-
-    /**
-     * Returns whether or not a Long can fully represent the value stored in this DecimalQuantity.
-     * @param ignoreFraction if true, silently ignore digits after the decimal place.
-     */
-    bool fitsInLong(bool ignoreFraction = false) const;
+    int64_t toFractionLong(bool includeTrailingZeros) const;
 
     /** @return The value contained in this {@link DecimalQuantity} approximated as a double. */
     double toDouble() const;
-
-    /** Computes a DecNum representation of this DecimalQuantity, saving it to the output parameter. */
-    void toDecNum(DecNum& output, UErrorCode& status) const;
 
     DecimalQuantity &setToInt(int32_t n);
 
@@ -185,10 +135,8 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
     DecimalQuantity &setToDouble(double n);
 
     /** decNumber is similar to BigDecimal in Java. */
-    DecimalQuantity &setToDecNumber(StringPiece n, UErrorCode& status);
 
-    /** Internal method if the caller already has a DecNum. */
-    DecimalQuantity &setToDecNum(const DecNum& n, UErrorCode& status);
+    DecimalQuantity &setToDecNumber(StringPiece n);
 
     /**
      * Appends a digit, optionally with one or more leading zeros, to the end of the value represented
@@ -209,9 +157,16 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
      */
     void appendDigit(int8_t value, int32_t leadingZeros, bool appendAsInteger);
 
-    double getPluralOperand(PluralOperand operand) const U_OVERRIDE;
+    /**
+     * Computes the plural form for this number based on the specified set of rules.
+     *
+     * @param rules A {@link PluralRules} object representing the set of rules.
+     * @return The {@link StandardPlural} according to the PluralRules. If the plural form is not in
+     *     the set of standard plurals, {@link StandardPlural#OTHER} is returned instead.
+     */
+    StandardPlural::Form getStandardPlural(const PluralRules *rules) const;
 
-    bool hasIntegerValue() const U_OVERRIDE;
+    double getPluralOperand(PluralOperand operand) const U_OVERRIDE;
 
     /**
      * Gets the digit at the specified magnitude. For example, if the represented number is 12.3,
@@ -265,28 +220,17 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
 
     UnicodeString toString() const;
 
-    /** Returns the string in standard exponential notation. */
-    UnicodeString toScientificString() const;
+    /* Returns the string in exponential notation. */
+    UnicodeString toNumberString() const;
 
-    /** Returns the string without exponential notation. Slightly slower than toScientificString(). */
+    /* Returns the string without exponential notation. Slightly slower than toNumberString(). */
     UnicodeString toPlainString() const;
 
     /** Visible for testing */
     inline bool isUsingBytes() { return usingBytes; }
 
     /** Visible for testing */
-    inline bool isExplicitExactDouble() { return explicitExactDouble; }
-
-    bool operator==(const DecimalQuantity& other) const;
-
-    inline bool operator!=(const DecimalQuantity& other) const {
-        return !(*this == other);
-    }
-
-    /**
-     * Bogus flag for when a DecimalQuantity is stored on the stack.
-     */
-    bool bogus = false;
+    inline bool isExplicitExactDouble() { return explicitExactDouble; };
 
   private:
     /**
@@ -342,11 +286,36 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
      */
     int32_t origDelta;
 
-    // Positions to keep track of leading and trailing zeros.
-    // lReqPos is the magnitude of the first required leading zero.
-    // rReqPos is the magnitude of the last required trailing zero.
+    // Four positions: left optional '(', left required '[', right required ']', right optional ')'.
+    // These four positions determine which digits are displayed in the output string.  They do NOT
+    // affect rounding.  These positions are internal-only and can be specified only by the public
+    // endpoints like setFractionLength, setIntegerLength, and setSignificantDigits, among others.
+    //
+    //   * Digits between lReqPos and rReqPos are in the "required zone" and are always displayed.
+    //   * Digits between lOptPos and rOptPos but outside the required zone are in the "optional zone"
+    //     and are displayed unless they are trailing off the left or right edge of the number and
+    //     have a numerical value of zero.  In order to be "trailing", the digits need to be beyond
+    //     the decimal point in their respective directions.
+    //   * Digits outside of the "optional zone" are never displayed.
+    //
+    // See the table below for illustrative examples.
+    //
+    // +---------+---------+---------+---------+------------+------------------------+--------------+
+    // | lOptPos | lReqPos | rReqPos | rOptPos |   number   |        positions       | en-US string |
+    // +---------+---------+---------+---------+------------+------------------------+--------------+
+    // |    5    |    2    |   -1    |   -5    |   1234.567 |     ( 12[34.5]67  )    |   1,234.567  |
+    // |    3    |    2    |   -1    |   -5    |   1234.567 |      1(2[34.5]67  )    |     234.567  |
+    // |    3    |    2    |   -1    |   -2    |   1234.567 |      1(2[34.5]6)7      |     234.56   |
+    // |    6    |    4    |    2    |   -5    | 123456789. |  123(45[67]89.     )   | 456,789.     |
+    // |    6    |    4    |    2    |    1    | 123456789. |     123(45[67]8)9.     | 456,780.     |
+    // |   -1    |   -1    |   -3    |   -4    | 0.123456   |     0.1([23]4)56       |        .0234 |
+    // |    6    |    4    |   -2    |   -2    |     12.3   |     (  [  12.3 ])      |    0012.30   |
+    // +---------+---------+---------+---------+------------+------------------------+--------------+
+    //
+    int32_t lOptPos = INT32_MAX;
     int32_t lReqPos = 0;
     int32_t rReqPos = 0;
+    int32_t rOptPos = INT32_MIN;
 
     /**
      * The BCD of the 16 digits of the number represented by this object. Every 4 bits of the long map
@@ -371,8 +340,6 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
      * Used for testing.
      */
     bool explicitExactDouble = false;
-
-    void roundToMagnitude(int32_t magnitude, RoundingMode roundingMode, bool nickel, UErrorCode& status);
 
     /**
      * Returns a single digit from the BCD list. No internal state is changed by calling this method.
@@ -402,21 +369,7 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
      */
     void shiftLeft(int32_t numDigits);
 
-    /**
-     * Directly removes digits from the end of the BCD list.
-     * Updates the scale and precision.
-     *
-     * CAUTION: it is the caller's responsibility to call {@link #compact} after this method.
-     */
     void shiftRight(int32_t numDigits);
-
-    /**
-     * Directly removes digits from the front of the BCD list.
-     * Updates precision.
-     *
-     * CAUTION: it is the caller's responsibility to call {@link #compact} after this method.
-     */
-    void popFromLeft(int32_t numDigits);
 
     /**
      * Sets the internal representation to zero. Clears any values stored in scale, precision,
@@ -440,15 +393,9 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
      */
     void readLongToBcd(int64_t n);
 
-    void readDecNumberToBcd(const DecNum& dn);
-
-    void readDoubleConversionToBcd(const char* buffer, int32_t length, int32_t point);
-
-    void copyFieldsFrom(const DecimalQuantity& other);
+    void readDecNumberToBcd(decNumber *dn);
 
     void copyBcdFrom(const DecimalQuantity &other);
-
-    void moveBcdFrom(DecimalQuantity& src);
 
     /**
      * Removes trailing zeros from the BCD (adjusting the scale as required) and then computes the
@@ -466,9 +413,11 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
 
     void _setToDoubleFast(double n);
 
-    void _setToDecNum(const DecNum& dn, UErrorCode& status);
+    void _setToDecNumber(decNumber *n);
 
     void convertToAccurateDouble();
+
+    double toDoubleFromOriginal() const;
 
     /** Ensure that a byte array of at least 40 digits is allocated. */
     void ensureCapacity();

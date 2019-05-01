@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,20 +31,12 @@ size_t MoveEmitterX86::characterizeCycle(const MoveResolver& moves, size_t i,
 
     // If it isn't a cycle of registers of the same kind, we won't be able
     // to optimize it.
-    if (!move.to().isGeneralReg()) {
-      *allGeneralRegs = false;
-    }
-    if (!move.to().isFloatReg()) {
-      *allFloatRegs = false;
-    }
-    if (!*allGeneralRegs && !*allFloatRegs) {
-      return -1;
-    }
+    if (!move.to().isGeneralReg()) *allGeneralRegs = false;
+    if (!move.to().isFloatReg()) *allFloatRegs = false;
+    if (!*allGeneralRegs && !*allFloatRegs) return -1;
 
     // Stop iterating when we see the last one.
-    if (j != i && move.isCycleEnd()) {
-      break;
-    }
+    if (j != i && move.isCycleEnd()) break;
 
     // Check that this move is actually part of the cycle. This is
     // over-conservative when there are multiple reads from the same source,
@@ -79,10 +71,9 @@ bool MoveEmitterX86::maybeEmitOptimizedCycle(const MoveResolver& moves,
     // Use x86's swap-integer-registers instruction if we only have a few
     // swaps. (x86 also has a swap between registers and memory but it's
     // slow.)
-    for (size_t k = 0; k < swapCount; k++) {
+    for (size_t k = 0; k < swapCount; k++)
       masm.xchg(moves.getMove(i + k).to().reg(),
                 moves.getMove(i + k + 1).to().reg());
-    }
     return true;
   }
 
@@ -103,18 +94,15 @@ bool MoveEmitterX86::maybeEmitOptimizedCycle(const MoveResolver& moves,
 void MoveEmitterX86::emit(const MoveResolver& moves) {
 #if defined(JS_CODEGEN_X86) && defined(DEBUG)
   // Clobber any scratch register we have, to make regalloc bugs more visible.
-  if (scratchRegister_.isSome()) {
+  if (scratchRegister_.isSome())
     masm.mov(ImmWord(0xdeadbeef), scratchRegister_.value());
-  }
 #endif
 
   for (size_t i = 0; i < moves.numMoves(); i++) {
 #if defined(JS_CODEGEN_X86) && defined(DEBUG)
     if (!scratchRegister_.isSome()) {
       Maybe<Register> reg = findScratchRegister(moves, i);
-      if (reg.isSome()) {
-        masm.mov(ImmWord(0xdeadbeef), reg.value());
-      }
+      if (reg.isSome()) masm.mov(ImmWord(0xdeadbeef), reg.value());
     }
 #endif
 
@@ -188,9 +176,8 @@ Address MoveEmitterX86::cycleSlot() {
 }
 
 Address MoveEmitterX86::toAddress(const MoveOperand& operand) const {
-  if (operand.base() != StackPointer) {
+  if (operand.base() != StackPointer)
     return Address(operand.base(), operand.disp());
-  }
 
   MOZ_ASSERT(operand.disp() >= 0);
 
@@ -203,12 +190,8 @@ Address MoveEmitterX86::toAddress(const MoveOperand& operand) const {
 // compute the effective destination address after altering the stack pointer.
 // Use toPopOperand if an Operand is needed for a pop.
 Operand MoveEmitterX86::toOperand(const MoveOperand& operand) const {
-  if (operand.isMemoryOrEffectiveAddress()) {
-    return Operand(toAddress(operand));
-  }
-  if (operand.isGeneralReg()) {
-    return Operand(operand.reg());
-  }
+  if (operand.isMemoryOrEffectiveAddress()) return Operand(toAddress(operand));
+  if (operand.isGeneralReg()) return Operand(operand.reg());
 
   MOZ_ASSERT(operand.isFloatReg());
   return Operand(operand.floatReg());
@@ -218,9 +201,8 @@ Operand MoveEmitterX86::toOperand(const MoveOperand& operand) const {
 // use in a pop.
 Operand MoveEmitterX86::toPopOperand(const MoveOperand& operand) const {
   if (operand.isMemory()) {
-    if (operand.base() != StackPointer) {
+    if (operand.base() != StackPointer)
       return Operand(operand.base(), operand.disp());
-    }
 
     MOZ_ASSERT(operand.disp() >= 0);
 
@@ -231,9 +213,7 @@ Operand MoveEmitterX86::toPopOperand(const MoveOperand& operand) const {
         StackPointer,
         operand.disp() + (masm.framePushed() - sizeof(void*) - pushedAtStart_));
   }
-  if (operand.isGeneralReg()) {
-    return Operand(operand.reg());
-  }
+  if (operand.isGeneralReg()) return Operand(operand.reg());
 
   MOZ_ASSERT(operand.isFloatReg());
   return Operand(operand.floatReg());
@@ -406,11 +386,10 @@ void MoveEmitterX86::emitGeneralMove(const MoveOperand& from,
     masm.mov(from.reg(), toOperand(to));
   } else if (to.isGeneralReg()) {
     MOZ_ASSERT(from.isMemoryOrEffectiveAddress());
-    if (from.isMemory()) {
+    if (from.isMemory())
       masm.loadPtr(toAddress(from), to.reg());
-    } else {
+    else
       masm.lea(toOperand(from), to.reg());
-    }
   } else if (from.isMemory()) {
     // Memory to memory gpr move.
     Maybe<Register> reg = findScratchRegister(moves, i);
@@ -447,11 +426,10 @@ void MoveEmitterX86::emitFloat32Move(const MoveOperand& from,
   MOZ_ASSERT_IF(to.isFloatReg(), to.floatReg().isSingle());
 
   if (from.isFloatReg()) {
-    if (to.isFloatReg()) {
+    if (to.isFloatReg())
       masm.moveFloat32(from.floatReg(), to.floatReg());
-    } else {
+    else
       masm.storeFloat32(from.floatReg(), toAddress(to));
-    }
   } else if (to.isFloatReg()) {
     masm.loadFloat32(toAddress(from), to.floatReg());
   } else {
@@ -469,11 +447,10 @@ void MoveEmitterX86::emitDoubleMove(const MoveOperand& from,
   MOZ_ASSERT_IF(to.isFloatReg(), to.floatReg().isDouble());
 
   if (from.isFloatReg()) {
-    if (to.isFloatReg()) {
+    if (to.isFloatReg())
       masm.moveDouble(from.floatReg(), to.floatReg());
-    } else {
+    else
       masm.storeDouble(from.floatReg(), toAddress(to));
-    }
   } else if (to.isFloatReg()) {
     masm.loadDouble(toAddress(from), to.floatReg());
   } else {
@@ -491,11 +468,10 @@ void MoveEmitterX86::emitSimd128IntMove(const MoveOperand& from,
   MOZ_ASSERT_IF(to.isFloatReg(), to.floatReg().isSimd128());
 
   if (from.isFloatReg()) {
-    if (to.isFloatReg()) {
+    if (to.isFloatReg())
       masm.moveSimd128Int(from.floatReg(), to.floatReg());
-    } else {
+    else
       masm.storeAlignedSimd128Int(from.floatReg(), toAddress(to));
-    }
   } else if (to.isFloatReg()) {
     masm.loadAlignedSimd128Int(toAddress(from), to.floatReg());
   } else {
@@ -513,11 +489,10 @@ void MoveEmitterX86::emitSimd128FloatMove(const MoveOperand& from,
   MOZ_ASSERT_IF(to.isFloatReg(), to.floatReg().isSimd128());
 
   if (from.isFloatReg()) {
-    if (to.isFloatReg()) {
+    if (to.isFloatReg())
       masm.moveSimd128Float(from.floatReg(), to.floatReg());
-    } else {
+    else
       masm.storeAlignedSimd128Float(from.floatReg(), toAddress(to));
-    }
   } else if (to.isFloatReg()) {
     masm.loadAlignedSimd128Float(toAddress(from), to.floatReg());
   } else {
@@ -540,9 +515,7 @@ void MoveEmitterX86::finish() {
 Maybe<Register> MoveEmitterX86::findScratchRegister(const MoveResolver& moves,
                                                     size_t initial) {
 #ifdef JS_CODEGEN_X86
-  if (scratchRegister_.isSome()) {
-    return scratchRegister_;
-  }
+  if (scratchRegister_.isSome()) return scratchRegister_;
 
   // All registers are either in use by this move group or are live
   // afterwards. Look through the remaining moves for a register which is
@@ -550,15 +523,13 @@ Maybe<Register> MoveEmitterX86::findScratchRegister(const MoveResolver& moves,
   AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
   for (size_t i = initial; i < moves.numMoves(); i++) {
     const MoveOp& move = moves.getMove(i);
-    if (move.from().isGeneralReg()) {
+    if (move.from().isGeneralReg())
       regs.takeUnchecked(move.from().reg());
-    } else if (move.from().isMemoryOrEffectiveAddress()) {
+    else if (move.from().isMemoryOrEffectiveAddress())
       regs.takeUnchecked(move.from().base());
-    }
     if (move.to().isGeneralReg()) {
-      if (i != initial && !move.isCycleBegin() && regs.has(move.to().reg())) {
+      if (i != initial && !move.isCycleBegin() && regs.has(move.to().reg()))
         return mozilla::Some(move.to().reg());
-      }
       regs.takeUnchecked(move.to().reg());
     } else if (move.to().isMemoryOrEffectiveAddress()) {
       regs.takeUnchecked(move.to().base());

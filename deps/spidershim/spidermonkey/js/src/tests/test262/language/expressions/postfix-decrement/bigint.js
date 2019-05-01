@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty('BigInt')) -- BigInt is not enabled unconditionally
+// |reftest| skip -- BigInt is not supported
 // Copyright (C) 2017 Josh Wolfe. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -10,7 +10,8 @@ info: |
   2. Let oldValue be ? ToNumeric(? GetValue(expr)).
   3. Let newValue be ? Type(oldvalue)::subtract(oldValue, Type(oldValue)::unit).
   4. Perform ? PutValue(expr, newValue).
-  5. Return oldValue.
+  5. Return oldValue. 
+
 features: [BigInt]
 ---*/
 

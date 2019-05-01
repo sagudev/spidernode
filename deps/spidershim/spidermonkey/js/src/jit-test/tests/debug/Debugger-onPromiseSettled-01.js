@@ -1,6 +1,8 @@
 // Test that the onPromiseSettled hook gets called when a promise settles.
+if (!('Promise' in this))
+    quit(0);
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger();
 var gw = dbg.addDebuggee(g);
 

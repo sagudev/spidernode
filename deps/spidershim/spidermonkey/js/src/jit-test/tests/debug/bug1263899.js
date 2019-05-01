@@ -5,14 +5,13 @@ try {
       throw Error
     }
     Object.defineProperty(this, "x", { value: 0 });
-    setJitCompilerOption("baseline.warmup.trigger", 0);
     setJitCompilerOption("ion.warmup.trigger", 0)
   `)
   evaluate(`function f() {} f(x)`)
   runTestCase()
 } catch (exc) {}
 evaluate(`
-  g = newGlobal({newCompartment: true})
+  g = newGlobal()
   g.parent = this
   g.eval("(" + function() {
     Debugger(parent).onExceptionUnwind = function(frame) {

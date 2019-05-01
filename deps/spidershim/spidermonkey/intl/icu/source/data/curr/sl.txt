@@ -616,10 +616,6 @@ sl{
         }
         MRO{
             "MRO",
-            "mavretanska uguija (1973–2017)",
-        }
-        MRU{
-            "MRU",
             "mavretanska uguija",
         }
         MTL{
@@ -848,10 +844,6 @@ sl{
         }
         STD{
             "STD",
-            "saotomejska dobra (1977–2017)",
-        }
-        STN{
-            "STN",
             "saotomejska dobra",
         }
         SUR{
@@ -968,10 +960,6 @@ sl{
         }
         VEF{
             "VEF",
-            "venezuelski bolivar (2008–2018)",
-        }
-        VES{
-            "VES",
             "venezuelski bolivar",
         }
         VND{
@@ -1055,7 +1043,7 @@ sl{
             "koda za potrebe testiranja",
         }
         XXX{
-            "¤",
+            "XXX",
             "neznana valuta",
         }
         YDD{
@@ -1137,6 +1125,7 @@ sl{
         DKK{"kr"}
         DOP{"$"}
         EGP{"E£"}
+        EUR{"€"}
         FJD{"$"}
         FKP{"£"}
         GBP{"£"}
@@ -1190,6 +1179,7 @@ sl{
         SHP{"£"}
         SRD{"$"}
         SSP{"£"}
+        STD{"Db"}
         SYP{"£"}
         THB{"฿"}
         TOP{"T$"}
@@ -1769,12 +1759,6 @@ sl{
             two{"makavski pataki"}
         }
         MRO{
-            few{"mavretanske uguije (1973–2017)"}
-            one{"mavretanska uguija (1973–2017)"}
-            other{"mavretanskih uguij (1973–2017)"}
-            two{"mavretanski uguiji (1973–2017)"}
-        }
-        MRU{
             few{"mavretanske uguije"}
             one{"mavretanska uguija"}
             other{"mavretanskih uguij"}
@@ -2003,12 +1987,6 @@ sl{
             two{"južnosudanska funta"}
         }
         STD{
-            few{"saotomejske dobre (1977–2017)"}
-            one{"saotomejska dobra (1977–2017)"}
-            other{"saotomejskih dober (1977–2017)"}
-            two{"saotomejski dobri (1977–2017)"}
-        }
-        STN{
             few{"saotomejske dobre"}
             one{"saotomejska dobra"}
             other{"saotomejskih dober"}
@@ -2111,12 +2089,6 @@ sl{
             two{"uzbeška suma"}
         }
         VEF{
-            few{"venezuelski bolivarji (2008–2018)"}
-            one{"venezuelski bolivar (2008–2018)"}
-            other{"venezuelskih bolivarjev (2008–2018)"}
-            two{"venezuelska bolivarja (2008–2018)"}
-        }
-        VES{
             few{"venezuelski bolivarji"}
             one{"venezuelski bolivar"}
             other{"venezuelskih bolivarjev"}
@@ -2195,5 +2167,5 @@ sl{
         other{"{0} {1}"}
         two{"{0} {1}"}
     }
-    Version{"2.1.48.42"}
+    Version{"2.1.37.1"}
 }

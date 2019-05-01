@@ -12,9 +12,11 @@ class OpenBSDBootstrapper(BaseBootstrapper):
         BaseBootstrapper.__init__(self, **kwargs)
 
         self.packages = [
+            'mercurial',
             'autoconf-2.13',
             'gmake',
             'gtar',
+            'node',
             'rust',
             'wget',
             'unzip',
@@ -23,7 +25,6 @@ class OpenBSDBootstrapper(BaseBootstrapper):
 
         self.browser_packages = [
             'llvm',
-            'nasm',
             'yasm',
             'gconf2',
             'gtk+2',
@@ -47,17 +48,6 @@ class OpenBSDBootstrapper(BaseBootstrapper):
         # we use -z because there's no other way to say "any autoconf-2.13"
         self.run_as_root(['pkg_add', '-z'] + self.browser_packages)
 
-    def ensure_clang_static_analysis_package(self, state_dir, checkout_root):
-        # TODO: we don't ship clang base static analysis for this platform
-        pass
-
     def ensure_stylo_packages(self, state_dir, checkout_root):
-        # Clang / llvm already installed as browser package
-        self.run_as_root(['pkg_add', 'cbindgen'])
-
-    def ensure_nasm_packages(self, state_dir, checkout_root):
-        # installed via ensure_browser_packages
+        # Already installed as browser package
         pass
-
-    def ensure_node_packages(self, state_dir, checkout_root):
-        self.run_as_root(['pkg_add', 'node'])

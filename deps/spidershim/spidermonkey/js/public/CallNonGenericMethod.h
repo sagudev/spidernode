@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -48,9 +48,8 @@ extern JS_PUBLIC_API bool CallMethodIfWrapped(JSContext* cx,
 //   static bool
 //   IsAnswerObject(const Value& v)
 //   {
-//       if (!v.isObject()) {
+//       if (!v.isObject())
 //           return false;
-//       }
 //       return JS_GetClass(&v.toObject()) == &AnswerClass;
 //   }
 //
@@ -99,9 +98,7 @@ template <IsAcceptableThis Test, NativeImpl Impl>
 MOZ_ALWAYS_INLINE bool CallNonGenericMethod(JSContext* cx,
                                             const CallArgs& args) {
   HandleValue thisv = args.thisv();
-  if (Test(thisv)) {
-    return Impl(cx, args);
-  }
+  if (Test(thisv)) return Impl(cx, args);
 
   return detail::CallMethodIfWrapped(cx, Test, Impl, args);
 }
@@ -111,9 +108,7 @@ MOZ_ALWAYS_INLINE bool CallNonGenericMethod(JSContext* cx,
                                             NativeImpl Impl,
                                             const CallArgs& args) {
   HandleValue thisv = args.thisv();
-  if (Test(thisv)) {
-    return Impl(cx, args);
-  }
+  if (Test(thisv)) return Impl(cx, args);
 
   return detail::CallMethodIfWrapped(cx, Test, Impl, args);
 }

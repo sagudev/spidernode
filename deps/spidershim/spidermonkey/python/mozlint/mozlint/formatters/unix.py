@@ -6,7 +6,7 @@ from __future__ import absolute_import, unicode_literals
 
 import os
 
-from ..result import Issue
+from ..result import ResultContainer
 
 
 class UnixFormatter(object):
@@ -17,12 +17,12 @@ class UnixFormatter(object):
     """
     fmt = "{path}:{lineno}:{column} {rule} {level}: {message}"
 
-    def __call__(self, result):
+    def __call__(self, result, **kwargs):
         msg = []
 
-        for path, errors in sorted(result.issues.iteritems()):
+        for path, errors in sorted(result.iteritems()):
             for err in errors:
-                assert isinstance(err, Issue)
+                assert isinstance(err, ResultContainer)
 
                 slots = {s: getattr(err, s) for s in err.__slots__}
                 slots["path"] = os.path.relpath(slots["path"])

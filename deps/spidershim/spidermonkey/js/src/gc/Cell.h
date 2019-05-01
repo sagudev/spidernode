@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,7 +26,7 @@ namespace js {
 
 class GenericPrinter;
 
-extern bool RuntimeFromMainThreadIsHeapMajorCollecting(
+extern bool RuntimeFromActiveCooperatingThreadIsHeapMajorCollecting(
     JS::shadow::Zone* shadowZone);
 
 #ifdef DEBUG
@@ -45,37 +45,11 @@ namespace gc {
 class Arena;
 enum class AllocKind : uint8_t;
 struct Chunk;
-class StoreBuffer;
 class TenuredCell;
 
-// [SMDOC] GC Cell
-//
-// A GC cell is the base class for all GC things. All types allocated on the GC
-// heap extend either gc::Cell or gc::TenuredCell. If a type is always tenured,
-// prefer the TenuredCell class as base.
-//
-// The first word (a pointer or uintptr_t) of each Cell must reserve the low
-// Cell::ReservedBits bits for GC purposes. The remaining bits are available to
-// sub-classes and typically store a pointer to another gc::Cell.
-//
-// During moving GC operation a Cell may be marked as forwarded. This indicates
-// that a gc::RelocationOverlay is currently stored in the Cell's memory and
-// should be used to find the new location of the Cell.
-struct alignas(gc::CellAlignBytes) Cell {
+// A GC cell is the base class for all GC things.
+struct Cell {
  public:
-  // The low bits of the first word of each Cell are reserved for GC flags.
-  static constexpr int ReservedBits = 2;
-  static constexpr uintptr_t RESERVED_MASK = JS_BITMASK(ReservedBits);
-
-  // Indicates if the cell is currently a RelocationOverlay
-  static constexpr uintptr_t FORWARD_BIT = JS_BIT(0);
-
-  // When a Cell is in the nursery, this will indicate if it is a JSString (1)
-  // or JSObject (0). When not in nursery, this bit is still reserved for
-  // JSString to use as JSString::NON_ATOM bit. This may be removed by Bug
-  // 1376646.
-  static constexpr uintptr_t JSSTRING_BIT = JS_BIT(1);
-
   MOZ_ALWAYS_INLINE bool isTenured() const { return !IsInsideNursery(this); }
   MOZ_ALWAYS_INLINE const TenuredCell& asTenured() const;
   MOZ_ALWAYS_INLINE TenuredCell& asTenured();
@@ -84,14 +58,14 @@ struct alignas(gc::CellAlignBytes) Cell {
   MOZ_ALWAYS_INLINE bool isMarkedBlack() const;
   MOZ_ALWAYS_INLINE bool isMarkedGray() const;
 
-  inline JSRuntime* runtimeFromMainThread() const;
+  inline JSRuntime* runtimeFromActiveCooperatingThread() const;
 
   // Note: Unrestricted access to the runtime of a GC thing from an arbitrary
   // thread can easily lead to races. Use this method very carefully.
   inline JSRuntime* runtimeFromAnyThread() const;
 
   // May be overridden by GC thing kinds that have a compartment pointer.
-  inline JS::Compartment* maybeCompartment() const { return nullptr; }
+  inline JSCompartment* maybeCompartment() const { return nullptr; }
 
   // The StoreBuffer used to record incoming pointers from the tenured heap.
   // This will return nullptr for a tenured cell.
@@ -101,17 +75,6 @@ struct alignas(gc::CellAlignBytes) Cell {
 
   static MOZ_ALWAYS_INLINE bool needWriteBarrierPre(JS::Zone* zone);
 
-  inline bool isForwarded() const {
-    uintptr_t firstWord = *reinterpret_cast<const uintptr_t*>(this);
-    return firstWord & FORWARD_BIT;
-  }
-
-  inline bool nurseryCellIsString() const {
-    MOZ_ASSERT(!isTenured());
-    uintptr_t firstWord = *reinterpret_cast<const uintptr_t*>(this);
-    return firstWord & JSSTRING_BIT;
-  }
-
   template <class T>
   inline bool is() const {
     return getTraceKind() == JS::MapTypeToTraceKind<T>::kind;
@@ -119,22 +82,18 @@ struct alignas(gc::CellAlignBytes) Cell {
 
   template <class T>
   inline T* as() {
-    // |this|-qualify the |is| call below to avoid compile errors with even
-    // fairly recent versions of gcc, e.g. 7.1.1 according to bz.
     MOZ_ASSERT(this->is<T>());
     return static_cast<T*>(this);
   }
 
   template <class T>
   inline const T* as() const {
-    // |this|-qualify the |is| call below to avoid compile errors with even
-    // fairly recent versions of gcc, e.g. 7.1.1 according to bz.
     MOZ_ASSERT(this->is<T>());
     return static_cast<const T*>(this);
   }
 
 #ifdef DEBUG
-  static inline void assertThingIsNotGray(Cell* cell);
+  static inline bool thingIsNotGray(Cell* cell);
   inline bool isAligned() const;
   void dump(GenericPrinter& out) const;
   void dump() const;
@@ -152,11 +111,6 @@ class TenuredCell : public Cell {
   // Construct a TenuredCell from a void*, making various sanity assertions.
   static MOZ_ALWAYS_INLINE TenuredCell* fromPointer(void* ptr);
   static MOZ_ALWAYS_INLINE const TenuredCell* fromPointer(const void* ptr);
-
-  MOZ_ALWAYS_INLINE bool isTenured() const {
-    MOZ_ASSERT(!IsInsideNursery(this));
-    return true;
-  }
 
   // Mark bit management.
   MOZ_ALWAYS_INLINE bool isMarkedAny() const;
@@ -192,17 +146,13 @@ class TenuredCell : public Cell {
 
   template <class T>
   inline T* as() {
-    // |this|-qualify the |is| call below to avoid compile errors with even
-    // fairly recent versions of gcc, e.g. 7.1.1 according to bz.
-    MOZ_ASSERT(this->is<T>());
+    MOZ_ASSERT(is<T>());
     return static_cast<T*>(this);
   }
 
   template <class T>
   inline const T* as() const {
-    // |this|-qualify the |is| call below to avoid compile errors with even
-    // fairly recent versions of gcc, e.g. 7.1.1 according to bz.
-    MOZ_ASSERT(this->is<T>());
+    MOZ_ASSERT(is<T>());
     return static_cast<const T*>(this);
   }
 
@@ -243,7 +193,7 @@ MOZ_ALWAYS_INLINE bool Cell::isMarkedGray() const {
   return isTenured() && asTenured().isMarkedGray();
 }
 
-inline JSRuntime* Cell::runtimeFromMainThread() const {
+inline JSRuntime* Cell::runtimeFromActiveCooperatingThread() const {
   JSRuntime* rt = chunk()->trailer.runtime;
   MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt));
   return rt;
@@ -272,12 +222,9 @@ inline StoreBuffer* Cell::storeBuffer() const {
 }
 
 inline JS::TraceKind Cell::getTraceKind() const {
-  if (isTenured()) {
-    return asTenured().getTraceKind();
-  }
-  if (nurseryCellIsString()) {
+  if (isTenured()) return asTenured().getTraceKind();
+  if (js::shadow::String::nurseryCellIsString(this))
     return JS::TraceKind::String;
-  }
   return JS::TraceKind::Object;
 }
 
@@ -356,15 +303,20 @@ bool TenuredCell::isInsideZone(JS::Zone* zone) const {
   MOZ_ASSERT(!CurrentThreadIsIonCompiling());
   MOZ_ASSERT(thing);
   MOZ_ASSERT(CurrentThreadCanAccessZone(thing->zoneFromAnyThread()));
-  // Barriers should not be triggered on main thread while collecting.
-  MOZ_ASSERT_IF(CurrentThreadCanAccessRuntime(thing->runtimeFromAnyThread()),
-                !JS::RuntimeHeapIsCollecting());
+
+  // It would be good if barriers were never triggered during collection, but
+  // at the moment this can happen e.g. when rekeying tables containing
+  // read-barriered GC things after a moving GC.
+  //
+  // TODO: Fix this and assert we're not collecting if we're on the active
+  // thread.
 
   JS::shadow::Zone* shadowZone = thing->shadowZoneFromAnyThread();
   if (shadowZone->needsIncrementalBarrier()) {
-    // Barriers are only enabled on the main thread and are disabled while
+    // Barriers are only enabled on the active thread and are disabled while
     // collecting.
-    MOZ_ASSERT(!RuntimeFromMainThreadIsHeapMajorCollecting(shadowZone));
+    MOZ_ASSERT(
+        !RuntimeFromActiveCooperatingThreadIsHeapMajorCollecting(shadowZone));
     Cell* tmp = thing;
     TraceManuallyBarrieredGenericPointerEdge(shadowZone->barrierTracer(), &tmp,
                                              "read barrier");
@@ -372,12 +324,12 @@ bool TenuredCell::isInsideZone(JS::Zone* zone) const {
   }
 
   if (thing->isMarkedGray()) {
-    // There shouldn't be anything marked grey unless we're on the main thread.
+    // There shouldn't be anything marked grey unless we're on the active
+    // thread.
     MOZ_ASSERT(CurrentThreadCanAccessRuntime(thing->runtimeFromAnyThread()));
-    if (!JS::RuntimeHeapIsCollecting()) {
+    if (!RuntimeFromActiveCooperatingThreadIsHeapMajorCollecting(shadowZone))
       JS::UnmarkGrayGCThingRecursively(
           JS::GCCellPtr(thing, thing->getTraceKind()));
-    }
   }
 }
 
@@ -386,9 +338,7 @@ void AssertSafeToSkipBarrier(TenuredCell* thing);
 /* static */ MOZ_ALWAYS_INLINE void TenuredCell::writeBarrierPre(
     TenuredCell* thing) {
   MOZ_ASSERT(!CurrentThreadIsIonCompiling());
-  if (!thing) {
-    return;
-  }
+  if (!thing) return;
 
 #ifdef JS_GC_ZEAL
   // When verifying pre barriers we need to switch on all barriers, even
@@ -408,7 +358,8 @@ void AssertSafeToSkipBarrier(TenuredCell* thing);
 
   JS::shadow::Zone* shadowZone = thing->shadowZoneFromAnyThread();
   if (shadowZone->needsIncrementalBarrier()) {
-    MOZ_ASSERT(!RuntimeFromMainThreadIsHeapMajorCollecting(shadowZone));
+    MOZ_ASSERT(
+        !RuntimeFromActiveCooperatingThreadIsHeapMajorCollecting(shadowZone));
     Cell* tmp = thing;
     TraceManuallyBarrieredGenericPointerEdge(shadowZone->barrierTracer(), &tmp,
                                              "pre barrier");
@@ -431,14 +382,12 @@ static MOZ_ALWAYS_INLINE void AssertValidToSkipBarrier(TenuredCell* thing) {
 
 #ifdef DEBUG
 
-/* static */ void Cell::assertThingIsNotGray(Cell* cell) {
-  JS::AssertCellIsNotGray(cell);
+/* static */ bool Cell::thingIsNotGray(Cell* cell) {
+  return JS::CellIsNotGray(cell);
 }
 
 bool Cell::isAligned() const {
-  if (!isTenured()) {
-    return true;
-  }
+  if (!isTenured()) return true;
   return asTenured().isAligned();
 }
 

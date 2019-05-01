@@ -1,3 +1,5 @@
+setCachingEnabled(true);
+
 (function() {
 /*
  * NO ARGUMENT
@@ -49,9 +51,9 @@ f0 = new Function(bodyOnly);
 assertEq(f0.toString(), "function anonymous(\n) {\n" + bodyOnly + "\n}");
 assertEq(f0.toSource(), "(function anonymous(\n) {\n" + bodyOnly + "\n})");
 
-if (isAsmJSCompilationAvailable()) {
+if (isAsmJSCompilationAvailable() && isCachingEnabled()) {
     var m = new Function(bodyOnly);
-    assertEq(isAsmJSModule(m), true);
+    assertEq(isAsmJSModuleLoadedFromCache(m), true);
     assertEq(m.toString(), "function anonymous(\n) {\n" + bodyOnly + "\n}");
     assertEq(m.toSource(), "(function anonymous(\n) {\n" + bodyOnly + "\n})");
 }
@@ -108,9 +110,9 @@ f1 = new Function('glob', bodyOnly);
 assertEq(f1.toString(), "function anonymous(glob\n) {\n" + bodyOnly + "\n}");
 assertEq(f1.toSource(), "(function anonymous(glob\n) {\n" + bodyOnly + "\n})");
 
-if (isAsmJSCompilationAvailable()) {
+if (isAsmJSCompilationAvailable() && isCachingEnabled()) {
     var m = new Function('glob', bodyOnly);
-    assertEq(isAsmJSModule(m), true);
+    assertEq(isAsmJSModuleLoadedFromCache(m), true);
     assertEq(m.toString(), "function anonymous(glob\n) {\n" + bodyOnly + "\n}");
     assertEq(m.toSource(), "(function anonymous(glob\n) {\n" + bodyOnly + "\n})");
 }
@@ -168,9 +170,9 @@ f2 = new Function('glob', 'ffi', bodyOnly);
 assertEq(f2.toString(), "function anonymous(glob,ffi\n) {\n" + bodyOnly + "\n}");
 assertEq(f2.toSource(), "(function anonymous(glob,ffi\n) {\n" + bodyOnly + "\n})");
 
-if (isAsmJSCompilationAvailable()) {
+if (isAsmJSCompilationAvailable() && isCachingEnabled()) {
     var m = new Function('glob', 'ffi', bodyOnly);
-    assertEq(isAsmJSModule(m), true);
+    assertEq(isAsmJSModuleLoadedFromCache(m), true);
     assertEq(m.toString(), "function anonymous(glob,ffi\n) {\n" + bodyOnly + "\n}");
     assertEq(m.toSource(), "(function anonymous(glob,ffi\n) {\n" + bodyOnly + "\n})");
 }
@@ -228,9 +230,9 @@ f3 = new Function('glob', 'ffi', 'heap', bodyOnly);
 assertEq(f3.toString(), "function anonymous(glob,ffi,heap\n) {\n" + bodyOnly + "\n}");
 assertEq(f3.toSource(), "(function anonymous(glob,ffi,heap\n) {\n" + bodyOnly + "\n})");
 
-if (isAsmJSCompilationAvailable()) {
+if (isAsmJSCompilationAvailable() && isCachingEnabled()) {
     var m = new Function('glob', 'ffi', 'heap', bodyOnly);
-    assertEq(isAsmJSModule(m), true);
+    assertEq(isAsmJSModuleLoadedFromCache(m), true);
     assertEq(m.toString(), "function anonymous(glob,ffi,heap\n) {\n" + bodyOnly + "\n}");
     assertEq(m.toSource(), "(function anonymous(glob,ffi,heap\n) {\n" + bodyOnly + "\n})");
 }
@@ -255,9 +257,9 @@ var expectedToSource = '(' + expectedToString + ')';
 assertEq(f4.toString(), expectedToString);
 assertEq(f4.toSource(), expectedToSource);
 
-if (isAsmJSCompilationAvailable()) {
+if (isAsmJSCompilationAvailable() && isCachingEnabled()) {
     var f5 = eval("\"use strict\";\n(" + funcSource + ")");
-    assertEq(isAsmJSModule(f5), true);
+    assertEq(isAsmJSModuleLoadedFromCache(f5), true);
     assertEq(f5.toString(), expectedToString);
     assertEq(f5.toSource(), expectedToSource);
 }
@@ -316,21 +318,21 @@ function checkFuncSrc(m) {
 }
 checkFuncSrc(moduleG);
 
-if (isAsmJSCompilationAvailable()) {
+if (isAsmJSCompilationAvailable() && isCachingEnabled()) {
     var g2 = new Function(funcBody);
-    assertEq(isAsmJSModule(g2), true);
+    assertEq(isAsmJSModuleLoadedFromCache(g2), true);
     m = g2();
     checkFuncSrc(m);
 
     var moduleDecl = 'function g3() {' + funcBody + '}';
     eval(moduleDecl);
     m = g3();
-    assertEq(isAsmJSModule(g3), true);
+    assertEq(isAsmJSModuleLoadedFromCache(g3), false);
     checkFuncSrc(m);
 
     eval('var x = 42;' + moduleDecl);
     m = g3();
-    assertEq(isAsmJSModule(g3), true);
+    assertEq(isAsmJSModuleLoadedFromCache(g3), true);
     checkFuncSrc(m);
 }
 
@@ -356,9 +358,9 @@ var expectedToSource = expectedToString
 assertEq(f5.toString(), expectedToString);
 assertEq(f5.toSource(), expectedToSource);
 
-if (isAsmJSCompilationAvailable()) {
+if (isAsmJSCompilationAvailable() && isCachingEnabled()) {
     var mf5 = eval("\"use strict\";\n(" + moduleCode + ")");
-    assertEq(isAsmJSModule(mf5), true);
+    assertEq(isAsmJSModuleLoadedFromCache(mf5), true);
     var f5 = mf5();
     assertEq(f5.toString(), expectedToString);
     assertEq(f5.toSource(), expectedToSource);
@@ -385,9 +387,9 @@ var f6 = eval(useStrict + ";\n(" + moduleCode + "({Math:{}}))");
 assertEq(f6.toString(), funcCode);
 assertEq(f6.toSource(), funcCode);
 
-if (isAsmJSCompilationAvailable()) {
+if (isAsmJSCompilationAvailable() && isCachingEnabled()) {
     var mf6 = eval("\"use strict\";\n(" + moduleCode + ")");
-    assertEq(isAsmJSModule(mf6), true);
+    assertEq(isAsmJSModuleLoadedFromCache(mf6), true);
     var f6 = mf6({Math:{}});
     assertEq(f6.toString(), funcCode);
     assertEq(f6.toSource(), funcCode);

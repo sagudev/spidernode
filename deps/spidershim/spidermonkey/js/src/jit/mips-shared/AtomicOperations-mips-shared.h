@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,11 +23,11 @@
 #include "vm/ArrayBufferObject.h"
 
 #if !defined(__clang__) && !defined(__GNUC__)
-#  error "This file only for gcc-compatible compilers"
+#error "This file only for gcc-compatible compilers"
 #endif
 
 #if defined(JS_SIMULATOR_MIPS32) && !defined(__i386__)
-#  error "The MIPS32 simulator atomics assume x86"
+#error "The MIPS32 simulator atomics assume x86"
 #endif
 
 namespace js {
@@ -57,18 +57,8 @@ struct MOZ_RAII AddressGuard {
 };
 
 #endif
-
-}  // namespace jit
+}
 }  // namespace js
-
-inline bool js::jit::AtomicOperations::Initialize() {
-  // Nothing
-  return true;
-}
-
-inline void js::jit::AtomicOperations::ShutDown() {
-  // Nothing
-}
 
 inline bool js::jit::AtomicOperations::hasAtomic8() { return true; }
 
@@ -113,8 +103,7 @@ inline uint64_t js::jit::AtomicOperations::loadSeqCst(uint64_t* addr) {
 }
 
 #endif
-
-}  // namespace jit
+}
 }  // namespace js
 
 template <typename T>
@@ -143,8 +132,7 @@ inline void js::jit::AtomicOperations::storeSeqCst(uint64_t* addr,
 }
 
 #endif
-
-}  // namespace jit
+}
 }  // namespace js
 
 template <typename T>
@@ -167,9 +155,7 @@ inline int64_t js::jit::AtomicOperations::compareExchangeSeqCst(
     int64_t* addr, int64_t oldval, int64_t newval) {
   AddressGuard guard(addr);
   int64_t val = *addr;
-  if (val == oldval) {
-    *addr = newval;
-  }
+  if (val == oldval) *addr = newval;
   return val;
 }
 
@@ -178,15 +164,12 @@ inline uint64_t js::jit::AtomicOperations::compareExchangeSeqCst(
     uint64_t* addr, uint64_t oldval, uint64_t newval) {
   AddressGuard guard(addr);
   uint64_t val = *addr;
-  if (val == oldval) {
-    *addr = newval;
-  }
+  if (val == oldval) *addr = newval;
   return val;
 }
 
 #endif
-
-}  // namespace jit
+}
 }  // namespace js
 
 template <typename T>
@@ -220,8 +203,7 @@ inline uint64_t js::jit::AtomicOperations::fetchAddSeqCst(uint64_t* addr,
 }
 
 #endif
-
-}  // namespace jit
+}
 }  // namespace js
 
 template <typename T>
@@ -255,8 +237,7 @@ inline uint64_t js::jit::AtomicOperations::fetchSubSeqCst(uint64_t* addr,
 }
 
 #endif
-
-}  // namespace jit
+}
 }  // namespace js
 
 template <typename T>
@@ -290,8 +271,7 @@ inline uint64_t js::jit::AtomicOperations::fetchAndSeqCst(uint64_t* addr,
 }
 
 #endif
-
-}  // namespace jit
+}
 }  // namespace js
 
 template <typename T>
@@ -325,8 +305,7 @@ inline uint64_t js::jit::AtomicOperations::fetchOrSeqCst(uint64_t* addr,
 }
 
 #endif
-
-}  // namespace jit
+}
 }  // namespace js
 
 template <typename T>
@@ -360,8 +339,7 @@ inline uint64_t js::jit::AtomicOperations::fetchXorSeqCst(uint64_t* addr,
 }
 
 #endif
-
-}  // namespace jit
+}
 }  // namespace js
 
 template <typename T>
@@ -407,8 +385,7 @@ template <>
 inline double js::jit::AtomicOperations::loadSafeWhenRacy(double* addr) {
   return *addr;
 }
-
-}  // namespace jit
+}
 }  // namespace js
 
 template <typename T>
@@ -454,8 +431,7 @@ inline void js::jit::AtomicOperations::storeSafeWhenRacy(double* addr,
                                                          double val) {
   *addr = val;
 }
-
-}  // namespace jit
+}
 }  // namespace js
 
 inline void js::jit::AtomicOperations::memcpySafeWhenRacy(void* dest,
@@ -505,8 +481,7 @@ inline uint64_t js::jit::AtomicOperations::exchangeSeqCst(uint64_t* addr,
 }
 
 #endif
-
-}  // namespace jit
+}
 }  // namespace js
 
 #if !defined(JS_64BIT)

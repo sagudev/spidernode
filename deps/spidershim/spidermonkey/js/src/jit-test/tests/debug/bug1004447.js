@@ -1,6 +1,6 @@
 // Tests that earlier try notes don't interfere with later exception handling.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.debuggeeGlobal = this;
 g.eval("(" + function () {
   dbg = new Debugger(debuggeeGlobal);

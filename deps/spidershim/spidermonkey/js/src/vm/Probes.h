@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +8,7 @@
 #define vm_Probes_h
 
 #ifdef INCLUDE_MOZILLA_DTRACE
-#  include "javascript-trace.h"
+#include "javascript-trace.h"
 #endif
 
 #include "vm/Stack.h"
@@ -95,17 +95,11 @@ void DTraceExitJSFun(JSContext* cx, JSFunction* fun, JSScript* script);
 
 #ifdef INCLUDE_MOZILLA_DTRACE
 static const char* ObjectClassname(JSObject* obj) {
-  if (!obj) {
-    return "(null object)";
-  }
+  if (!obj) return "(null object)";
   const Class* clasp = obj->getClass();
-  if (!clasp) {
-    return "(null)";
-  }
+  if (!clasp) return "(null)";
   const char* class_name = clasp->name;
-  if (!class_name) {
-    return "(null class name)";
-  }
+  if (!class_name) return "(null class name)";
   return class_name;
 }
 #endif
@@ -114,9 +108,8 @@ inline bool probes::CreateObject(JSContext* cx, JSObject* obj) {
   bool ok = true;
 
 #ifdef INCLUDE_MOZILLA_DTRACE
-  if (JAVASCRIPT_OBJECT_CREATE_ENABLED()) {
+  if (JAVASCRIPT_OBJECT_CREATE_ENABLED())
     JAVASCRIPT_OBJECT_CREATE(ObjectClassname(obj), (uintptr_t)obj);
-  }
 #endif
 
   return ok;

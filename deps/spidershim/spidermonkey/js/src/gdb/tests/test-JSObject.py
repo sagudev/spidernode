@@ -1,5 +1,4 @@
 # Printing JSObjects.
-# flake8: noqa: F821
 
 assert_subprinter_registered('SpiderMonkey', 'ptr-to-JSObject')
 assert_subprinter_registered('SpiderMonkey', 'ref-to-JSObject')

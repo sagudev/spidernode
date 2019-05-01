@@ -16,6 +16,6 @@ negative:
 features: [super]
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 super();

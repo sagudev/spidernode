@@ -24,7 +24,6 @@ from mozbuild.frontend.data import (
     GeneratedFile,
     GeneratedSources,
     HostDefines,
-    HostProgram,
     HostRustLibrary,
     HostRustProgram,
     HostSources,
@@ -76,7 +75,6 @@ class TestEmitterBasic(unittest.TestCase):
         substs = dict(
             ENABLE_TESTS='1' if enable_tests else '',
             BIN_SUFFIX='.prog',
-            HOST_BIN_SUFFIX='.hostprog',
             OS_TARGET='WINNT',
             COMPILE_ENVIRONMENT='1',
             STL_FLAGS=['-I/path/to/topobjdir/dist/stl_wrappers'],
@@ -190,9 +188,7 @@ class TestEmitterBasic(unittest.TestCase):
             'RCFILE': 'foo.rc',
             'RESFILE': 'bar.res',
             'RCINCLUDE': 'bar.rc',
-            'EXTRA_DEPS': [mozpath.join(mozpath.relpath(reader.config.topsrcdir,
-                                                        reader.config.topobjdir),
-                                        'baz.def')],
+            'DEFFILE': 'baz.def',
             'WIN32_EXE_LDFLAGS': ['-subsystem:console'],
         }
 
@@ -244,6 +240,7 @@ class TestEmitterBasic(unittest.TestCase):
     def test_link_flags(self):
         reader = self.reader('link-flags', extra_substs={
             'OS_LDFLAGS': ['-Wl,rpath-link=/usr/lib'],
+            'LINKER_LDFLAGS': ['-fuse-ld=gold'],
             'MOZ_OPTIMIZE': '',
             'MOZ_OPTIMIZE_LDFLAGS': ['-Wl,-dead_strip'],
             'MOZ_DEBUG_LDFLAGS': ['-framework ExceptionHandling'],
@@ -251,6 +248,7 @@ class TestEmitterBasic(unittest.TestCase):
         sources, ldflags, lib, compile_flags = self.read_topsrcdir(reader)
         self.assertIsInstance(ldflags, ComputedFlags)
         self.assertEqual(ldflags.flags['OS'], reader.config.substs['OS_LDFLAGS'])
+        self.assertEqual(ldflags.flags['LINKER'], reader.config.substs['LINKER_LDFLAGS'])
         self.assertEqual(ldflags.flags['MOZBUILD'], ['-Wl,-U_foo', '-framework Foo', '-x'])
         self.assertEqual(ldflags.flags['OPTIMIZE'], [])
 
@@ -269,7 +267,6 @@ class TestEmitterBasic(unittest.TestCase):
             'OS_ARCH': 'WINNT',
             'GNU_CC': '',
             'MOZ_OPTIMIZE': '1',
-            'MOZ_DEBUG_LDFLAGS': ['-DEBUG'],
             'MOZ_DEBUG_SYMBOLS': '1',
             'MOZ_OPTIMIZE_FLAGS': [],
             'MOZ_OPTIMIZE_LDFLAGS': [],
@@ -284,10 +281,10 @@ class TestEmitterBasic(unittest.TestCase):
             'OS_ARCH': 'WINNT',
             'GNU_CC': '',
             'MOZ_DMD': '1',
-            'MOZ_DEBUG_LDFLAGS': ['-DEBUG'],
             'MOZ_DEBUG_SYMBOLS': '1',
             'MOZ_OPTIMIZE': '1',
             'MOZ_OPTIMIZE_FLAGS': [],
+            'OS_LDFLAGS': ['-Wl,-U_foo'],
         })
         sources, ldflags, lib, compile_flags = self.read_topsrcdir(reader)
         self.assertIsInstance(ldflags, ComputedFlags)
@@ -425,13 +422,6 @@ class TestEmitterBasic(unittest.TestCase):
         sources, ldflags, lib, flags = self.read_topsrcdir(reader)
         self.assertEqual(flags.flags['WARNINGS_AS_ERRORS'], [])
 
-    def test_disable_compiler_warnings(self):
-        reader = self.reader('disable-compiler-warnings', extra_substs={
-            'WARNINGS_CFLAGS': '-Wall',
-        })
-        sources, ldflags, lib, flags = self.read_topsrcdir(reader)
-        self.assertEqual(flags.flags['WARNINGS_CFLAGS'], [])
-
     def test_use_yasm(self):
         # When yasm is not available, this should raise.
         reader = self.reader('use-yasm')
@@ -459,9 +449,9 @@ class TestEmitterBasic(unittest.TestCase):
         self.maxDiff = None
         self.assertEqual(passthru.variables,
                          {'AS': 'yasm',
-                          'AS_DASH_C_FLAG': '',
-                          'ASOUTOPTION': '-o '})
+                          'AS_DASH_C_FLAG': ''})
         self.maxDiff = maxDiff
+
 
     def test_generated_files(self):
         reader = self.reader('generated-files')
@@ -471,7 +461,6 @@ class TestEmitterBasic(unittest.TestCase):
         for o in objs:
             self.assertIsInstance(o, GeneratedFile)
             self.assertFalse(o.localized)
-            self.assertFalse(o.force)
 
         expected = ['bar.c', 'foo.c', ('xpidllex.py', 'xpidlyacc.py'), ]
         for o, f in zip(objs, expected):
@@ -480,15 +469,6 @@ class TestEmitterBasic(unittest.TestCase):
             self.assertEqual(o.script, None)
             self.assertEqual(o.method, None)
             self.assertEqual(o.inputs, [])
-
-    def test_generated_files_force(self):
-        reader = self.reader('generated-files-force')
-        objs = self.read_topsrcdir(reader)
-
-        self.assertEqual(len(objs), 3)
-        for o in objs:
-            self.assertIsInstance(o, GeneratedFile)
-            self.assertEqual(o.force, 'bar.c' in o.outputs)
 
     def test_localized_generated_files(self):
         reader = self.reader('localized-generated-files')
@@ -506,16 +486,6 @@ class TestEmitterBasic(unittest.TestCase):
             self.assertEqual(o.script, None)
             self.assertEqual(o.method, None)
             self.assertEqual(o.inputs, [])
-
-    def test_localized_generated_files_force(self):
-        reader = self.reader('localized-generated-files-force')
-        objs = self.read_topsrcdir(reader)
-
-        self.assertEqual(len(objs), 2)
-        for o in objs:
-            self.assertIsInstance(o, GeneratedFile)
-            self.assertTrue(o.localized)
-            self.assertEqual(o.force, 'abc.ini' in o.outputs)
 
     def test_localized_files_from_generated(self):
         """Test that using LOCALIZED_GENERATED_FILES and then putting the output in
@@ -684,10 +654,6 @@ class TestEmitterBasic(unittest.TestCase):
         self.assertEqual(objs[4].program, 'test_program1.prog')
         self.assertEqual(objs[5].program, 'test_program2.prog')
 
-        self.assertEqual(objs[3].name, 'test_program.prog')
-        self.assertEqual(objs[4].name, 'test_program1.prog')
-        self.assertEqual(objs[5].name, 'test_program2.prog')
-
         self.assertEqual(objs[4].objs,
                          [mozpath.join(reader.config.topobjdir,
                                        'test_program1.%s' %
@@ -696,31 +662,6 @@ class TestEmitterBasic(unittest.TestCase):
                          [mozpath.join(reader.config.topobjdir,
                                        'test_program2.%s' %
                                        reader.config.substs['OBJ_SUFFIX'])])
-
-    def test_program_paths(self):
-        """Various moz.build settings that change the destination of PROGRAM should be
-        accurately reflected in Program.output_path."""
-        reader = self.reader('program-paths')
-        objs = self.read_topsrcdir(reader)
-        prog_paths = [o.output_path for o in objs if isinstance(o, Program)]
-        self.assertEqual(prog_paths, [
-            '!/dist/bin/dist-bin.prog',
-            '!/dist/bin/foo/dist-subdir.prog',
-            '!/final/target/final-target.prog',
-            '!not-installed.prog',
-        ])
-
-    def test_host_program_paths(self):
-        """The destination of a HOST_PROGRAM (almost always dist/host/bin)
-        should be accurately reflected in Program.output_path."""
-        reader = self.reader('host-program-paths')
-        objs = self.read_topsrcdir(reader)
-        prog_paths = [o.output_path for o in objs if isinstance(o, HostProgram)]
-        self.assertEqual(prog_paths, [
-            '!/dist/host/bin/final-target.hostprog',
-            '!/dist/host/bin/dist-host-bin.hostprog',
-            '!not-installed.hostprog',
-        ])
 
     def test_test_manifest_missing_manifest(self):
         """A missing manifest file should result in an error."""
@@ -858,7 +799,7 @@ class TestEmitterBasic(unittest.TestCase):
         objs = [o for o in self.read_topsrcdir(reader)
                 if isinstance(o, TestManifest)]
 
-        self.assertEqual(len(objs), 8)
+        self.assertEqual(len(objs), 9)
 
         metadata = {
             'a11y.ini': {
@@ -876,6 +817,13 @@ class TestEmitterBasic(unittest.TestCase):
                     'test_browser.js': True,
                     'support1': False,
                     'support2': False,
+                },
+            },
+            'metro.ini': {
+                'flavor': 'metro-chrome',
+                'installs': {
+                    'metro.ini': False,
+                    'test_metro.js': True,
                 },
             },
             'mochitest.ini': {
@@ -1057,25 +1005,14 @@ class TestEmitterBasic(unittest.TestCase):
 
         with self.assertRaisesRegexp(
                 SandboxValidationError,
-                'Path specified in LOCAL_INCLUDES.*resolves to the '
-                'topsrcdir or topobjdir'):
+                'Path specified in LOCAL_INCLUDES is not allowed:'):
             objs = self.read_topsrcdir(reader)
 
         reader = self.reader('local_includes-invalid/objdir')
 
         with self.assertRaisesRegexp(
                 SandboxValidationError,
-                'Path specified in LOCAL_INCLUDES.*resolves to the '
-                'topsrcdir or topobjdir'):
-            objs = self.read_topsrcdir(reader)
-
-    def test_local_includes_file(self):
-        """Test that a filename can't be used in LOCAL_INCLUDES."""
-        reader = self.reader('local_includes-filename')
-
-        with self.assertRaisesRegexp(
-                SandboxValidationError,
-                'Path specified in LOCAL_INCLUDES is a filename'):
+                'Path specified in LOCAL_INCLUDES is not allowed:'):
             objs = self.read_topsrcdir(reader)
 
     def test_generated_includes(self):
@@ -1138,13 +1075,6 @@ class TestEmitterBasic(unittest.TestCase):
         with self.assertRaisesRegexp(SandboxValidationError, 'XPIDL_MODULE '
             'cannot be defined'):
             reader = self.reader('xpidl-module-no-sources')
-            self.read_topsrcdir(reader)
-
-    def test_xpidl_module_no_sources(self):
-        """Missing XPIDL_SOURCES should be rejected."""
-        with self.assertRaisesRegexp(SandboxValidationError, 'File .* '
-            'from XPIDL_SOURCES does not exist'):
-            reader = self.reader('missing-xpidl')
             self.read_topsrcdir(reader)
 
     def test_missing_local_includes(self):
@@ -1238,15 +1168,9 @@ class TestEmitterBasic(unittest.TestCase):
         for obj in self.read_topsrcdir(reader):
             if isinstance(obj, SharedLibrary):
                 if obj.basename == 'cxx_shared':
-                    self.assertEquals(obj.name, '%scxx_shared%s' %
-                                      (reader.config.dll_prefix,
-                                       reader.config.dll_suffix))
                     self.assertTrue(obj.cxx_link)
                     got_results += 1
                 elif obj.basename == 'just_c_shared':
-                    self.assertEquals(obj.name, '%sjust_c_shared%s' %
-                                      (reader.config.dll_prefix,
-                                       reader.config.dll_suffix))
                     self.assertFalse(obj.cxx_link)
                     got_results += 1
         self.assertEqual(got_results, 2)
@@ -1447,10 +1371,10 @@ class TestEmitterBasic(unittest.TestCase):
 
     def test_localized_files_no_en_us(self):
         """Test that LOCALIZED_FILES errors if a path does not start with
-        `en-US/` or contain `locales/en-US/`."""
+        `en-US/` or contain `/locales/en-US/`."""
         reader = self.reader('localized-files-no-en-us')
         with self.assertRaisesRegexp(SandboxValidationError,
-             'LOCALIZED_FILES paths must start with `en-US/` or contain `locales/en-US/`: foo.js'):
+             'LOCALIZED_FILES paths must start with `en-US/` or contain `/locales/en-US/`: foo.js'):
             objs = self.read_topsrcdir(reader)
 
     def test_localized_pp_files(self):
@@ -1503,10 +1427,8 @@ class TestEmitterBasic(unittest.TestCase):
                              extra_substs=dict(RUST_TARGET='i686-pc-windows-msvc'))
         objs = self.read_topsrcdir(reader)
 
-        self.assertEqual(len(objs), 3)
-        ldflags, lib, cflags = objs
+        ldflags, lib = objs
         self.assertIsInstance(ldflags, ComputedFlags)
-        self.assertIsInstance(cflags, ComputedFlags)
         self.assertIsInstance(lib, RustLibrary)
         self.assertRegexpMatches(lib.lib_name, "random_crate")
         self.assertRegexpMatches(lib.import_name, "random_crate")
@@ -1525,11 +1447,8 @@ class TestEmitterBasic(unittest.TestCase):
         reader = self.reader('rust-library-features',
                              extra_substs=dict(RUST_TARGET='i686-pc-windows-msvc'))
         objs = self.read_topsrcdir(reader)
-
-        self.assertEqual(len(objs), 3)
-        ldflags, lib, cflags = objs
+        ldflags, lib = objs
         self.assertIsInstance(ldflags, ComputedFlags)
-        self.assertIsInstance(cflags, ComputedFlags)
         self.assertIsInstance(lib, RustLibrary)
         self.assertEqual(lib.features, ['musthave', 'cantlivewithout'])
 
@@ -1577,10 +1496,8 @@ class TestEmitterBasic(unittest.TestCase):
                                                BIN_SUFFIX='.exe'))
         objs = self.read_topsrcdir(reader)
 
-        self.assertEqual(len(objs), 3)
-        ldflags, cflags, prog = objs
+        ldflags, prog = objs
         self.assertIsInstance(ldflags, ComputedFlags)
-        self.assertIsInstance(cflags, ComputedFlags)
         self.assertIsInstance(prog, RustProgram)
         self.assertEqual(prog.name, 'some')
 
@@ -1591,14 +1508,9 @@ class TestEmitterBasic(unittest.TestCase):
                                                HOST_BIN_SUFFIX='.exe'))
         objs = self.read_topsrcdir(reader)
 
-        self.assertEqual(len(objs), 4)
-        print(objs)
-        ldflags, cflags, hostflags, prog = objs
-        self.assertIsInstance(ldflags, ComputedFlags)
-        self.assertIsInstance(cflags, ComputedFlags)
-        self.assertIsInstance(hostflags, ComputedFlags)
-        self.assertIsInstance(prog, HostRustProgram)
-        self.assertEqual(prog.name, 'some')
+        self.assertEqual(len(objs), 1)
+        self.assertIsInstance(objs[0], HostRustProgram)
+        self.assertEqual(objs[0].name, 'some')
 
     def test_host_rust_libraries(self):
         '''Test HOST_RUST_LIBRARIES emission.'''
@@ -1606,14 +1518,10 @@ class TestEmitterBasic(unittest.TestCase):
                              extra_substs=dict(RUST_HOST_TARGET='i686-pc-windows-msvc',
                                                HOST_BIN_SUFFIX='.exe'))
         objs = self.read_topsrcdir(reader)
-
-        self.assertEqual(len(objs), 3)
-        ldflags, lib, cflags = objs
-        self.assertIsInstance(ldflags, ComputedFlags)
-        self.assertIsInstance(cflags, ComputedFlags)
-        self.assertIsInstance(lib, HostRustLibrary)
-        self.assertRegexpMatches(lib.lib_name, 'host_lib')
-        self.assertRegexpMatches(lib.import_name, 'host_lib')
+        self.assertEqual(len(objs), 1)
+        self.assertIsInstance(objs[0], HostRustLibrary)
+        self.assertRegexpMatches(objs[0].lib_name, 'host_lib')
+        self.assertRegexpMatches(objs[0].import_name, 'host_lib')
 
     def test_crate_dependency_path_resolution(self):
         '''Test recursive dependencies resolve with the correct paths.'''
@@ -1621,10 +1529,8 @@ class TestEmitterBasic(unittest.TestCase):
                              extra_substs=dict(RUST_TARGET='i686-pc-windows-msvc'))
         objs = self.read_topsrcdir(reader)
 
-        self.assertEqual(len(objs), 3)
-        ldflags, lib, cflags = objs
+        ldflags, lib = objs
         self.assertIsInstance(ldflags, ComputedFlags)
-        self.assertIsInstance(cflags, ComputedFlags)
         self.assertIsInstance(lib, RustLibrary)
 
     def test_install_shared_lib(self):

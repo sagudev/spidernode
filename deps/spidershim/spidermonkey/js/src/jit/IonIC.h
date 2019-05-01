@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -63,9 +63,6 @@ class IonGetIteratorIC;
 class IonHasOwnIC;
 class IonInIC;
 class IonInstanceOfIC;
-class IonCompareIC;
-class IonUnaryArithIC;
-class IonBinaryArithIC;
 
 class IonIC {
   // This either points at the OOL path for the fallback path, or the code for
@@ -178,20 +175,8 @@ class IonIC {
     MOZ_ASSERT(kind_ == CacheKind::InstanceOf);
     return (IonInstanceOfIC*)this;
   }
-  IonCompareIC* asCompareIC() {
-    MOZ_ASSERT(kind_ == CacheKind::Compare);
-    return (IonCompareIC*)this;
-  }
-  IonUnaryArithIC* asUnaryArithIC() {
-    MOZ_ASSERT(kind_ == CacheKind::UnaryArith);
-    return (IonUnaryArithIC*)this;
-  }
-  IonBinaryArithIC* asBinaryArithIC() {
-    MOZ_ASSERT(kind_ == CacheKind::BinaryArith);
-    return (IonBinaryArithIC*)this;
-  }
 
-  void updateBaseAddress(JitCode* code);
+  void updateBaseAddress(JitCode* code, MacroAssembler& masm);
 
   // Returns the Register to use as scratch when entering IC stubs. This
   // should either be an output register or a temp.
@@ -488,81 +473,6 @@ class IonInstanceOfIC : public IonIC {
   static MOZ_MUST_USE bool update(JSContext* cx, HandleScript outerScript,
                                   IonInstanceOfIC* ic, HandleValue lhs,
                                   HandleObject rhs, bool* attached);
-};
-
-class IonCompareIC : public IonIC {
-  LiveRegisterSet liveRegs_;
-
-  TypedOrValueRegister lhs_;
-  TypedOrValueRegister rhs_;
-  Register output_;
-
- public:
-  IonCompareIC(LiveRegisterSet liveRegs, TypedOrValueRegister lhs,
-               TypedOrValueRegister rhs, Register output)
-      : IonIC(CacheKind::Compare),
-        liveRegs_(liveRegs),
-        lhs_(lhs),
-        rhs_(rhs),
-        output_(output) {}
-
-  LiveRegisterSet liveRegs() const { return liveRegs_; }
-  TypedOrValueRegister lhs() const { return lhs_; }
-  TypedOrValueRegister rhs() const { return rhs_; }
-  Register output() const { return output_; }
-
-  static MOZ_MUST_USE bool update(JSContext* cx, HandleScript outerScript,
-                                  IonCompareIC* stub, HandleValue lhs,
-                                  HandleValue rhs, bool* res);
-};
-
-class IonUnaryArithIC : public IonIC {
-  LiveRegisterSet liveRegs_;
-
-  TypedOrValueRegister input_;
-  ValueOperand output_;
-
- public:
-  IonUnaryArithIC(LiveRegisterSet liveRegs, TypedOrValueRegister input,
-                  ValueOperand output)
-      : IonIC(CacheKind::UnaryArith),
-        liveRegs_(liveRegs),
-        input_(input),
-        output_(output) {}
-
-  LiveRegisterSet liveRegs() const { return liveRegs_; }
-  TypedOrValueRegister input() const { return input_; }
-  ValueOperand output() const { return output_; }
-
-  static MOZ_MUST_USE bool update(JSContext* cx, HandleScript outerScript,
-                                  IonUnaryArithIC* stub, HandleValue val,
-                                  MutableHandleValue res);
-};
-
-class IonBinaryArithIC : public IonIC {
-  LiveRegisterSet liveRegs_;
-
-  TypedOrValueRegister lhs_;
-  TypedOrValueRegister rhs_;
-  ValueOperand output_;
-
- public:
-  IonBinaryArithIC(LiveRegisterSet liveRegs, TypedOrValueRegister lhs,
-                   TypedOrValueRegister rhs, ValueOperand output)
-      : IonIC(CacheKind::BinaryArith),
-        liveRegs_(liveRegs),
-        lhs_(lhs),
-        rhs_(rhs),
-        output_(output) {}
-
-  LiveRegisterSet liveRegs() const { return liveRegs_; }
-  TypedOrValueRegister lhs() const { return lhs_; }
-  TypedOrValueRegister rhs() const { return rhs_; }
-  ValueOperand output() const { return output_; }
-
-  static MOZ_MUST_USE bool update(JSContext* cx, HandleScript outerScript,
-                                  IonBinaryArithIC* stub, HandleValue lhs,
-                                  HandleValue rhs, MutableHandleValue res);
 };
 
 }  // namespace jit

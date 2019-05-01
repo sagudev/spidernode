@@ -18,12 +18,10 @@ function addToNamedSet(map, name, entry)
 
 function fieldKey(csuName, field)
 {
-    // This makes a minimal attempt at dealing with overloading: it will not
-    // conflate two virtual methods with differing numbers of arguments. So
-    // far, that is all that has been needed.
+    // Note: not dealing with overloading correctly.
     var nargs = 0;
     if (field.Type.Kind == "Function" && "TypeFunctionArguments" in field.Type)
-        nargs = field.Type.TypeFunctionArguments.Type.length;
+	nargs = field.Type.TypeFunctionArguments.length;
     return csuName + ":" + field.Name[0] + ":" + nargs;
 }
 
@@ -66,11 +64,10 @@ function nearestAncestorMethods(csu, field)
     return functions;
 }
 
-// Return [ instantiations, limits ], where instantiations is a Set of all
+// Return [ instantations, suppressed ], where instantiations is a Set of all
 // possible implementations of 'field' given static type 'initialCSU', plus
-// null if arbitrary other implementations are possible, and limits gives
-// information about what things are not possible within it (currently, that it
-// cannot GC).
+// null if arbitrary other implementations are possible, and suppressed is true
+// if we the method is assumed to be non-GC'ing by annotation.
 function findVirtualFunctions(initialCSU, field)
 {
     const fieldName = field.Name[0];
@@ -90,7 +87,7 @@ function findVirtualFunctions(initialCSU, field)
     while (worklist.length) {
         const csu = worklist.pop();
         if (isSuppressedVirtualMethod(csu, fieldName))
-            return [ new Set(), LIMIT_CANNOT_GC ];
+            return [ new Set(), true ];
         if (isOverridableField(initialCSU, csu, fieldName)) {
             // We will still resolve the virtual function call, because it's
             // nice to have as complete a callgraph as possible for other uses.
@@ -123,7 +120,7 @@ function findVirtualFunctions(initialCSU, field)
             worklist.push(...subclasses.get(csu));
     }
 
-    return [ functions, LIMIT_NONE ];
+    return [ functions, false ];
 }
 
 // Return a list of all callees that the given edge might be a call to. Each
@@ -144,7 +141,7 @@ function getCallees(edge)
 
     if (callee.Kind == "Int")
         return []; // Intentional crash
-
+  
     assert(callee.Kind == "Drf");
     const called = callee.Exp[0];
     if (called.Kind == "Var") {
@@ -162,11 +159,15 @@ function getCallees(edge)
     const fieldName = field.Name[0];
     const csuName = field.FieldCSU.Type.Name;
     let functions;
-    let limits = LIMIT_NONE;
     if ("FieldInstanceFunction" in field) {
-        [ functions, limits ] = findVirtualFunctions(csuName, field);
-        callees.push({'kind': "field", 'csu': csuName, 'field': fieldName,
-                      'limits': limits, 'isVirtual': true});
+        let suppressed;
+        [ functions, suppressed ] = findVirtualFunctions(csuName, field, suppressed);
+        if (suppressed) {
+            // Field call known to not GC; mark it as suppressed so direct
+            // invocations will be ignored
+            callees.push({'kind': "field", 'csu': csuName, 'field': fieldName,
+                          'suppressed': true, 'isVirtual': true});
+        }
     } else {
         functions = new Set([null]); // field call
     }
@@ -185,11 +186,11 @@ function getCallees(edge)
             // in extensions. Use the isVirtual property so that callers can
             // tell which case holds.
             callees.push({'kind': "field", 'csu': csuName, 'field': fieldName,
-                          'limits': limits,
 			  'isVirtual': "FieldInstanceFunction" in field});
             fullyResolved = false;
         } else {
-            targets.push({'kind': "direct", name, limits });
+            callees.push({'kind': "direct", 'name': name});
+            targets.push({'kind': "direct", 'name': name});
         }
     }
     if (fullyResolved)

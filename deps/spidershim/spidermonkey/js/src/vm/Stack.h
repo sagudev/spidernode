@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,29 +18,29 @@
 
 #include "gc/Rooting.h"
 #ifdef CHECK_OSIPOINT_REGISTERS
-#  include "jit/Registers.h"  // for RegisterDump
+#include "jit/Registers.h"  // for RegisterDump
 #endif
 #include "jit/JSJitFrameIter.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
-#include "js/UniquePtr.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/JSFunction.h"
 #include "vm/JSScript.h"
 #include "vm/SavedFrame.h"
 #include "wasm/WasmFrameIter.h"
+#include "wasm/WasmTypes.h"
 
 namespace JS {
 namespace dbg {
 #ifdef JS_BROKEN_GCC_ATTRIBUTE_WARNING
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wattributes"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wattributes"
 #endif  // JS_BROKEN_GCC_ATTRIBUTE_WARNING
 
 class JS_PUBLIC_API AutoEntryMonitor;
 
 #ifdef JS_BROKEN_GCC_ATTRIBUTE_WARNING
-#  pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
 #endif  // JS_BROKEN_GCC_ATTRIBUTE_WARNING
 }  // namespace dbg
 }  // namespace JS
@@ -68,7 +68,7 @@ class DebugFrame;
 class Instance;
 }  // namespace wasm
 
-// [SMDOC] VM stack layout
+// VM stack layout
 //
 // A JSRuntime's stack consists of a linked list of activations. Every
 // activation contains a number of scripted frames that are either running in
@@ -76,11 +76,10 @@ class Instance;
 // frames inside a single activation are contiguous: whenever C++ calls back
 // into JS, a new activation is pushed.
 //
-// Every activation is tied to a single JSContext and JS::Compartment. This
-// means we can reconstruct a given context's stack by skipping activations
-// belonging to other contexts. This happens whenever an embedding enters the JS
-// engine on cx1 and then, from a native called by the JS engine, reenters the
-// VM on cx2.
+// Every activation is tied to a single JSContext and JSCompartment. This means
+// we can reconstruct a given context's stack by skipping activations belonging
+// to other contexts. This happens whenever an embedding enters the JS engine on
+// cx1 and then, from a native called by the JS engine, reenters the VM on cx2.
 
 // Interpreter frames (InterpreterFrame)
 //
@@ -102,31 +101,39 @@ class Instance;
 enum MaybeCheckAliasing { CHECK_ALIASING = true, DONT_CHECK_ALIASING = false };
 enum MaybeCheckTDZ { CheckTDZ = true, DontCheckTDZ = false };
 
-}  // namespace js
-
-namespace mozilla {
-template <>
-struct IsPod<js::MaybeCheckTDZ> : TrueType {};
-}  // namespace mozilla
-
 /*****************************************************************************/
-
-namespace js {
 
 namespace jit {
 class BaselineFrame;
 class RematerializedFrame;
 }  // namespace jit
 
-/**
- * Pointer to a live JS or WASM stack frame.
+/*
+ * Pointer to either a ScriptFrameIter::Data, an InterpreterFrame, or a Baseline
+ * JIT frame.
+ *
+ * The Debugger may cache ScriptFrameIter::Data as a bookmark to reconstruct a
+ * ScriptFrameIter without doing a full stack walk.
+ *
+ * There is no way to directly create such an AbstractFramePtr. To do so, the
+ * user must call ScriptFrameIter::copyDataAsAbstractFramePtr().
+ *
+ * ScriptFrameIter::abstractFramePtr() will never return an AbstractFramePtr
+ * that is in fact a ScriptFrameIter::Data.
+ *
+ * To recover a ScriptFrameIter settled at the location pointed to by an
+ * AbstractFramePtr, use the THIS_FRAME_ITER macro in Debugger.cpp. As an
+ * aside, no asScriptFrameIterData() is provided because C++ is stupid and
+ * cannot forward declare inner classes.
  */
+
 class AbstractFramePtr {
   friend class FrameIter;
 
   uintptr_t ptr_;
 
   enum {
+    Tag_ScriptFrameIterData = 0x0,
     Tag_InterpreterFrame = 0x1,
     Tag_BaselineFrame = 0x2,
     Tag_RematerializedFrame = 0x3,
@@ -164,6 +171,9 @@ class AbstractFramePtr {
     return frame;
   }
 
+  bool isScriptFrameIterData() const {
+    return !!ptr_ && (ptr_ & TagMask) == Tag_ScriptFrameIterData;
+  }
   bool isInterpreterFrame() const {
     return (ptr_ & TagMask) == Tag_InterpreterFrame;
   }
@@ -220,7 +230,7 @@ class AbstractFramePtr {
   template <typename SpecificEnvironment>
   inline void popOffEnvironmentChain();
 
-  inline JS::Realm* realm() const;
+  inline JSCompartment* compartment() const;
 
   inline bool hasInitialEnvironment() const;
   inline bool isGlobalFrame() const;
@@ -232,18 +242,15 @@ class AbstractFramePtr {
   inline JSScript* script() const;
   inline wasm::Instance* wasmInstance() const;
   inline GlobalObject* global() const;
-  inline bool hasGlobal(const GlobalObject* global) const;
   inline JSFunction* callee() const;
   inline Value calleev() const;
   inline Value& thisArgument() const;
 
-  inline bool isConstructing() const;
   inline Value newTarget() const;
 
   inline bool debuggerNeedsCheckPrimitiveReturn() const;
 
   inline bool isFunctionFrame() const;
-  inline bool isGeneratorFrame() const;
   inline bool isNonStrictDirectEvalFrame() const;
   inline bool isStrictEvalFrame() const;
 
@@ -276,6 +283,7 @@ class AbstractFramePtr {
   inline HandleValue returnValue() const;
   inline void setReturnValue(const Value& rval) const;
 
+  friend void GDBTestInitAbstractFramePtr(AbstractFramePtr&, void*);
   friend void GDBTestInitAbstractFramePtr(AbstractFramePtr&, InterpreterFrame*);
   friend void GDBTestInitAbstractFramePtr(AbstractFramePtr&,
                                           jit::BaselineFrame*);
@@ -312,7 +320,7 @@ class InterpreterFrame {
     PREV_UP_TO_DATE = 0x20, /* see DebugScopes::updateLiveScopes */
 
     /*
-     * See comment above 'isDebuggee' in Realm.h for explanation of
+     * See comment above 'isDebuggee' in JSCompartment.h for explanation of
      * invariants of debuggee compartments, scripts, and frames.
      */
     DEBUGGEE = 0x40, /* Execution is being observed by Debugger */
@@ -647,15 +655,12 @@ class InterpreterFrame {
    * frame.
    */
   Value newTarget() const {
-    if (isEvalFrame()) {
-      return ((Value*)this)[-1];
-    }
+    if (isEvalFrame()) return ((Value*)this)[-1];
 
     MOZ_ASSERT(isFunctionFrame());
 
-    if (callee().isArrow()) {
+    if (callee().isArrow())
       return callee().getExtendedSlot(FunctionExtended::ARROW_NEWTARGET_SLOT);
-    }
 
     if (isConstructing()) {
       unsigned pushedArgs = Max(numFormalArgs(), numActualArgs());
@@ -679,9 +684,7 @@ class InterpreterFrame {
   bool hasReturnValue() const { return flags_ & HAS_RVAL; }
 
   MutableHandleValue returnValue() {
-    if (!hasReturnValue()) {
-      rval_.setUndefined();
-    }
+    if (!hasReturnValue()) rval_.setUndefined();
     return MutableHandleValue::fromMarkedLocation(&rval_);
   }
 
@@ -764,7 +767,6 @@ class InterpreterFrame {
 
   bool hasCachedSavedFrame() const { return flags_ & HAS_CACHED_SAVED_FRAME; }
   void setHasCachedSavedFrame() { flags_ |= HAS_CACHED_SAVED_FRAME; }
-  void clearHasCachedSavedFrame() { flags_ &= ~HAS_CACHED_SAVED_FRAME; }
 
  public:
   void trace(JSTracer* trc, Value* sp, jsbytecode* pc);
@@ -885,7 +887,8 @@ class InterpreterStack {
   void popInlineFrame(InterpreterRegs& regs);
 
   bool resumeGeneratorCallFrame(JSContext* cx, InterpreterRegs& regs,
-                                HandleFunction callee, HandleObject envChain);
+                                HandleFunction callee, HandleValue newTarget,
+                                HandleObject envChain);
 
   inline void purge(JSRuntime* rt);
 
@@ -894,7 +897,25 @@ class InterpreterStack {
   }
 };
 
-void TraceInterpreterActivations(JSContext* cx, JSTracer* trc);
+// CooperatingContext is a wrapper for a JSContext that is participating in
+// cooperative scheduling and may be different from the current thread. It is
+// in place to make it clearer when we might be operating on another thread,
+// and harder to accidentally pass in another thread's context to an API that
+// expects the current thread's context.
+class CooperatingContext {
+  JSContext* cx;
+
+ public:
+  explicit CooperatingContext(JSContext* cx) : cx(cx) {}
+  JSContext* context() const { return cx; }
+
+  // For &cx. The address should not be taken for other CooperatingContexts.
+  friend class ZoneGroup;
+};
+
+void TraceInterpreterActivations(JSContext* cx,
+                                 const CooperatingContext& target,
+                                 JSTracer* trc);
 
 /*****************************************************************************/
 
@@ -918,7 +939,7 @@ template <MaybeConstruct Construct>
 class GenericArgsBase : public mozilla::Conditional<Construct, AnyConstructArgs,
                                                     AnyInvokeArgs>::Type {
  protected:
-  RootedValueVector v_;
+  AutoValueVector v_;
 
   explicit GenericArgsBase(JSContext* cx) : v_(cx) {}
 
@@ -933,15 +954,11 @@ class GenericArgsBase : public mozilla::Conditional<Construct, AnyConstructArgs,
     // callee, this, arguments[, new.target iff constructing]
     size_t len = 2 + argc + uint32_t(Construct);
     MOZ_ASSERT(len > argc);  // no overflow
-    if (!v_.resize(len)) {
-      return false;
-    }
+    if (!v_.resize(len)) return false;
 
     *static_cast<JS::CallArgs*>(this) = CallArgsFromVp(argc, v_.begin());
     this->constructing_ = Construct;
-    if (Construct) {
-      this->CallArgs::setThis(MagicValue(JS_IS_CONSTRUCTING));
-    }
+    if (Construct) this->CallArgs::setThis(MagicValue(JS_IS_CONSTRUCTING));
     return true;
   }
 };
@@ -958,9 +975,7 @@ class FixedArgsBase : public mozilla::Conditional<Construct, AnyConstructArgs,
   explicit FixedArgsBase(JSContext* cx) : v_(cx) {
     *static_cast<JS::CallArgs*>(this) = CallArgsFromVp(N, v_.begin());
     this->constructing_ = Construct;
-    if (Construct) {
-      this->CallArgs::setThis(MagicValue(JS_IS_CONSTRUCTING));
-    }
+    if (Construct) this->CallArgs::setThis(MagicValue(JS_IS_CONSTRUCTING));
   }
 };
 
@@ -1017,41 +1032,29 @@ template <class Args, class Arraylike>
 inline bool FillArgumentsFromArraylike(JSContext* cx, Args& args,
                                        const Arraylike& arraylike) {
   uint32_t len = arraylike.length();
-  if (!args.init(cx, len)) {
-    return false;
-  }
+  if (!args.init(cx, len)) return false;
 
-  for (uint32_t i = 0; i < len; i++) {
-    args[i].set(arraylike[i]);
-  }
+  for (uint32_t i = 0; i < len; i++) args[i].set(arraylike[i]);
 
   return true;
 }
 
-}  // namespace js
-
-namespace mozilla {
-
 template <>
-struct DefaultHasher<js::AbstractFramePtr> {
-  typedef js::AbstractFramePtr Lookup;
+struct DefaultHasher<AbstractFramePtr> {
+  typedef AbstractFramePtr Lookup;
 
   static js::HashNumber hash(const Lookup& key) {
     return mozilla::HashGeneric(key.raw());
   }
 
-  static bool match(const js::AbstractFramePtr& k, const Lookup& l) {
+  static bool match(const AbstractFramePtr& k, const Lookup& l) {
     return k == l;
   }
 };
 
-}  // namespace mozilla
-
-namespace js {
-
 /*****************************************************************************/
 
-// [SMDOC] LiveSavedFrameCache: SavedFrame caching to minimize stack walking
+// SavedFrame caching to minimize stack walking.
 //
 // Since each SavedFrame object includes a 'parent' pointer to the SavedFrame
 // for its caller, if we could easily find the right SavedFrame for a given
@@ -1148,10 +1151,9 @@ namespace js {
 //   which records the source line and column as well as the function, is not
 //   correct. To detect this case, when we push a cache entry, we record the
 //   frame's pc. When consulting the cache, if a frame's address matches but its
-//   pc does not, then we pop the cache entry, clear the frame's bit, and
-//   continue walking the stack. The next stack frame will definitely hit: since
-//   its callee frame never left the stack, the calling frame never got the
-//   chance to execute.
+//   pc does not, then we pop the cache entry and continue walking the stack.
+//   The next stack frame will definitely hit: since its callee frame never left
+//   the stack, the calling frame never got the chance to execute.
 //
 // - Generators, at least conceptually, have long-lived stack frames that
 //   disappear from the stack when the generator yields, and reappear on the
@@ -1179,20 +1181,14 @@ namespace js {
 //   compartment of the code that requested the capture, *not* in that of the
 //   frames it represents, so in general, different compartments may have
 //   different SavedFrame objects representing the same actual stack frame. The
-//   LiveSavedFrameCache simply records whichever SavedFrames were used in the
-//   most recent captures. When we find a cache hit, we check the entry's
-//   SavedFrame's compartment against the current compartment; if they do not
-//   match, we clear the entire cache.
-//
-//   This means that it is not always true that, if a frame's
-//   hasCachedSavedFrame bit is set, it must have an entry in the cache. The
-//   actual invariant is: either the cache is completely empty, or the frames'
-//   bits are trustworthy. This invariant holds even though capture can be
-//   interrupted at many places by OOM failures. Clearing the cache is a single,
-//   uninterruptible step. When we try to look up a frame whose bit is set and
-//   find an empty cache, we clear the frame's bit. And we only add the first
-//   frame to an empty cache once we've walked the stack all the way, so we know
-//   that all frames' bits are cleared by that point.
+//   LiveSavedFrameCache simply records whichever SavedFrames were created most
+//   recently. When we find a cache hit, we check the entry's SavedFrame's
+//   compartment against the current compartment; if they do not match, we flush
+//   the entire cache. This means that it is not always true that, if a frame's
+//   bit it set, it must have an entry in the cache. But we can still assert
+//   that, if a frame's bit is set and the cache is not completely empty, the
+//   frame will have an entry. When the cache is flushed, it will be repopulated
+//   immediately with the new capture's frames.
 //
 // - When the Debugger API evaluates an expression in some frame (the 'target
 //   frame'), it's SpiderMonkey's convention that the target frame be treated as
@@ -1239,7 +1235,6 @@ class LiveSavedFrameCache {
 
     struct HasCachedMatcher;
     struct SetHasCachedMatcher;
-    struct ClearHasCachedMatcher;
 
    public:
     // If iter's frame is of a type that can be cached, construct a FramePtr
@@ -1251,7 +1246,6 @@ class LiveSavedFrameCache {
 
     inline bool hasCachedSavedFrame() const;
     inline void setHasCachedSavedFrame();
-    inline void clearHasCachedSavedFrame();
 
     // Return true if this FramePtr refers to an interpreter frame.
     inline bool isInterpreterFrame() const {
@@ -1377,9 +1371,9 @@ namespace jit {
 class JitActivation;
 }  // namespace jit
 
-// This class is separate from Activation, because it calls Compartment::wrap()
-// which can GC and walk the stack. It's not safe to do that within the
-// JitActivation constructor.
+// This class is separate from Activation, because it calls
+// JSCompartment::wrap() which can GC and walk the stack. It's not safe to do
+// that within the JitActivation constructor.
 class MOZ_RAII ActivationEntryMonitor {
   JSContext* cx_;
 
@@ -1387,26 +1381,23 @@ class MOZ_RAII ActivationEntryMonitor {
   // ActivationEntryMonitor was created.
   JS::dbg::AutoEntryMonitor* entryMonitor_;
 
-  explicit inline ActivationEntryMonitor(JSContext* cx);
+  explicit ActivationEntryMonitor(JSContext* cx);
 
   ActivationEntryMonitor(const ActivationEntryMonitor& other) = delete;
   void operator=(const ActivationEntryMonitor& other) = delete;
 
-  void init(JSContext* cx, jit::CalleeToken entryToken);
-  void init(JSContext* cx, InterpreterFrame* entryFrame);
-
   Value asyncStack(JSContext* cx);
 
  public:
-  inline ActivationEntryMonitor(JSContext* cx, InterpreterFrame* entryFrame);
-  inline ActivationEntryMonitor(JSContext* cx, jit::CalleeToken entryToken);
+  ActivationEntryMonitor(JSContext* cx, InterpreterFrame* entryFrame);
+  ActivationEntryMonitor(JSContext* cx, jit::CalleeToken entryToken);
   inline ~ActivationEntryMonitor();
 };
 
 class Activation {
  protected:
   JSContext* cx_;
-  JS::Compartment* compartment_;
+  JSCompartment* compartment_;
   Activation* prev_;
   Activation* prevProfiling_;
 
@@ -1444,7 +1435,7 @@ class Activation {
 
  public:
   JSContext* cx() const { return cx_; }
-  JS::Compartment* compartment() const { return compartment_; }
+  JSCompartment* compartment() const { return compartment_; }
   Activation* prev() const { return prev_; }
   Activation* prevProfiling() const { return prevProfiling_; }
   inline Activation* mostRecentProfiling();
@@ -1526,7 +1517,7 @@ class InterpreterActivation : public Activation {
                               MaybeConstruct constructing);
   inline void popInlineFrame(InterpreterFrame* frame);
 
-  inline bool resumeGeneratorFrame(HandleFunction callee,
+  inline bool resumeGeneratorFrame(HandleFunction callee, HandleValue newTarget,
                                    HandleObject envChain);
 
   InterpreterFrame* current() const { return regs_.fp(); }
@@ -1538,9 +1529,7 @@ class InterpreterActivation : public Activation {
 
   // If this js::Interpret frame is running |script|, enable interrupts.
   void enableInterruptsIfRunning(JSScript* script) {
-    if (regs_.fp()->script() == script) {
-      enableInterruptsUnconditionally();
-    }
+    if (regs_.fp()->script() == script) enableInterruptsUnconditionally();
   }
   void enableInterruptsUnconditionally() {
     opMask_ = EnableInterruptsPseudoOpcode;
@@ -1556,6 +1545,11 @@ class ActivationIterator {
  public:
   explicit ActivationIterator(JSContext* cx);
 
+  // ActivationIterator can be used to iterate over a different thread's
+  // activations, for use by the GC, invalidation, and other operations that
+  // don't have a user-visible effect on the target thread's JS behavior.
+  ActivationIterator(JSContext* cx, const CooperatingContext& target);
+
   ActivationIterator& operator++();
 
   Activation* operator->() const { return activation_; }
@@ -1569,10 +1563,13 @@ class BailoutFrameInfo;
 
 // A JitActivation is used for frames running in Baseline or Ion.
 class JitActivation : public Activation {
+ public:
+  static const uintptr_t ExitFpWasmBit = 0x1;
+
+ private:
   // If Baseline, Ion or Wasm code is on the stack, and has called into C++,
   // this will be aligned to an ExitFrame. The last bit indicates if it's a
-  // wasm frame (bit set to wasm::ExitOrJitEntryFPTag) or not
-  // (bit set to ~wasm::ExitOrJitEntryFPTag).
+  // wasm frame (bit set to ExitFpWasmBit) or not (bit set to !ExitFpWasmBit).
   uint8_t* packedExitFP_;
 
   // When hasWasmExitFP(), encodedWasmExitReason_ holds ExitReason.
@@ -1585,9 +1582,9 @@ class JitActivation : public Activation {
   // all inline frames associated with that frame.
   //
   // This table is lazily initialized by calling getRematerializedFrame.
-  typedef GCVector<UniquePtr<RematerializedFrame>> RematerializedFrameVector;
+  typedef GCVector<RematerializedFrame*> RematerializedFrameVector;
   typedef HashMap<uint8_t*, RematerializedFrameVector> RematerializedFrameTable;
-  js::UniquePtr<RematerializedFrameTable> rematerializedFrames_;
+  RematerializedFrameTable* rematerializedFrames_;
 
   // This vector is used to remember the outcome of the evaluation of recover
   // instructions.
@@ -1615,17 +1612,13 @@ class JitActivation : public Activation {
                     sizeof(void*),
                 "Atomic should have same memory format as underlying type.");
 
-  // When wasm traps, the signal handler records some data for unwinding
-  // purposes. Wasm code can't trap reentrantly.
-  mozilla::Maybe<wasm::TrapData> wasmTrapData_;
-
   void clearRematerializedFrames();
 
 #ifdef CHECK_OSIPOINT_REGISTERS
  protected:
   // Used to verify that live registers don't change between a VM call and
   // the OsiPoint that follows it. Protected to silence Clang warning.
-  uint32_t checkRegs_ = 0;
+  uint32_t checkRegs_;
   RegisterDump regs_;
 #endif
 
@@ -1644,15 +1637,12 @@ class JitActivation : public Activation {
   }
 
   bool hasExitFP() const { return !!packedExitFP_; }
-  uint8_t* jsOrWasmExitFP() const {
-    return (uint8_t*)(uintptr_t(packedExitFP_) & ~wasm::ExitOrJitEntryFPTag);
-  }
   static size_t offsetOfPackedExitFP() {
     return offsetof(JitActivation, packedExitFP_);
   }
 
   bool hasJSExitFP() const {
-    return !(uintptr_t(packedExitFP_) & wasm::ExitOrJitEntryFPTag);
+    return !(uintptr_t(packedExitFP_) & ExitFpWasmBit);
   }
   uint8_t* jsExitFP() const {
     MOZ_ASSERT(hasJSExitFP());
@@ -1731,17 +1721,16 @@ class JitActivation : public Activation {
 
   // WebAssembly specific attributes.
   bool hasWasmExitFP() const {
-    return uintptr_t(packedExitFP_) & wasm::ExitOrJitEntryFPTag;
+    return uintptr_t(packedExitFP_) & ExitFpWasmBit;
   }
   wasm::Frame* wasmExitFP() const {
     MOZ_ASSERT(hasWasmExitFP());
-    return (wasm::Frame*)(uintptr_t(packedExitFP_) &
-                          ~wasm::ExitOrJitEntryFPTag);
+    return (wasm::Frame*)(uintptr_t(packedExitFP_) & ~ExitFpWasmBit);
   }
   void setWasmExitFP(const wasm::Frame* fp) {
     if (fp) {
-      MOZ_ASSERT(!(uintptr_t(fp) & wasm::ExitOrJitEntryFPTag));
-      packedExitFP_ = (uint8_t*)(uintptr_t(fp) | wasm::ExitOrJitEntryFPTag);
+      MOZ_ASSERT(!(uintptr_t(fp) & ExitFpWasmBit));
+      packedExitFP_ = (uint8_t*)(uintptr_t(fp) | ExitFpWasmBit);
       MOZ_ASSERT(hasWasmExitFP());
     } else {
       packedExitFP_ = nullptr;
@@ -1755,23 +1744,38 @@ class JitActivation : public Activation {
     return offsetof(JitActivation, encodedWasmExitReason_);
   }
 
+  // Interrupts are started from the interrupt signal handler (or the ARM
+  // simulator) and cleared by WasmHandleExecutionInterrupt or WasmHandleThrow
+  // when the interrupt is handled.
+
+  // Returns true iff we've entered interrupted state.
+  bool startWasmInterrupt(const wasm::RegisterState& state);
+  void finishWasmInterrupt();
+  bool isWasmInterrupted() const;
+  void* wasmInterruptUnwindPC() const;
+  void* wasmInterruptResumePC() const;
+
   void startWasmTrap(wasm::Trap trap, uint32_t bytecodeOffset,
                      const wasm::RegisterState& state);
   void finishWasmTrap();
-  bool isWasmTrapping() const { return !!wasmTrapData_; }
-  const wasm::TrapData& wasmTrapData() { return *wasmTrapData_; }
+  bool isWasmTrapping() const;
+  void* wasmTrapPC() const;
+  uint32_t wasmTrapBytecodeOffset() const;
 };
 
 // A filtering of the ActivationIterator to only stop at JitActivations.
 class JitActivationIterator : public ActivationIterator {
   void settle() {
-    while (!done() && !activation_->isJit()) {
-      ActivationIterator::operator++();
-    }
+    while (!done() && !activation_->isJit()) ActivationIterator::operator++();
   }
 
  public:
   explicit JitActivationIterator(JSContext* cx) : ActivationIterator(cx) {
+    settle();
+  }
+
+  JitActivationIterator(JSContext* cx, const CooperatingContext& target)
+      : ActivationIterator(cx, target) {
     settle();
   }
 
@@ -1844,8 +1848,9 @@ class InterpreterFrameIterator {
 // asJSJit() and asWasm(), but the user has to be careful not to have those be
 // used after JitFrameIter leaves the scope or the operator++ is called.
 //
-// In particular, this can handle the transition from wasm to jit and from jit
-// to wasm, since these can be interleaved in the same JitActivation.
+// TODO(bug 1360211) In particular, this can handle the transition from wasm to
+// ion and from ion to wasm, since these will be interleaved in the same
+// JitActivation.
 class JitFrameIter {
  protected:
   jit::JitActivation* act_;
@@ -1889,18 +1894,8 @@ class JitFrameIter {
   bool done() const;
   void operator++();
 
-  JS::Realm* realm() const;
-
-  // Returns the address of the next instruction that will execute in this
-  // frame, once control returns to this frame.
-  uint8_t* resumePCinCurrentFrame() const;
-
   // Operations which have an effect only on JIT frames.
   void skipNonScriptedJSFrames();
-
-  // Returns true iff this is a JIT frame with a self-hosted script. Note: be
-  // careful, JitFrameIter does not consider functions inlined by Ion.
-  bool isSelfHostedIgnoringInlining() const;
 };
 
 // A JitFrameIter that skips all the non-JSJit frames, skipping interleaved
@@ -1908,9 +1903,7 @@ class JitFrameIter {
 
 class OnlyJSJitFrameIter : public JitFrameIter {
   void settle() {
-    while (!done() && !isJSJit()) {
-      JitFrameIter::operator++();
-    }
+    while (!done() && !isJSJit()) JitFrameIter::operator++();
   }
 
  public:
@@ -1975,11 +1968,14 @@ class FrameIter {
 
     Data(JSContext* cx, DebuggerEvalOption debuggerEvalOption,
          JSPrincipals* principals);
+    Data(JSContext* cx, const CooperatingContext& target,
+         DebuggerEvalOption debuggerEvalOption);
     Data(const Data& other);
   };
 
   explicit FrameIter(JSContext* cx,
                      DebuggerEvalOption = FOLLOW_DEBUGGER_EVAL_PREV_LINK);
+  FrameIter(JSContext* cx, const CooperatingContext&, DebuggerEvalOption);
   FrameIter(JSContext* cx, DebuggerEvalOption, JSPrincipals*);
   FrameIter(const FrameIter& iter);
   MOZ_IMPLICIT FrameIter(const Data& data);
@@ -1993,8 +1989,7 @@ class FrameIter {
 
   FrameIter& operator++();
 
-  JS::Realm* realm() const;
-  JS::Compartment* compartment() const;
+  JSCompartment* compartment() const;
   Activation* activation() const { return data_.activations_.activation(); }
 
   bool isInterp() const {
@@ -2022,7 +2017,7 @@ class FrameIter {
   const char* filename() const;
   const char16_t* displayURL() const;
   unsigned computeLine(uint32_t* column = nullptr) const;
-  JSAtom* maybeFunctionDisplayAtom() const;
+  JSAtom* functionDisplayAtom() const;
   bool mutedErrors() const;
 
   bool hasScript() const { return !isWasm(); }
@@ -2033,7 +2028,6 @@ class FrameIter {
 
   inline bool wasmDebugEnabled() const;
   inline wasm::Instance* wasmInstance() const;
-  inline uint32_t wasmFuncIndex() const;
   inline unsigned wasmBytecodeOffset() const;
   void wasmUpdateBytecodeOffset();
 
@@ -2072,7 +2066,6 @@ class FrameIter {
   inline void unaliasedForEachActual(JSContext* cx, Op op);
 
   JSObject* environmentChain(JSContext* cx) const;
-  bool hasInitialEnvironment(JSContext* cx) const;
   CallObject& callObj(JSContext* cx) const;
 
   bool hasArgsObj() const;
@@ -2098,7 +2091,7 @@ class FrameIter {
   bool ensureHasRematerializedFrame(JSContext* cx);
 
   // True when isInterp() or isBaseline(). True when isIon() if it
-  // has a rematerialized frame. False otherwise.
+  // has a rematerialized frame. False otherwise false otherwise.
   bool hasUsableAbstractFramePtr() const;
 
   // -----------------------------------------------------------
@@ -2108,6 +2101,7 @@ class FrameIter {
   // -----------------------------------------------------------
 
   AbstractFramePtr abstractFramePtr() const;
+  AbstractFramePtr copyDataAsAbstractFramePtr() const;
   Data* copyData() const;
 
   // This can only be called when isInterp():
@@ -2137,8 +2131,6 @@ class FrameIter {
     return isJSJit() && jsJitFrame().isIonScripted();
   }
 
-  bool principalsSubsumeFrame() const;
-
   void popActivation();
   void popInterpreterFrame();
   void nextJitFrame();
@@ -2148,9 +2140,7 @@ class FrameIter {
 
 class ScriptFrameIter : public FrameIter {
   void settle() {
-    while (!done() && !hasScript()) {
-      FrameIter::operator++();
-    }
+    while (!done() && !hasScript()) FrameIter::operator++();
   }
 
  public:
@@ -2158,6 +2148,12 @@ class ScriptFrameIter : public FrameIter {
       JSContext* cx,
       DebuggerEvalOption debuggerEvalOption = FOLLOW_DEBUGGER_EVAL_PREV_LINK)
       : FrameIter(cx, debuggerEvalOption) {
+    settle();
+  }
+
+  ScriptFrameIter(JSContext* cx, const CooperatingContext& target,
+                  DebuggerEvalOption debuggerEvalOption)
+      : FrameIter(cx, target, debuggerEvalOption) {
     settle();
   }
 
@@ -2221,7 +2217,8 @@ class NonBuiltinFrameIter : public FrameIter {
   }
 };
 
-// A filtering of the ScriptFrameIter to only stop at non-self-hosted scripts.
+/* A filtering of the ScriptFrameIter to only stop at non-self-hosted scripts.
+ */
 class NonBuiltinScriptFrameIter : public ScriptFrameIter {
   void settle();
 
@@ -2267,6 +2264,10 @@ class AllScriptFramesIter : public ScriptFrameIter {
  public:
   explicit AllScriptFramesIter(JSContext* cx)
       : ScriptFrameIter(cx, ScriptFrameIter::IGNORE_DEBUGGER_EVAL_PREV_LINK) {}
+
+  explicit AllScriptFramesIter(JSContext* cx, const CooperatingContext& target)
+      : ScriptFrameIter(cx, target,
+                        ScriptFrameIter::IGNORE_DEBUGGER_EVAL_PREV_LINK) {}
 };
 
 /* Popular inline definitions. */
@@ -2274,12 +2275,8 @@ class AllScriptFramesIter : public ScriptFrameIter {
 inline JSScript* FrameIter::script() const {
   MOZ_ASSERT(!done());
   MOZ_ASSERT(hasScript());
-  if (data_.state_ == INTERP) {
-    return interpFrame()->script();
-  }
-  if (jsJitFrame().isIonJS()) {
-    return ionInlineFrames_.script();
-  }
+  if (data_.state_ == INTERP) return interpFrame()->script();
+  if (jsJitFrame().isIonJS()) return ionInlineFrames_.script();
   return jsJitFrame().script();
 }
 
@@ -2291,7 +2288,7 @@ inline bool FrameIter::wasmDebugEnabled() const {
 
 inline wasm::Instance* FrameIter::wasmInstance() const {
   MOZ_ASSERT(!done());
-  MOZ_ASSERT(isWasm());
+  MOZ_ASSERT(isWasm() && wasmDebugEnabled());
   return wasmFrame().instance();
 }
 
@@ -2299,12 +2296,6 @@ inline unsigned FrameIter::wasmBytecodeOffset() const {
   MOZ_ASSERT(!done());
   MOZ_ASSERT(isWasm());
   return wasmFrame().lineOrBytecode();
-}
-
-inline uint32_t FrameIter::wasmFuncIndex() const {
-  MOZ_ASSERT(!done());
-  MOZ_ASSERT(isWasm());
-  return wasmFrame().funcIndex();
 }
 
 inline bool FrameIter::isIon() const {
@@ -2321,15 +2312,11 @@ inline InterpreterFrame* FrameIter::interpFrame() const {
 }
 
 inline bool FrameIter::isPhysicalJitFrame() const {
-  if (!isJSJit()) {
-    return false;
-  }
+  if (!isJSJit()) return false;
 
   auto& jitFrame = jsJitFrame();
 
-  if (jitFrame.isBaselineJS()) {
-    return true;
-  }
+  if (jitFrame.isBaselineJS()) return true;
 
   if (jitFrame.isIonScripted()) {
     // Only the bottom of a group of inlined Ion frames is a physical frame.
@@ -2345,5 +2332,4 @@ inline jit::CommonFrameLayout* FrameIter::physicalJitFrame() const {
 }
 
 } /* namespace js */
-
 #endif /* vm_Stack_h */

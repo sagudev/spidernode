@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80: */
+ * vim: set ts=8 sts=4 et sw=4 tw=99: */
 
 // Copyright 2012 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
@@ -36,7 +36,6 @@
 #include <stdarg.h>
 
 #include "irregexp/RegExpAST.h"
-#include "js/RegExpFlags.h"
 
 namespace js {
 
@@ -48,7 +47,8 @@ namespace irregexp {
 
 extern bool
 ParsePattern(frontend::TokenStreamAnyChars& ts, LifoAlloc& alloc, JSAtom* str,
-             bool match_only, JS::RegExpFlags flags, RegExpCompileData* data);
+             bool multiline, bool match_only, bool unicode, bool ignore_case,
+             bool global, bool sticky, RegExpCompileData* data);
 
 extern bool
 ParsePatternSyntax(frontend::TokenStreamAnyChars& ts, LifoAlloc& alloc, JSAtom* str,
@@ -185,7 +185,8 @@ class RegExpParser
 {
   public:
     RegExpParser(frontend::TokenStreamAnyChars& ts, LifoAlloc* alloc,
-                 JS::RegExpFlags flags, const CharT* chars, const CharT* end);
+                 const CharT* chars, const CharT* end, bool multiline_mode, bool unicode,
+                 bool ignore_case);
 
     RegExpTree* ParsePattern();
     RegExpTree* ParseDisjunction();

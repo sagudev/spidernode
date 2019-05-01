@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -7,13 +7,65 @@
 
 #include "jsapi-tests/tests.h"
 
-BEGIN_TEST(testSetProperty_InheritedGlobalSetter) {
-  // This is a JSAPI test because jsapi-test globals can be set up to not have
-  // a resolve hook and therefore can use the property cache in some cases
-  // where the shell can't.
-  MOZ_RELEASE_ASSERT(!JS_GetClass(global)->getResolve());
+BEGIN_TEST(testSetProperty_NativeGetterStubSetter) {
+  JS::RootedObject obj(cx, JS_NewPlainObject(cx));
+  CHECK(obj);
 
-  CHECK(JS::InitRealmStandardClasses(cx));
+  CHECK(JS_DefineProperty(cx, global, "globalProp", obj, JSPROP_ENUMERATE));
+
+  CHECK(JS_DefineProperty(cx, obj, "prop", JS_PROPERTYOP_GETTER(NativeGet),
+                          nullptr, JSPROP_PROPOP_ACCESSORS));
+
+  EXEC(
+      "'use strict';                                     \n"
+      "var error, passed = false;                        \n"
+      "try                                               \n"
+      "{                                                 \n"
+      "  this.globalProp.prop = 42;                      \n"
+      "  throw new Error('setting property succeeded!'); \n"
+      "}                                                 \n"
+      "catch (e)                                         \n"
+      "{                                                 \n"
+      "  error = e;                                      \n"
+      "  if (e instanceof TypeError)                     \n"
+      "    passed = true;                                \n"
+      "}                                                 \n"
+      "                                                  \n"
+      "if (!passed)                                      \n"
+      "  throw error;                                    \n");
+
+  EXEC(
+      "var error, passed = false;                        \n"
+      "try                                               \n"
+      "{                                                 \n"
+      "  this.globalProp.prop = 42;                      \n"
+      "  if (this.globalProp.prop === 17)                \n"
+      "    passed = true;                                \n"
+      "  else                                            \n"
+      "    throw new Error('bad value after set!');      \n"
+      "}                                                 \n"
+      "catch (e)                                         \n"
+      "{                                                 \n"
+      "  error = e;                                      \n"
+      "}                                                 \n"
+      "                                                  \n"
+      "if (!passed)                                      \n"
+      "  throw error;                                    \n");
+
+  return true;
+}
+static bool NativeGet(JSContext* cx, JS::HandleObject obj, JS::HandleId id,
+                      JS::MutableHandleValue vp) {
+  vp.setInt32(17);
+  return true;
+}
+END_TEST(testSetProperty_NativeGetterStubSetter)
+
+BEGIN_TEST(testSetProperty_InheritedGlobalSetter) {
+  // This is a JSAPI test because jsapi-test globals do not have a resolve
+  // hook and therefore can use the property cache in some cases where the
+  // shell can't.
+  MOZ_RELEASE_ASSERT(!JS_GetClass(global)->getResolve());
 
   CHECK(JS_DefineProperty(cx, global, "HOTLOOP", 8, 0));
   EXEC(
@@ -27,25 +79,5 @@ BEGIN_TEST(testSetProperty_InheritedGlobalSetter) {
       "if (n != HOTLOOP)\n"
       "    throw 'FAIL';\n");
   return true;
-}
-
-const JSClass* getGlobalClass(void) override {
-  static const JSClassOps noResolveGlobalClassOps = {nullptr,  // add
-                                                     nullptr,  // delete
-                                                     nullptr,  // enumerate
-                                                     nullptr,  // newEnumerate
-                                                     nullptr,  // resolve
-                                                     nullptr,  // mayResolve
-                                                     nullptr,  // finalize
-                                                     nullptr,  // call
-                                                     nullptr,  // hasInstance
-                                                     nullptr,  // construct
-                                                     JS_GlobalObjectTraceHook};
-
-  static const JSClass noResolveGlobalClass = {
-      "testSetProperty_InheritedGlobalSetter_noResolveGlobalClass",
-      JSCLASS_GLOBAL_FLAGS, &noResolveGlobalClassOps};
-
-  return &noResolveGlobalClass;
 }
 END_TEST(testSetProperty_InheritedGlobalSetter)

@@ -23,7 +23,7 @@ info: |
     StringValue of Identifier is "yield".
 
 ---*/
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 var obj = {
   *method() {

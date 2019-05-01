@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,27 +32,17 @@ class StackSlotAllocator {
     MOZ_ASSERT(SupportsSimd);
     // This relies on the fact that any architecture specific
     // alignment of the stack pointer is done a priori.
-    if (height_ % 8 != 0) {
-      addAvailableSlot(height_ += 4);
-    }
-    if (height_ % 16 != 0) {
-      addAvailableDoubleSlot(height_ += 8);
-    }
+    if (height_ % 8 != 0) addAvailableSlot(height_ += 4);
+    if (height_ % 16 != 0) addAvailableDoubleSlot(height_ += 8);
     return height_ += 16;
   }
   uint32_t allocateDoubleSlot() {
-    if (!doubleSlots.empty()) {
-      return doubleSlots.popCopy();
-    }
-    if (height_ % 8 != 0) {
-      addAvailableSlot(height_ += 4);
-    }
+    if (!doubleSlots.empty()) return doubleSlots.popCopy();
+    if (height_ % 8 != 0) addAvailableSlot(height_ += 4);
     return height_ += 8;
   }
   uint32_t allocateSlot() {
-    if (!normalSlots.empty()) {
-      return normalSlots.popCopy();
-    }
+    if (!normalSlots.empty()) return normalSlots.popCopy();
     if (!doubleSlots.empty()) {
       uint32_t index = doubleSlots.popCopy();
       addAvailableSlot(index - 4);

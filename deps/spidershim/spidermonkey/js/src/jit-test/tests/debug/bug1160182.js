@@ -1,4 +1,4 @@
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.eval("(" + function() {
     var o = {get x() {}};
     this.method = Object.getOwnPropertyDescriptor(o, "x").get;

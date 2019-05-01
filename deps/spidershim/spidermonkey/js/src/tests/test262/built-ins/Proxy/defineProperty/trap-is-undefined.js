@@ -12,17 +12,16 @@ info: |
         a. Return target.[[DefineOwnProperty]](P, Desc).
     ...
 includes: [propertyHelper.js]
-features: [Proxy]
 ---*/
 
 var target = {};
 var p = new Proxy(target, {});
 
 Object.defineProperty(p, "attr", {
-  configurable: true,
-  enumerable: true,
-  writable: true,
-  value: 1
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value: 1
 });
 
 verifyEqualTo(target, "attr", 1);
@@ -31,10 +30,10 @@ verifyEnumerable(target, "attr");
 verifyConfigurable(target, "attr");
 
 Object.defineProperty(p, "attr", {
-  configurable: false,
-  enumerable: false,
-  writable: false,
-  value: 2
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: 2
 });
 
 verifyEqualTo(target, "attr", 2);

@@ -1,7 +1,5 @@
-commit e227f54d01d29629d1f889118e8d3442c8640625
-Author: Leo Balter <leonardo.balter@gmail.com>
-Date:   Wed Mar 6 12:39:58 2019 -0500
+commit 82c6148980332febe92a544a1fb653718e9fdb57
+Author: André Bargull <andre.bargull@gmail.com>
+Date:   Thu Feb 1 11:04:51 2018 -0800
 
-    Fix assertions previously not reached before
-    
-    Fix #2049
+    Add missing closing parenthesis and remove invalid async flag (#1402)

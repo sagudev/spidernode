@@ -14,7 +14,7 @@ import sys
 # We need the NDK version in multiple different places, and it's inconvenient
 # to pass down the NDK version to all relevant places, so we have this global
 # variable.
-NDK_VERSION = 'r17b'
+NDK_VERSION = 'r15c'
 
 ANDROID_NDK_EXISTS = '''
 Looks like you have the Android NDK installed at:
@@ -43,46 +43,36 @@ output as packages are downloaded and installed.
 '''
 
 MOBILE_ANDROID_MOZCONFIG_TEMPLATE = '''
-Paste the lines between the chevrons (>>> and <<<) into your
-$topsrcdir/mozconfig file, or create the file if it does not exist:
+Paste the lines between the chevrons (>>> and <<<) into your mozconfig file:
 
->>>
-# Build GeckoView/Firefox for Android:
+<<<
+# Build Firefox for Android:
 ac_add_options --enable-application=mobile/android
-
-# Targeting the following architecture.
-# For regular phones, no --target is needed.
-# For x86 emulators (and x86 devices, which are uncommon):
-# ac_add_options --target=i686
-# For newer phones.
-# ac_add_options --target=aarch64
-# For x86_64 emulators (and x86_64 devices, which are even less common):
-# ac_add_options --target=x86_64
+ac_add_options --target=arm-linux-androideabi
 
 {extra_lines}
-# With the following Android NDK:
+# With the following Android SDK and NDK:
+ac_add_options --with-android-sdk="{sdk_path}"
 ac_add_options --with-android-ndk="{ndk_path}"
-
-# With the following compiler toolchain:
-CC="{moz_state_dir}/clang/bin/clang"
-CXX="{moz_state_dir}/clang/bin/clang++"
-<<<
+>>>
 '''
 
 MOBILE_ANDROID_ARTIFACT_MODE_MOZCONFIG_TEMPLATE = '''
-Paste the lines between the chevrons (>>> and <<<) into your
-$topsrcdir/mozconfig file, or create the file if it does not exist:
+Paste the lines between the chevrons (>>> and <<<) into your mozconfig file:
 
->>>
-# Build GeckoView/Firefox for Android Artifact Mode:
+<<<
+# Build Firefox for Android Artifact Mode:
 ac_add_options --enable-application=mobile/android
 ac_add_options --target=arm-linux-androideabi
 ac_add_options --enable-artifact-builds
 
 {extra_lines}
+# With the following Android SDK:
+ac_add_options --with-android-sdk="{sdk_path}"
+
 # Write build artifacts to:
 mk_add_options MOZ_OBJDIR=./objdir-frontend
-<<<
+>>>
 '''
 
 
@@ -183,7 +173,7 @@ def ensure_android(os_name, artifact_mode=False, ndk_only=False, no_interactive=
     # ~/.mozbuild/{android-sdk-$OS_NAME, android-ndk-$VER}.
     mozbuild_path, sdk_path, ndk_path = get_paths(os_name)
     os_tag = 'darwin' if os_name == 'macosx' else os_name
-    sdk_url = 'https://dl.google.com/android/repository/sdk-tools-{0}-4333796.zip'.format(os_tag)
+    sdk_url = 'https://dl.google.com/android/repository/sdk-tools-{0}-3859397.zip'.format(os_tag)
     ndk_url = android_ndk_url(os_name)
 
     ensure_android_sdk_and_ndk(mozbuild_path, os_name,
@@ -237,27 +227,7 @@ def ensure_android_sdk_and_ndk(mozbuild_path, os_name, sdk_path, sdk_url, ndk_pa
         # preserve the old convention to smooth detecting existing SDK
         # installations.
         install_mobile_android_sdk_or_ndk(sdk_url, os.path.join(mozbuild_path,
-                                                                'android-sdk-{0}'.format(os_name)))
-
-
-def get_packages_to_install(packages_file_name):
-    """
-    sdkmanager version 26.1.1 (current) and some versions below have a bug that makes
-    the following command fail:
-        args = [sdkmanager_tool, '--package_file={0}'.format(package_file_name)]
-        subprocess.check_call(args)
-    The error is in the sdkmanager, where the --package_file param isn't recognized.
-        The error is being tracked here https://issuetracker.google.com/issues/66465833
-    Meanwhile, this workaround achives installing all required Android packages by reading
-    them out of the same file that --package_file would have used, and passing them as strings.
-    So from here: https://developer.android.com/studio/command-line/sdkmanager
-    Instead of:
-        sdkmanager --package_file=package_file [options]
-    We're doing:
-        sdkmanager "platform-tools" "platforms;android-26"
-    """
-    with open(packages_file_name) as package_file:
-        return map(lambda package: package.strip(), package_file.readlines())
+                                          'android-sdk-{0}'.format(os_name)))
 
 
 def ensure_android_packages(sdkmanager_tool, packages=None, no_interactive=False):
@@ -269,12 +239,10 @@ def ensure_android_packages(sdkmanager_tool, packages=None, no_interactive=False
     # This tries to install all the required Android packages.  The user
     # may be prompted to agree to the Android license.
     package_file_name = os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                                     'android-packages.txt'))
+                                        'android-packages.txt'))
     print(INSTALLING_ANDROID_PACKAGES % open(package_file_name, 'rt').read())
 
-    args = [sdkmanager_tool]
-    args.extend(get_packages_to_install(package_file_name))
-
+    args = [sdkmanager_tool, '--package_file={0}'.format(package_file_name)]
     if not no_interactive:
         subprocess.check_call(args)
         return
@@ -299,12 +267,12 @@ def ensure_android_packages(sdkmanager_tool, packages=None, no_interactive=False
 
 
 def suggest_mozconfig(os_name, artifact_mode=False, java_bin_path=None):
-    moz_state_dir, sdk_path, ndk_path = get_paths(os_name)
+    _mozbuild_path, sdk_path, ndk_path = get_paths(os_name)
 
     extra_lines = []
     if java_bin_path:
         extra_lines += [
-            '# With the following java:',
+            '# With the following java and javac:',
             'ac_add_options --with-java-bin-path="{}"'.format(java_bin_path),
         ]
     if extra_lines:
@@ -318,7 +286,6 @@ def suggest_mozconfig(os_name, artifact_mode=False, java_bin_path=None):
     kwargs = dict(
         sdk_path=sdk_path,
         ndk_path=ndk_path,
-        moz_state_dir=moz_state_dir,
         extra_lines='\n'.join(extra_lines),
     )
     print(template.format(**kwargs))

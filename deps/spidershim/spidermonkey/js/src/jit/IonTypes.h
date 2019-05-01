@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +10,6 @@
 #include "mozilla/HashFunctions.h"
 
 #include <algorithm>
-#include <stdint.h>
 
 #include "jsfriendapi.h"
 #include "jstypes.h"
@@ -19,26 +18,6 @@
 #include "vm/StringType.h"
 
 namespace js {
-
-// Each IonScript has a unique compilation id. This is used to sweep/ignore
-// constraints for IonScripts that have been invalidated/destroyed.
-class IonCompilationId {
-  // Use two 32-bit integers instead of uint64_t to avoid 8-byte alignment on
-  // some 32-bit platforms.
-  uint32_t idLo_;
-  uint32_t idHi_;
-
- public:
-  explicit IonCompilationId(uint64_t id)
-      : idLo_(id & UINT32_MAX), idHi_(id >> 32) {}
-  bool operator==(const IonCompilationId& other) const {
-    return idLo_ == other.idLo_ && idHi_ == other.idHi_;
-  }
-  bool operator!=(const IonCompilationId& other) const {
-    return !operator==(other);
-  }
-};
-
 namespace jit {
 
 typedef uint32_t RecoverOffset;
@@ -109,9 +88,6 @@ enum BailoutKind {
   // Array access with negative index
   Bailout_NegativeIndex,
 
-  // Array access with non integer index
-  Bailout_NonIntegerIndex,
-
   // Pretty specific case:
   //  - need a type barrier on a property write
   //  - all but one of the observed types have property types that reflect
@@ -127,7 +103,9 @@ enum BailoutKind {
   Bailout_NonObjectInput,
   Bailout_NonStringInput,
   Bailout_NonSymbolInput,
-  Bailout_NonBigIntInput,
+
+  // SIMD Unbox expects a given type, bails out if it doesn't match.
+  Bailout_UnexpectedSimdInput,
 
   // Atomic operations require shared memory, bail out if the typed array
   // maps unshared memory.
@@ -213,8 +191,6 @@ inline const char* BailoutKindString(BailoutKind kind) {
       return "Bailout_Hole";
     case Bailout_NegativeIndex:
       return "Bailout_NegativeIndex";
-    case Bailout_NonIntegerIndex:
-      return "Bailout_NonIntegerIndex";
     case Bailout_ObjectIdentityOrTypeGuard:
       return "Bailout_ObjectIdentityOrTypeGuard";
     case Bailout_NonInt32Input:
@@ -229,8 +205,8 @@ inline const char* BailoutKindString(BailoutKind kind) {
       return "Bailout_NonStringInput";
     case Bailout_NonSymbolInput:
       return "Bailout_NonSymbolInput";
-    case Bailout_NonBigIntInput:
-      return "Bailout_NonBigIntInput";
+    case Bailout_UnexpectedSimdInput:
+      return "Bailout_UnexpectedSimdInput";
     case Bailout_NonSharedTypedArrayInput:
       return "Bailout_NonSharedTypedArrayInput";
     case Bailout_Debugger:
@@ -273,19 +249,6 @@ static const uint32_t VECTOR_SCALE_BITS = 3;
 static const uint32_t VECTOR_SCALE_SHIFT =
     ELEMENT_TYPE_BITS + ELEMENT_TYPE_SHIFT;
 static const uint32_t VECTOR_SCALE_MASK = (1 << VECTOR_SCALE_BITS) - 1;
-
-// The integer SIMD types have a lot of operations that do the exact same thing
-// for signed and unsigned integer types. Sometimes it is simpler to treat
-// signed and unsigned integer SIMD types as the same type, using a SimdSign to
-// distinguish the few cases where there is a difference.
-enum class SimdSign {
-  // Signedness is not applicable to this type. (i.e., Float or Bool).
-  NotApplicable,
-  // Treat as an unsigned integer with a range 0 .. 2^N-1.
-  Unsigned,
-  // Treat as a signed integer in two's complement encoding.
-  Signed,
-};
 
 class SimdConstant {
  public:
@@ -404,9 +367,7 @@ class SimdConstant {
 
   bool operator==(const SimdConstant& rhs) const {
     MOZ_ASSERT(defined() && rhs.defined());
-    if (type() != rhs.type()) {
-      return false;
-    }
+    if (type() != rhs.type()) return false;
     // Takes negative zero into accuont, as it's a bit comparison.
     return memcmp(&u, &rhs.u, sizeof(u)) == 0;
   }
@@ -438,7 +399,7 @@ enum class IntConversionInputKind { NumbersOnly, NumbersOrBoolsOnly, Any };
 // The ordering of this enumeration is important: Anything < Value is a
 // specialized type. Furthermore, anything < String has trivial conversion to
 // a number.
-enum class MIRType : uint8_t {
+enum class MIRType {
   Undefined,
   Null,
   Boolean,
@@ -449,7 +410,6 @@ enum class MIRType : uint8_t {
   // Types above have trivial conversion to a number.
   String,
   Symbol,
-  BigInt,
   // Types above are primitive (including undefined and null).
   Object,
   MagicOptimizedArguments,    // JS_OPTIMIZED_ARGUMENTS magic value.
@@ -465,7 +425,6 @@ enum class MIRType : uint8_t {
   Slots,        // A slots vector
   Elements,     // An elements vector
   Pointer,      // An opaque pointer that receives no special treatment
-  RefOrNull,    // Wasm Ref/AnyRef/NullRef: a raw JSObject* or a raw (void*)0
   Shape,        // A Shape pointer.
   ObjectGroup,  // An ObjectGroup pointer.
   Last = ObjectGroup,
@@ -481,7 +440,34 @@ enum class MIRType : uint8_t {
 };
 
 static inline bool IsSimdType(MIRType type) {
-  return ((uint8_t(type) >> VECTOR_SCALE_SHIFT) & VECTOR_SCALE_MASK) != 0;
+  return ((unsigned(type) >> VECTOR_SCALE_SHIFT) & VECTOR_SCALE_MASK) != 0;
+}
+
+// Returns the number of vector elements (hereby called "length") for a given
+// SIMD kind. It is the Y part of the name "Foo x Y".
+static inline unsigned SimdTypeToLength(MIRType type) {
+  MOZ_ASSERT(IsSimdType(type));
+  return 1 << ((unsigned(type) >> VECTOR_SCALE_SHIFT) & VECTOR_SCALE_MASK);
+}
+
+// Get the type of the individual lanes in a SIMD type.
+// For example, Int32x4 -> Int32, Float32x4 -> Float32 etc.
+static inline MIRType SimdTypeToLaneType(MIRType type) {
+  MOZ_ASSERT(IsSimdType(type));
+  static_assert(unsigned(MIRType::Last) <= ELEMENT_TYPE_MASK,
+                "ELEMENT_TYPE_MASK should be larger than the last MIRType");
+  return MIRType((unsigned(type) >> ELEMENT_TYPE_SHIFT) & ELEMENT_TYPE_MASK);
+}
+
+// Get the type expected when inserting a lane into a SIMD type.
+// This is the argument type expected by the MSimdValue constructors as well as
+// MSimdSplat and MSimdInsertElement.
+static inline MIRType SimdTypeToLaneArgumentType(MIRType type) {
+  MIRType laneType = SimdTypeToLaneType(type);
+
+  // Boolean lanes should be pre-converted to an Int32 with the values 0 or -1.
+  // All other lane types are inserted directly.
+  return laneType == MIRType::Boolean ? MIRType::Int32 : laneType;
 }
 
 static inline MIRType MIRTypeFromValueType(JSValueType type) {
@@ -498,8 +484,6 @@ static inline MIRType MIRTypeFromValueType(JSValueType type) {
       return MIRType::String;
     case JSVAL_TYPE_SYMBOL:
       return MIRType::Symbol;
-    case JSVAL_TYPE_BIGINT:
-      return MIRType::BigInt;
     case JSVAL_TYPE_BOOLEAN:
       return MIRType::Boolean;
     case JSVAL_TYPE_NULL:
@@ -530,8 +514,6 @@ static inline JSValueType ValueTypeFromMIRType(MIRType type) {
       return JSVAL_TYPE_STRING;
     case MIRType::Symbol:
       return JSVAL_TYPE_SYMBOL;
-    case MIRType::BigInt:
-      return JSVAL_TYPE_BIGINT;
     case MIRType::MagicOptimizedArguments:
     case MIRType::MagicOptimizedOut:
     case MIRType::MagicHole:
@@ -558,9 +540,6 @@ static inline size_t MIRTypeToSize(MIRType type) {
       return 4;
     case MIRType::Double:
       return 8;
-    case MIRType::Pointer:
-    case MIRType::RefOrNull:
-      return sizeof(uintptr_t);
     default:
       MOZ_CRASH("MIRTypeToSize - unhandled case");
   }
@@ -586,8 +565,6 @@ static inline const char* StringFromMIRType(MIRType type) {
       return "String";
     case MIRType::Symbol:
       return "Symbol";
-    case MIRType::BigInt:
-      return "BigInt";
     case MIRType::Object:
       return "Object";
     case MIRType::MagicOptimizedArguments:
@@ -614,8 +591,6 @@ static inline const char* StringFromMIRType(MIRType type) {
       return "Elements";
     case MIRType::Pointer:
       return "Pointer";
-    case MIRType::RefOrNull:
-      return "RefOrNull";
     case MIRType::Shape:
       return "Shape";
     case MIRType::ObjectGroup:
@@ -649,10 +624,6 @@ static inline bool IsNumberType(MIRType type) {
          type == MIRType::Float32 || type == MIRType::Int64;
 }
 
-static inline bool IsNumericType(MIRType type) {
-  return IsNumberType(type) || type == MIRType::BigInt;
-}
-
 static inline bool IsTypeRepresentableAsDouble(MIRType type) {
   return type == MIRType::Int32 || type == MIRType::Double ||
          type == MIRType::Float32;
@@ -668,6 +639,18 @@ static inline bool IsFloatingPointType(MIRType type) {
 
 static inline bool IsNullOrUndefined(MIRType type) {
   return type == MIRType::Null || type == MIRType::Undefined;
+}
+
+static inline bool IsFloatingPointSimdType(MIRType type) {
+  return type == MIRType::Float32x4;
+}
+
+static inline bool IsIntegerSimdType(MIRType type) {
+  return IsSimdType(type) && SimdTypeToLaneType(type) == MIRType::Int32;
+}
+
+static inline bool IsBooleanSimdType(MIRType type) {
+  return IsSimdType(type) && SimdTypeToLaneType(type) == MIRType::Boolean;
 }
 
 static inline bool IsMagicType(MIRType type) {
@@ -693,31 +676,60 @@ static inline MIRType ScalarTypeToMIRType(Scalar::Type type) {
       return MIRType::Float32;
     case Scalar::Float64:
       return MIRType::Double;
-    case Scalar::BigInt64:
-    case Scalar::BigUint64:
-      MOZ_CRASH("NYI");
+    case Scalar::Float32x4:
+      return MIRType::Float32x4;
+    case Scalar::Int8x16:
+      return MIRType::Int8x16;
+    case Scalar::Int16x8:
+      return MIRType::Int16x8;
+    case Scalar::Int32x4:
+      return MIRType::Int32x4;
     case Scalar::MaxTypedArrayViewType:
       break;
   }
-  MOZ_CRASH("unexpected kind");
+  MOZ_CRASH("unexpected SIMD kind");
+}
+
+static inline unsigned ScalarTypeToLength(Scalar::Type type) {
+  switch (type) {
+    case Scalar::Int8:
+    case Scalar::Uint8:
+    case Scalar::Int16:
+    case Scalar::Uint16:
+    case Scalar::Int32:
+    case Scalar::Uint32:
+    case Scalar::Int64:
+    case Scalar::Float32:
+    case Scalar::Float64:
+    case Scalar::Uint8Clamped:
+      return 1;
+    case Scalar::Float32x4:
+    case Scalar::Int32x4:
+      return 4;
+    case Scalar::Int16x8:
+      return 8;
+    case Scalar::Int8x16:
+      return 16;
+    case Scalar::MaxTypedArrayViewType:
+      break;
+  }
+  MOZ_CRASH("unexpected SIMD kind");
 }
 
 static inline const char* PropertyNameToExtraName(PropertyName* name) {
   JS::AutoCheckCannotGC nogc;
-  if (!name->hasLatin1Chars()) {
-    return nullptr;
-  }
+  if (!name->hasLatin1Chars()) return nullptr;
   return reinterpret_cast<const char*>(name->latin1Chars(nogc));
 }
 
 #ifdef DEBUG
 
 // Track the pipeline of opcodes which has produced a snapshot.
-#  define TRACK_SNAPSHOTS 1
+#define TRACK_SNAPSHOTS 1
 
 // Make sure registers are not modified between an instruction and
 // its OsiPoint.
-#  define CHECK_OSIPOINT_REGISTERS 1
+#define CHECK_OSIPOINT_REGISTERS 1
 
 #endif  // DEBUG
 
@@ -754,9 +766,6 @@ enum ABIFunctionType {
 
   // int f(double)
   Args_Int_Double = Args_General0 | (ArgType_Double << ArgType_Shift),
-
-  // int f(float32)
-  Args_Int_Float32 = Args_General0 | (ArgType_Float32 << ArgType_Shift),
 
   // float f(float)
   Args_Float32_Float32 =
@@ -860,8 +869,6 @@ static const uint32_t MAX_UNCHECKED_LEAF_FRAME_SIZE = 64;
 typedef uint32_t TruncFlags;
 static const TruncFlags TRUNC_UNSIGNED = TruncFlags(1) << 0;
 static const TruncFlags TRUNC_SATURATING = TruncFlags(1) << 1;
-
-enum BranchDirection { FALSE_BRANCH, TRUE_BRANCH };
 
 }  // namespace jit
 }  // namespace js

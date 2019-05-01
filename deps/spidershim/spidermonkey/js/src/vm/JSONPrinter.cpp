@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,25 +17,17 @@
 using namespace js;
 
 JSONPrinter::~JSONPrinter() {
-  if (dtoaState_) {
-    DestroyDtoaState(dtoaState_);
-  }
+  if (dtoaState_) DestroyDtoaState(dtoaState_);
 }
 
 void JSONPrinter::indent() {
   MOZ_ASSERT(indentLevel_ >= 0);
-  if (indent_) {
-    out_.putChar('\n');
-    for (int i = 0; i < indentLevel_; i++) {
-      out_.put("  ");
-    }
-  }
+  out_.printf("\n");
+  for (int i = 0; i < indentLevel_; i++) out_.printf("  ");
 }
 
 void JSONPrinter::propertyName(const char* name) {
-  if (!first_) {
-    out_.putChar(',');
-  }
+  if (!first_) out_.printf(",");
   indent();
   out_.printf("\"%s\":", name);
   first_ = false;
@@ -43,41 +35,33 @@ void JSONPrinter::propertyName(const char* name) {
 
 void JSONPrinter::beginObject() {
   if (!first_) {
-    out_.putChar(',');
+    out_.printf(",");
     indent();
   }
-  out_.putChar('{');
+  out_.printf("{");
   indentLevel_++;
-  first_ = true;
-}
-
-void JSONPrinter::beginList() {
-  if (!first_) {
-    out_.putChar(',');
-  }
-  out_.putChar('[');
   first_ = true;
 }
 
 void JSONPrinter::beginObjectProperty(const char* name) {
   propertyName(name);
-  out_.putChar('{');
+  out_.printf("{");
   indentLevel_++;
   first_ = true;
 }
 
 void JSONPrinter::beginListProperty(const char* name) {
   propertyName(name);
-  out_.putChar('[');
+  out_.printf("[");
   first_ = true;
 }
 
 void JSONPrinter::beginStringProperty(const char* name) {
   propertyName(name);
-  out_.putChar('"');
+  out_.printf("\"");
 }
 
-void JSONPrinter::endStringProperty() { out_.putChar('"'); }
+void JSONPrinter::endStringProperty() { out_.printf("\""); }
 
 void JSONPrinter::property(const char* name, const char* value) {
   beginStringProperty(name);
@@ -96,23 +80,14 @@ void JSONPrinter::formatProperty(const char* name, const char* format, ...) {
   va_end(ap);
 }
 
-void JSONPrinter::formatProperty(const char* name, const char* format,
-                                 va_list ap) {
-  beginStringProperty(name);
-  out_.vprintf(format, ap);
-  endStringProperty();
-}
-
 void JSONPrinter::value(const char* format, ...) {
   va_list ap;
   va_start(ap, format);
 
-  if (!first_) {
-    out_.putChar(',');
-  }
-  out_.putChar('"');
+  if (!first_) out_.printf(",");
+  out_.printf("\"");
   out_.vprintf(format, ap);
-  out_.putChar('"');
+  out_.printf("\"");
 
   va_end(ap);
   first_ = false;
@@ -124,9 +99,7 @@ void JSONPrinter::property(const char* name, int32_t value) {
 }
 
 void JSONPrinter::value(int val) {
-  if (!first_) {
-    out_.putChar(',');
-  }
+  if (!first_) out_.printf(",");
   out_.printf("%d", val);
   first_ = false;
 }
@@ -157,7 +130,7 @@ void JSONPrinter::floatProperty(const char* name, double value,
                                 size_t precision) {
   if (!mozilla::IsFinite(value)) {
     propertyName(name);
-    out_.put("null");
+    out_.printf("null");
     return;
   }
 
@@ -205,11 +178,11 @@ void JSONPrinter::property(const char* name, const mozilla::TimeDuration& dur,
 void JSONPrinter::endObject() {
   indentLevel_--;
   indent();
-  out_.putChar('}');
+  out_.printf("}");
   first_ = false;
 }
 
 void JSONPrinter::endList() {
-  out_.putChar(']');
+  out_.printf("]");
   first_ = false;
 }

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,22 +9,19 @@
 
 #include "vm/Interpreter.h"
 
-#include "mozilla/Maybe.h"
-
 #include "jsnum.h"
 
 #include "builtin/String.h"
 #include "jit/Ion.h"
 #include "vm/ArgumentsObject.h"
-#include "vm/Realm.h"
+#include "vm/JSCompartment.h"
 
 #include "vm/EnvironmentObject-inl.h"
-#include "vm/GlobalObject-inl.h"
 #include "vm/JSAtom-inl.h"
 #include "vm/JSObject-inl.h"
-#include "vm/ObjectOperations-inl.h"
 #include "vm/Stack-inl.h"
 #include "vm/StringType-inl.h"
+#include "vm/UnboxedObject-inl.h"
 
 namespace js {
 
@@ -40,9 +37,8 @@ namespace js {
  */
 static inline bool IsOptimizedArguments(AbstractFramePtr frame,
                                         MutableHandleValue vp) {
-  if (vp.isMagic(JS_OPTIMIZED_ARGUMENTS) && frame.script()->needsArgsObj()) {
+  if (vp.isMagic(JS_OPTIMIZED_ARGUMENTS) && frame.script()->needsArgsObj())
     vp.setObject(frame.argsObj());
-  }
   return vp.isMagic(JS_OPTIMIZED_ARGUMENTS);
 }
 
@@ -57,7 +53,7 @@ static inline bool GuardFunApplyArgumentsOptimization(JSContext* cx,
   if (args.length() == 2 && IsOptimizedArguments(frame, args[1])) {
     if (!IsNativeFunction(args.calleev(), js::fun_apply)) {
       RootedScript script(cx, frame.script());
-      JSScript::argumentsOptimizationFailed(cx, script);
+      if (!JSScript::argumentsOptimizationFailed(cx, script)) return false;
       args[1].setObject(frame.argsObj());
     }
   }
@@ -80,19 +76,13 @@ static inline bool IsUninitializedLexical(const Value& val) {
 static inline bool IsUninitializedLexicalSlot(HandleObject obj,
                                               Handle<PropertyResult> prop) {
   MOZ_ASSERT(prop);
-  if (obj->is<WithEnvironmentObject>()) {
-    return false;
-  }
+  if (obj->is<WithEnvironmentObject>()) return false;
 
   // Proxy hooks may return a non-native property.
-  if (prop.isNonNativeProperty()) {
-    return false;
-  }
+  if (prop.isNonNativeProperty()) return false;
 
   Shape* shape = prop.shape();
-  if (!shape->isDataProperty()) {
-    return false;
-  }
+  if (!shape->isDataProperty()) return false;
 
   MOZ_ASSERT(obj->as<NativeObject>().containsPure(shape));
   return IsUninitializedLexical(obj->as<NativeObject>().getSlot(shape->slot()));
@@ -175,8 +165,7 @@ inline bool FetchName(JSContext* cx, HandleObject receiver, HandleObject holder,
   if (!prop) {
     switch (mode) {
       case GetNameMode::Normal:
-        ReportIsNotDefined(cx, name);
-        return false;
+        return ReportIsNotDefined(cx, name);
       case GetNameMode::TypeOf:
         vp.setUndefined();
         return true;
@@ -186,9 +175,7 @@ inline bool FetchName(JSContext* cx, HandleObject receiver, HandleObject holder,
   /* Take the slow path if shape was not found in a native object. */
   if (!receiver->isNative() || !holder->isNative()) {
     Rooted<jsid> id(cx, NameToId(name));
-    if (!GetProperty(cx, receiver, receiver, id, vp)) {
-      return false;
-    }
+    if (!GetProperty(cx, receiver, receiver, id, vp)) return false;
   } else {
     RootedShape shape(cx, prop.shape());
     if (shape->isDataDescriptor() && shape->hasDefaultGetter()) {
@@ -200,34 +187,28 @@ inline bool FetchName(JSContext* cx, HandleObject receiver, HandleObject holder,
       // GetNameBoundInEnvironment.
       RootedObject normalized(cx, MaybeUnwrapWithEnvironment(receiver));
       if (!NativeGetExistingProperty(cx, normalized, holder.as<NativeObject>(),
-                                     shape, vp)) {
+                                     shape, vp))
         return false;
-      }
     }
   }
 
   // We do our own explicit checking for |this|
-  if (name == cx->names().dotThis) {
-    return true;
-  }
+  if (name == cx->names().dotThis) return true;
 
   // NAME operations are the slow paths already, so unconditionally check
   // for uninitialized lets.
   return CheckUninitializedLexical(cx, name, vp);
 }
 
-inline bool FetchNameNoGC(JSObject* pobj, PropertyResult prop, Value* vp) {
-  if (!prop || !pobj->isNative()) {
-    return false;
-  }
+inline bool FetchNameNoGC(JSObject* pobj, PropertyResult prop,
+                          MutableHandleValue vp) {
+  if (!prop || !pobj->isNative()) return false;
 
   Shape* shape = prop.shape();
-  if (!shape->isDataDescriptor() || !shape->hasDefaultGetter()) {
-    return false;
-  }
+  if (!shape->isDataDescriptor() || !shape->hasDefaultGetter()) return false;
 
-  *vp = pobj->as<NativeObject>().getSlot(shape->slot());
-  return !IsUninitializedLexical(*vp);
+  vp.set(pobj->as<NativeObject>().getSlot(shape->slot()));
+  return !IsUninitializedLexical(vp);
 }
 
 template <js::GetNameMode mode>
@@ -238,17 +219,13 @@ inline bool GetEnvironmentName(JSContext* cx, HandleObject envChain,
     JSObject* obj = nullptr;
     JSObject* pobj = nullptr;
     if (LookupNameNoGC(cx, name, envChain, &obj, &pobj, &prop)) {
-      if (FetchNameNoGC(pobj, prop, vp.address())) {
-        return true;
-      }
+      if (FetchNameNoGC(pobj, prop, vp)) return true;
     }
   }
 
   Rooted<PropertyResult> prop(cx);
   RootedObject obj(cx), pobj(cx);
-  if (!LookupName(cx, name, envChain, &obj, &pobj, &prop)) {
-    return false;
-  }
+  if (!LookupName(cx, name, envChain, &obj, &pobj, &prop)) return false;
 
   return FetchName<mode>(cx, obj, pobj, name, prop, vp);
 }
@@ -270,23 +247,19 @@ inline bool HasOwnProperty(JSContext* cx, HandleValue val, HandleValue idValue,
 
   // Step 1.
   RootedId key(cx);
-  if (!ToPropertyKey(cx, idValue, &key)) {
-    return false;
-  }
+  if (!ToPropertyKey(cx, idValue, &key)) return false;
 
   // Step 2.
   RootedObject obj(cx, ToObject(cx, val));
-  if (!obj) {
-    return false;
-  }
+  if (!obj) return false;
 
   // Step 3.
   return HasOwnProperty(cx, obj, key, result);
 }
 
-inline bool GetIntrinsicOperation(JSContext* cx, HandleScript script,
-                                  jsbytecode* pc, MutableHandleValue vp) {
-  RootedPropertyName name(cx, script->getName(pc));
+inline bool GetIntrinsicOperation(JSContext* cx, jsbytecode* pc,
+                                  MutableHandleValue vp) {
+  RootedPropertyName name(cx, cx->currentScript()->getName(pc));
   return GlobalObject::getIntrinsicValue(cx, cx->global(), name, vp);
 }
 
@@ -301,7 +274,15 @@ inline void SetAliasedVarOperation(JSContext* cx, JSScript* script,
                                    EnvironmentCoordinate ec, const Value& val,
                                    MaybeCheckTDZ checkTDZ) {
   MOZ_ASSERT_IF(checkTDZ, !IsUninitializedLexical(obj.aliasedBinding(ec)));
-  obj.setAliasedBinding(cx, ec, val);
+
+  // Avoid computing the name if no type updates are needed, as this may be
+  // expensive on scopes with large numbers of variables.
+  PropertyName* name =
+      obj.isSingleton() ? EnvironmentCoordinateName(
+                              cx->caches().envCoordinateNameCache, script, pc)
+                        : nullptr;
+
+  obj.setAliasedBinding(cx, ec, name, val);
 }
 
 inline bool SetNameOperation(JSContext* cx, JSScript* script, jsbytecode* pc,
@@ -326,18 +307,47 @@ inline bool SetNameOperation(JSContext* cx, JSScript* script, jsbytecode* pc,
   RootedValue receiver(cx, ObjectValue(*env));
   if (env->isUnqualifiedVarObj()) {
     RootedNativeObject varobj(cx);
-    if (env->is<DebugEnvironmentProxy>()) {
+    if (env->is<DebugEnvironmentProxy>())
       varobj =
           &env->as<DebugEnvironmentProxy>().environment().as<NativeObject>();
-    } else {
+    else
       varobj = &env->as<NativeObject>();
-    }
     MOZ_ASSERT(!varobj->getOpsSetProperty());
     ok = NativeSetProperty<Unqualified>(cx, varobj, id, val, receiver, result);
   } else {
     ok = SetProperty(cx, env, id, val, receiver, result);
   }
   return ok && result.checkStrictErrorOrWarning(cx, env, id, strict);
+}
+
+inline bool DefLexicalOperation(JSContext* cx,
+                                Handle<LexicalEnvironmentObject*> lexicalEnv,
+                                HandleObject varObj, HandlePropertyName name,
+                                unsigned attrs) {
+  // Redeclaration checks should have already been done.
+  MOZ_ASSERT(CheckLexicalNameConflict(cx, lexicalEnv, varObj, name));
+  RootedId id(cx, NameToId(name));
+  RootedValue uninitialized(cx, MagicValue(JS_UNINITIALIZED_LEXICAL));
+  return NativeDefineDataProperty(cx, lexicalEnv, id, uninitialized, attrs);
+}
+
+inline bool DefLexicalOperation(JSContext* cx,
+                                LexicalEnvironmentObject* lexicalEnvArg,
+                                JSObject* varObjArg, JSScript* script,
+                                jsbytecode* pc) {
+  MOZ_ASSERT(*pc == JSOP_DEFLET || *pc == JSOP_DEFCONST);
+  RootedPropertyName name(cx, script->getName(pc));
+
+  unsigned attrs = JSPROP_ENUMERATE | JSPROP_PERMANENT;
+  if (*pc == JSOP_DEFCONST) attrs |= JSPROP_READONLY;
+
+  Rooted<LexicalEnvironmentObject*> lexicalEnv(cx, lexicalEnvArg);
+  RootedObject varObj(cx, varObjArg);
+  MOZ_ASSERT_IF(!script->hasNonSyntacticScope(),
+                lexicalEnv == &cx->global()->lexicalEnvironment() &&
+                    varObj == cx->global());
+
+  return DefLexicalOperation(cx, lexicalEnv, varObj, name, attrs);
 }
 
 inline void InitGlobalLexicalOperation(JSContext* cx,
@@ -350,22 +360,55 @@ inline void InitGlobalLexicalOperation(JSContext* cx,
   Rooted<LexicalEnvironmentObject*> lexicalEnv(cx, lexicalEnvArg);
   RootedShape shape(cx, lexicalEnv->lookup(cx, script->getName(pc)));
   MOZ_ASSERT(shape);
-  MOZ_ASSERT(IsUninitializedLexical(lexicalEnv->getSlot(shape->slot())));
-
-  // Don't treat the initial assignment to global lexicals as overwrites.
-  lexicalEnv->setSlotWithType(cx, shape, value, /* overwriting = */ false);
+  lexicalEnv->setSlotWithType(cx, shape, value);
 }
 
 inline bool InitPropertyOperation(JSContext* cx, JSOp op, HandleObject obj,
                                   HandlePropertyName name, HandleValue rhs) {
-  MOZ_ASSERT(obj->is<PlainObject>() || obj->is<JSFunction>());
-  unsigned propAttrs = GetInitDataPropAttrs(op);
-  return NativeDefineDataProperty(cx, obj.as<NativeObject>(), name, rhs,
-                                  propAttrs);
+  if (obj->is<PlainObject>() || obj->is<JSFunction>()) {
+    unsigned propAttrs = GetInitDataPropAttrs(op);
+    return NativeDefineDataProperty(cx, obj.as<NativeObject>(), name, rhs,
+                                    propAttrs);
+  }
+
+  MOZ_ASSERT(obj->as<UnboxedPlainObject>().layout().lookup(name));
+  RootedId id(cx, NameToId(name));
+  return PutProperty(cx, obj, id, rhs, false);
 }
 
-static MOZ_ALWAYS_INLINE bool NegOperation(JSContext* cx,
-                                           MutableHandleValue val,
+inline bool DefVarOperation(JSContext* cx, HandleObject varobj,
+                            HandlePropertyName dn, unsigned attrs) {
+  MOZ_ASSERT(varobj->isQualifiedVarObj());
+
+#ifdef DEBUG
+  // Per spec, it is an error to redeclare a lexical binding. This should
+  // have already been checked.
+  if (JS_HasExtensibleLexicalEnvironment(varobj)) {
+    Rooted<LexicalEnvironmentObject*> lexicalEnv(cx);
+    lexicalEnv = &JS_ExtensibleLexicalEnvironment(varobj)
+                      ->as<LexicalEnvironmentObject>();
+    MOZ_ASSERT(CheckVarNameConflict(cx, lexicalEnv, dn));
+  }
+#endif
+
+  Rooted<PropertyResult> prop(cx);
+  RootedObject obj2(cx);
+  if (!LookupProperty(cx, varobj, dn, &obj2, &prop)) return false;
+
+  /* Steps 8c, 8d. */
+  if (!prop || (obj2 != varobj && varobj->is<GlobalObject>())) {
+    if (!DefineDataProperty(cx, varobj, dn, UndefinedHandleValue, attrs))
+      return false;
+  }
+
+  if (varobj->is<GlobalObject>()) {
+    if (!varobj->compartment()->addToVarNames(cx, dn)) return false;
+  }
+
+  return true;
+}
+
+static MOZ_ALWAYS_INLINE bool NegOperation(JSContext* cx, HandleValue val,
                                            MutableHandleValue res) {
   /*
    * When the operand is int jsval, INT32_FITS_IN_JSVAL(i) implies
@@ -375,55 +418,13 @@ static MOZ_ALWAYS_INLINE bool NegOperation(JSContext* cx,
   int32_t i;
   if (val.isInt32() && (i = val.toInt32()) != 0 && i != INT32_MIN) {
     res.setInt32(-i);
-    return true;
+  } else {
+    double d;
+    if (!ToNumber(cx, val, &d)) return false;
+    res.setNumber(-d);
   }
 
-  if (!ToNumeric(cx, val)) {
-    return false;
-  }
-
-  if (val.isBigInt()) {
-    return BigInt::neg(cx, val, res);
-  }
-
-  res.setNumber(-val.toNumber());
   return true;
-}
-
-static MOZ_ALWAYS_INLINE bool IncOperation(JSContext* cx,
-                                           MutableHandleValue val,
-                                           MutableHandleValue res) {
-  int32_t i;
-  if (val.isInt32() && (i = val.toInt32()) != INT32_MAX) {
-    res.setInt32(i + 1);
-    return true;
-  }
-
-  if (val.isNumber()) {
-    res.setNumber(val.toNumber() + 1);
-    return true;
-  }
-
-  MOZ_ASSERT(val.isBigInt(), "+1 only callable on result of JSOP_TONUMERIC");
-  return BigInt::inc(cx, val, res);
-}
-
-static MOZ_ALWAYS_INLINE bool DecOperation(JSContext* cx,
-                                           MutableHandleValue val,
-                                           MutableHandleValue res) {
-  int32_t i;
-  if (val.isInt32() && (i = val.toInt32()) != INT32_MIN) {
-    res.setInt32(i - 1);
-    return true;
-  }
-
-  if (val.isNumber()) {
-    res.setNumber(val.toNumber() - 1);
-    return true;
-  }
-
-  MOZ_ASSERT(val.isBigInt(), "-1 only callable on result of JSOP_TONUMERIC");
-  return BigInt::dec(cx, val, res);
 }
 
 static MOZ_ALWAYS_INLINE bool ToIdOperation(JSContext* cx, HandleValue idval,
@@ -434,9 +435,7 @@ static MOZ_ALWAYS_INLINE bool ToIdOperation(JSContext* cx, HandleValue idval,
   }
 
   RootedId id(cx);
-  if (!ToPropertyKey(cx, idval, &id)) {
-    return false;
-  }
+  if (!ToPropertyKey(cx, idval, &id)) return false;
 
   res.set(IdToValue(id));
   return true;
@@ -453,44 +452,31 @@ static MOZ_ALWAYS_INLINE bool GetObjectElementOperation(
   do {
     uint32_t index;
     if (IsDefinitelyIndex(key, &index)) {
-      if (GetElementNoGC(cx, obj, receiver, index, res.address())) {
-        break;
-      }
+      if (GetElementNoGC(cx, obj, receiver, index, res.address())) break;
 
-      if (!GetElement(cx, obj, receiver, index, res)) {
-        return false;
-      }
+      if (!GetElement(cx, obj, receiver, index, res)) return false;
       break;
     }
 
     if (key.isString()) {
       JSString* str = key.toString();
       JSAtom* name = str->isAtom() ? &str->asAtom() : AtomizeString(cx, str);
-      if (!name) {
-        return false;
-      }
+      if (!name) return false;
       if (name->isIndex(&index)) {
-        if (GetElementNoGC(cx, obj, receiver, index, res.address())) {
-          break;
-        }
+        if (GetElementNoGC(cx, obj, receiver, index, res.address())) break;
       } else {
         if (GetPropertyNoGC(cx, obj, receiver, name->asPropertyName(),
-                            res.address())) {
+                            res.address()))
           break;
-        }
       }
     }
 
     RootedId id(cx);
-    if (!ToPropertyKey(cx, key, &id)) {
-      return false;
-    }
-    if (!GetProperty(cx, obj, receiver, id, res)) {
-      return false;
-    }
+    if (!ToPropertyKey(cx, key, &id)) return false;
+    if (!GetProperty(cx, obj, receiver, id, res)) return false;
   } while (false);
 
-  cx->debugOnlyCheck(res);
+  assertSameCompartmentDebugOnly(cx, res);
   return true;
 }
 
@@ -501,51 +487,36 @@ static MOZ_ALWAYS_INLINE bool GetPrimitiveElementOperation(
 
   // FIXME: Bug 1234324 We shouldn't be boxing here.
   RootedObject boxed(cx, ToObjectFromStack(cx, receiver));
-  if (!boxed) {
-    return false;
-  }
+  if (!boxed) return false;
 
   do {
     uint32_t index;
     if (IsDefinitelyIndex(key, &index)) {
-      if (GetElementNoGC(cx, boxed, receiver, index, res.address())) {
-        break;
-      }
+      if (GetElementNoGC(cx, boxed, receiver, index, res.address())) break;
 
-      if (!GetElement(cx, boxed, receiver, index, res)) {
-        return false;
-      }
+      if (!GetElement(cx, boxed, receiver, index, res)) return false;
       break;
     }
 
     if (key.isString()) {
       JSString* str = key.toString();
       JSAtom* name = str->isAtom() ? &str->asAtom() : AtomizeString(cx, str);
-      if (!name) {
-        return false;
-      }
+      if (!name) return false;
       if (name->isIndex(&index)) {
-        if (GetElementNoGC(cx, boxed, receiver, index, res.address())) {
-          break;
-        }
+        if (GetElementNoGC(cx, boxed, receiver, index, res.address())) break;
       } else {
         if (GetPropertyNoGC(cx, boxed, receiver, name->asPropertyName(),
-                            res.address())) {
+                            res.address()))
           break;
-        }
       }
     }
 
     RootedId id(cx);
-    if (!ToPropertyKey(cx, key, &id)) {
-      return false;
-    }
-    if (!GetProperty(cx, boxed, receiver, id, res)) {
-      return false;
-    }
+    if (!ToPropertyKey(cx, key, &id)) return false;
+    if (!GetProperty(cx, boxed, receiver, id, res)) return false;
   } while (false);
 
-  cx->debugOnlyCheck(res);
+  assertSameCompartmentDebugOnly(cx, res);
   return true;
 }
 
@@ -565,7 +536,7 @@ static MOZ_ALWAYS_INLINE bool GetElemOptimizedArguments(
     }
 
     RootedScript script(cx, frame.script());
-    JSScript::argumentsOptimizationFailed(cx, script);
+    if (!JSScript::argumentsOptimizationFailed(cx, script)) return false;
 
     lref.set(ObjectValue(frame.argsObj()));
   }
@@ -584,9 +555,7 @@ static MOZ_ALWAYS_INLINE bool GetElementOperation(JSContext* cx, JSOp op,
     JSString* str = lref.toString();
     if (index < str->length()) {
       str = cx->staticStrings().getUnitStringForElement(cx, str, index);
-      if (!str) {
-        return false;
-      }
+      if (!str) return false;
       res.setString(str);
       return true;
     }
@@ -615,9 +584,7 @@ static MOZ_ALWAYS_INLINE bool InitElemOperation(JSContext* cx, jsbytecode* pc,
   MOZ_ASSERT(!val.isMagic(JS_ELEMENTS_HOLE));
 
   RootedId id(cx);
-  if (!ToPropertyKey(cx, idval, &id)) {
-    return false;
-  }
+  if (!ToPropertyKey(cx, idval, &id)) return false;
 
   unsigned flags = GetInitDataPropAttrs(JSOp(*pc));
   return DefineDataProperty(cx, obj, id, val, flags);
@@ -653,310 +620,133 @@ static MOZ_ALWAYS_INLINE bool InitArrayElemOperation(JSContext* cx,
    */
   if (val.isMagic(JS_ELEMENTS_HOLE)) {
     if (op == JSOP_INITELEM_INC) {
-      if (!SetLengthProperty(cx, obj, index + 1)) {
-        return false;
-      }
+      if (!SetLengthProperty(cx, obj, index + 1)) return false;
     }
   } else {
-    if (!DefineDataElement(cx, obj, index, val, JSPROP_ENUMERATE)) {
-      return false;
-    }
+    if (!DefineDataElement(cx, obj, index, val, JSPROP_ENUMERATE)) return false;
   }
 
   return true;
 }
 
-static inline ArrayObject* ProcessCallSiteObjOperation(JSContext* cx,
-                                                       HandleScript script,
-                                                       jsbytecode* pc) {
-  MOZ_ASSERT(*pc == JSOP_CALLSITEOBJ);
+static MOZ_ALWAYS_INLINE bool ProcessCallSiteObjOperation(JSContext* cx,
+                                                          HandleObject cso,
+                                                          HandleObject raw) {
+  MOZ_ASSERT(cso->is<ArrayObject>());
+  MOZ_ASSERT(raw->is<ArrayObject>());
 
-  RootedArrayObject cso(cx, &script->getObject(pc)->as<ArrayObject>());
-
-  if (cso->isExtensible()) {
-    RootedObject raw(cx, script->getObject(GET_UINT32_INDEX(pc) + 1));
-    MOZ_ASSERT(raw->is<ArrayObject>());
-
+  if (cso->nonProxyIsExtensible()) {
     RootedValue rawValue(cx, ObjectValue(*raw));
-    if (!DefineDataProperty(cx, cso, cx->names().raw, rawValue, 0)) {
-      return nullptr;
-    }
-    if (!FreezeObject(cx, raw)) {
-      return nullptr;
-    }
-    if (!FreezeObject(cx, cso)) {
-      return nullptr;
-    }
-  }
-
-  return cso;
-}
-
-// BigInt proposal 3.2.4 Abstract Relational Comparison
-// Returns Nothing when at least one operand is a NaN, or when
-// ToNumeric or StringToBigInt can't interpret a string as a numeric
-// value. (These cases correspond to a NaN result in the spec.)
-// Otherwise, return a boolean to indicate whether lhs is less than
-// rhs. The operands must be primitives; the caller is responsible for
-// evaluating them in the correct order.
-static MOZ_ALWAYS_INLINE bool LessThanImpl(JSContext* cx,
-                                           MutableHandleValue lhs,
-                                           MutableHandleValue rhs,
-                                           mozilla::Maybe<bool>& res) {
-  // Steps 1 and 2 are performed by the caller.
-
-  // Step 3.
-  if (lhs.isString() && rhs.isString()) {
-    JSString* l = lhs.toString();
-    JSString* r = rhs.toString();
-    int32_t result;
-    if (!CompareStrings(cx, l, r, &result)) {
+    if (!DefineDataProperty(cx, cso, cx->names().raw, rawValue, 0))
       return false;
-    }
-    res = mozilla::Some(result < 0);
-    return true;
+    if (!FreezeObject(cx, raw)) return false;
+    if (!FreezeObject(cx, cso)) return false;
   }
-
-  // Step 4a.
-  if (lhs.isBigInt() && rhs.isString()) {
-    return BigInt::lessThan(cx, lhs, rhs, res);
-  }
-
-  // Step 4b.
-  if (lhs.isString() && rhs.isBigInt()) {
-    return BigInt::lessThan(cx, lhs, rhs, res);
-  }
-
-  // Steps 4c and 4d.
-  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
-    return false;
-  }
-
-  // Steps 4e-j.
-  if (lhs.isBigInt() || rhs.isBigInt()) {
-    return BigInt::lessThan(cx, lhs, rhs, res);
-  }
-
-  // Step 4e for Number operands.
-  MOZ_ASSERT(lhs.isNumber() && rhs.isNumber());
-  double lhsNum = lhs.toNumber();
-  double rhsNum = rhs.toNumber();
-
-  if (mozilla::IsNaN(lhsNum) || mozilla::IsNaN(rhsNum)) {
-    res = mozilla::Maybe<bool>(mozilla::Nothing());
-    return true;
-  }
-
-  res = mozilla::Some(lhsNum < rhsNum);
   return true;
 }
+
+#define RELATIONAL_OP(OP)                                                   \
+  JS_BEGIN_MACRO                                                            \
+    /* Optimize for two int-tagged operands (typical loop control). */      \
+    if (lhs.isInt32() && rhs.isInt32()) {                                   \
+      *res = lhs.toInt32() OP rhs.toInt32();                                \
+    } else {                                                                \
+      if (!ToPrimitive(cx, JSTYPE_NUMBER, lhs)) return false;               \
+      if (!ToPrimitive(cx, JSTYPE_NUMBER, rhs)) return false;               \
+      if (lhs.isString() && rhs.isString()) {                               \
+        JSString* l = lhs.toString();                                       \
+        JSString* r = rhs.toString();                                       \
+        int32_t result;                                                     \
+        if (!CompareStrings(cx, l, r, &result)) return false;               \
+        *res = result OP 0;                                                 \
+      } else {                                                              \
+        double l, r;                                                        \
+        if (!ToNumber(cx, lhs, &l) || !ToNumber(cx, rhs, &r)) return false; \
+        *res = (l OP r);                                                    \
+      }                                                                     \
+    }                                                                       \
+    return true;                                                            \
+  JS_END_MACRO
 
 static MOZ_ALWAYS_INLINE bool LessThanOperation(JSContext* cx,
                                                 MutableHandleValue lhs,
                                                 MutableHandleValue rhs,
                                                 bool* res) {
-  if (lhs.isInt32() && rhs.isInt32()) {
-    *res = lhs.toInt32() < rhs.toInt32();
-    return true;
-  }
-
-  if (!ToPrimitive(cx, JSTYPE_NUMBER, lhs)) {
-    return false;
-  }
-
-  if (!ToPrimitive(cx, JSTYPE_NUMBER, rhs)) {
-    return false;
-  }
-
-  mozilla::Maybe<bool> tmpResult;
-  if (!LessThanImpl(cx, lhs, rhs, tmpResult)) {
-    return false;
-  }
-  *res = tmpResult.valueOr(false);
-  return true;
+  RELATIONAL_OP(<);
 }
 
 static MOZ_ALWAYS_INLINE bool LessThanOrEqualOperation(JSContext* cx,
                                                        MutableHandleValue lhs,
                                                        MutableHandleValue rhs,
                                                        bool* res) {
-  if (lhs.isInt32() && rhs.isInt32()) {
-    *res = lhs.toInt32() <= rhs.toInt32();
-    return true;
-  }
-
-  if (!ToPrimitive(cx, JSTYPE_NUMBER, lhs)) {
-    return false;
-  }
-
-  if (!ToPrimitive(cx, JSTYPE_NUMBER, rhs)) {
-    return false;
-  }
-
-  mozilla::Maybe<bool> tmpResult;
-  if (!LessThanImpl(cx, rhs, lhs, tmpResult)) {
-    return false;
-  }
-  *res = !tmpResult.valueOr(true);
-  return true;
+  RELATIONAL_OP(<=);
 }
 
 static MOZ_ALWAYS_INLINE bool GreaterThanOperation(JSContext* cx,
                                                    MutableHandleValue lhs,
                                                    MutableHandleValue rhs,
                                                    bool* res) {
-  if (lhs.isInt32() && rhs.isInt32()) {
-    *res = lhs.toInt32() > rhs.toInt32();
-    return true;
-  }
-
-  if (!ToPrimitive(cx, JSTYPE_NUMBER, lhs)) {
-    return false;
-  }
-
-  if (!ToPrimitive(cx, JSTYPE_NUMBER, rhs)) {
-    return false;
-  }
-
-  mozilla::Maybe<bool> tmpResult;
-  if (!LessThanImpl(cx, rhs, lhs, tmpResult)) {
-    return false;
-  }
-  *res = tmpResult.valueOr(false);
-  return true;
+  RELATIONAL_OP(>);
 }
 
 static MOZ_ALWAYS_INLINE bool GreaterThanOrEqualOperation(
     JSContext* cx, MutableHandleValue lhs, MutableHandleValue rhs, bool* res) {
-  if (lhs.isInt32() && rhs.isInt32()) {
-    *res = lhs.toInt32() >= rhs.toInt32();
-    return true;
-  }
+  RELATIONAL_OP(>=);
+}
 
-  if (!ToPrimitive(cx, JSTYPE_NUMBER, lhs)) {
-    return false;
-  }
-
-  if (!ToPrimitive(cx, JSTYPE_NUMBER, rhs)) {
-    return false;
-  }
-
-  mozilla::Maybe<bool> tmpResult;
-  if (!LessThanImpl(cx, lhs, rhs, tmpResult)) {
-    return false;
-  }
-  *res = !tmpResult.valueOr(true);
+static MOZ_ALWAYS_INLINE bool BitNot(JSContext* cx, HandleValue in, int* out) {
+  int i;
+  if (!ToInt32(cx, in, &i)) return false;
+  *out = ~i;
   return true;
 }
 
-static MOZ_ALWAYS_INLINE bool BitNot(JSContext* cx, MutableHandleValue in,
-                                     MutableHandleValue out) {
-  if (!ToInt32OrBigInt(cx, in)) {
-    return false;
-  }
-
-  if (in.isBigInt()) {
-    return BigInt::bitNot(cx, in, out);
-  }
-
-  out.setInt32(~in.toInt32());
+static MOZ_ALWAYS_INLINE bool BitXor(JSContext* cx, HandleValue lhs,
+                                     HandleValue rhs, int* out) {
+  int left, right;
+  if (!ToInt32(cx, lhs, &left) || !ToInt32(cx, rhs, &right)) return false;
+  *out = left ^ right;
   return true;
 }
 
-static MOZ_ALWAYS_INLINE bool BitXor(JSContext* cx, MutableHandleValue lhs,
-                                     MutableHandleValue rhs,
-                                     MutableHandleValue out) {
-  if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
-    return false;
-  }
-
-  if (lhs.isBigInt() || rhs.isBigInt()) {
-    return BigInt::bitXor(cx, lhs, rhs, out);
-  }
-
-  out.setInt32(lhs.toInt32() ^ rhs.toInt32());
+static MOZ_ALWAYS_INLINE bool BitOr(JSContext* cx, HandleValue lhs,
+                                    HandleValue rhs, int* out) {
+  int left, right;
+  if (!ToInt32(cx, lhs, &left) || !ToInt32(cx, rhs, &right)) return false;
+  *out = left | right;
   return true;
 }
 
-static MOZ_ALWAYS_INLINE bool BitOr(JSContext* cx, MutableHandleValue lhs,
-                                    MutableHandleValue rhs,
-                                    MutableHandleValue out) {
-  if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
-    return false;
-  }
-
-  if (lhs.isBigInt() || rhs.isBigInt()) {
-    return BigInt::bitOr(cx, lhs, rhs, out);
-  }
-
-  out.setInt32(lhs.toInt32() | rhs.toInt32());
+static MOZ_ALWAYS_INLINE bool BitAnd(JSContext* cx, HandleValue lhs,
+                                     HandleValue rhs, int* out) {
+  int left, right;
+  if (!ToInt32(cx, lhs, &left) || !ToInt32(cx, rhs, &right)) return false;
+  *out = left & right;
   return true;
 }
 
-static MOZ_ALWAYS_INLINE bool BitAnd(JSContext* cx, MutableHandleValue lhs,
-                                     MutableHandleValue rhs,
-                                     MutableHandleValue out) {
-  if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
-    return false;
-  }
-
-  if (lhs.isBigInt() || rhs.isBigInt()) {
-    return BigInt::bitAnd(cx, lhs, rhs, out);
-  }
-
-  out.setInt32(lhs.toInt32() & rhs.toInt32());
+static MOZ_ALWAYS_INLINE bool BitLsh(JSContext* cx, HandleValue lhs,
+                                     HandleValue rhs, int* out) {
+  int32_t left, right;
+  if (!ToInt32(cx, lhs, &left) || !ToInt32(cx, rhs, &right)) return false;
+  *out = uint32_t(left) << (right & 31);
   return true;
 }
 
-static MOZ_ALWAYS_INLINE bool BitLsh(JSContext* cx, MutableHandleValue lhs,
-                                     MutableHandleValue rhs,
-                                     MutableHandleValue out) {
-  if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
-    return false;
-  }
-
-  if (lhs.isBigInt() || rhs.isBigInt()) {
-    return BigInt::lsh(cx, lhs, rhs, out);
-  }
-
-  out.setInt32(lhs.toInt32() << (rhs.toInt32() & 31));
+static MOZ_ALWAYS_INLINE bool BitRsh(JSContext* cx, HandleValue lhs,
+                                     HandleValue rhs, int* out) {
+  int32_t left, right;
+  if (!ToInt32(cx, lhs, &left) || !ToInt32(cx, rhs, &right)) return false;
+  *out = left >> (right & 31);
   return true;
 }
 
-static MOZ_ALWAYS_INLINE bool BitRsh(JSContext* cx, MutableHandleValue lhs,
-                                     MutableHandleValue rhs,
-                                     MutableHandleValue out) {
-  if (!ToInt32OrBigInt(cx, lhs) || !ToInt32OrBigInt(cx, rhs)) {
-    return false;
-  }
-
-  if (lhs.isBigInt() || rhs.isBigInt()) {
-    return BigInt::rsh(cx, lhs, rhs, out);
-  }
-
-  out.setInt32(lhs.toInt32() >> (rhs.toInt32() & 31));
-  return true;
-}
-
-static MOZ_ALWAYS_INLINE bool UrshOperation(JSContext* cx,
-                                            MutableHandleValue lhs,
-                                            MutableHandleValue rhs,
+static MOZ_ALWAYS_INLINE bool UrshOperation(JSContext* cx, HandleValue lhs,
+                                            HandleValue rhs,
                                             MutableHandleValue out) {
-  if (!ToNumeric(cx, lhs) || !ToNumeric(cx, rhs)) {
-    return false;
-  }
-
-  if (lhs.isBigInt() || rhs.isBigInt()) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_BIGINT_TO_NUMBER);
-    return false;
-  }
-
   uint32_t left;
   int32_t right;
-  if (!ToUint32(cx, lhs, &left) || !ToInt32(cx, rhs, &right)) {
-    return false;
-  }
+  if (!ToUint32(cx, lhs, &left) || !ToInt32(cx, rhs, &right)) return false;
   left >>= right & 31;
   out.setNumber(uint32_t(left));
   return true;
@@ -966,9 +756,7 @@ template <typename T>
 static MOZ_ALWAYS_INLINE bool SignExtendOperation(JSContext* cx, HandleValue in,
                                                   int* out) {
   int32_t i;
-  if (!ToInt32(cx, in, &i)) {
-    return false;
-  }
+  if (!ToInt32(cx, in, &i)) return false;
   *out = (T)i;
   return true;
 }
@@ -977,9 +765,8 @@ static MOZ_ALWAYS_INLINE bool SignExtendOperation(JSContext* cx, HandleValue in,
 
 inline JSFunction* ReportIfNotFunction(
     JSContext* cx, HandleValue v, MaybeConstruct construct = NO_CONSTRUCT) {
-  if (v.isObject() && v.toObject().is<JSFunction>()) {
+  if (v.isObject() && v.toObject().is<JSFunction>())
     return &v.toObject().as<JSFunction>();
-  }
 
   ReportIsNotFunction(cx, v, -1, construct);
   return nullptr;

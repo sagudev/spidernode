@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,12 +15,15 @@
 #include "builtin/SelfHostingDefines.h"
 #include "gc/Marking.h"
 #include "js/GCHashTable.h"
-#include "js/RegExpFlags.h"
 #include "proxy/Proxy.h"
 #include "vm/ArrayObject.h"
 #include "vm/JSContext.h"
 #include "vm/RegExpShared.h"
 #include "vm/Shape.h"
+
+namespace JS {
+struct Zone;
+}
 
 /*
  * JavaScript Regular Expressions
@@ -71,21 +74,21 @@ class RegExpObject : public NativeObject {
 
   template <typename CharT>
   static RegExpObject* create(JSContext* cx, const CharT* chars, size_t length,
-                              JS::RegExpFlags flags, NewObjectKind newKind);
+                              RegExpFlag flags, LifoAlloc& alloc,
+                              NewObjectKind newKind);
 
   template <typename CharT>
   static RegExpObject* create(JSContext* cx, const CharT* chars, size_t length,
-                              JS::RegExpFlags flags,
+                              RegExpFlag flags,
                               frontend::TokenStreamAnyChars& ts,
-                              NewObjectKind kind);
+                              LifoAlloc& alloc, NewObjectKind kind);
 
-  static RegExpObject* create(JSContext* cx, HandleAtom source,
-                              JS::RegExpFlags flags, NewObjectKind newKind);
+  static RegExpObject* create(JSContext* cx, HandleAtom atom, RegExpFlag flags,
+                              LifoAlloc& alloc, NewObjectKind newKind);
 
-  static RegExpObject* create(JSContext* cx, HandleAtom source,
-                              JS::RegExpFlags flags,
+  static RegExpObject* create(JSContext* cx, HandleAtom atom, RegExpFlag flags,
                               frontend::TokenStreamAnyChars& ts,
-                              NewObjectKind newKind);
+                              LifoAlloc& alloc, NewObjectKind newKind);
 
   /*
    * Compute the initial shape to associate with fresh RegExp objects,
@@ -100,12 +103,8 @@ class RegExpObject : public NativeObject {
 
   static bool isInitialShape(RegExpObject* rx) {
     Shape* shape = rx->lastProperty();
-    if (shape->isEmptyShape() || !shape->isDataProperty()) {
-      return false;
-    }
-    if (shape->maybeSlot() != LAST_INDEX_SLOT) {
-      return false;
-    }
+    if (shape->isEmptyShape() || !shape->isDataProperty()) return false;
+    if (shape->maybeSlot() != LAST_INDEX_SLOT) return false;
     return true;
   }
 
@@ -132,20 +131,18 @@ class RegExpObject : public NativeObject {
 
   static unsigned flagsSlot() { return FLAGS_SLOT; }
 
-  JS::RegExpFlags getFlags() const {
-    return JS::RegExpFlags(getFixedSlot(FLAGS_SLOT).toInt32());
+  RegExpFlag getFlags() const {
+    return RegExpFlag(getFixedSlot(FLAGS_SLOT).toInt32());
   }
-  void setFlags(JS::RegExpFlags flags) {
-    setFixedSlot(FLAGS_SLOT, Int32Value(flags.value()));
-  }
+  void setFlags(RegExpFlag flags) { setSlot(FLAGS_SLOT, Int32Value(flags)); }
 
-  bool global() const { return getFlags().global(); }
-  bool ignoreCase() const { return getFlags().ignoreCase(); }
-  bool multiline() const { return getFlags().multiline(); }
-  bool unicode() const { return getFlags().unicode(); }
-  bool sticky() const { return getFlags().sticky(); }
+  bool ignoreCase() const { return getFlags() & IgnoreCaseFlag; }
+  bool global() const { return getFlags() & GlobalFlag; }
+  bool multiline() const { return getFlags() & MultilineFlag; }
+  bool sticky() const { return getFlags() & StickyFlag; }
+  bool unicode() const { return getFlags() & UnicodeFlag; }
 
-  static bool isOriginalFlagGetter(JSNative native, JS::RegExpFlags* mask);
+  static bool isOriginalFlagGetter(JSNative native, RegExpFlag* mask);
 
   static RegExpShared* getShared(JSContext* cx, Handle<RegExpObject*> regexp);
 
@@ -156,21 +153,20 @@ class RegExpObject : public NativeObject {
     sharedRef().init(&shared);
   }
 
-  HeapPtrRegExpShared& sharedRef() {
+  PreBarriered<RegExpShared*>& sharedRef() {
     auto& ref = NativeObject::privateRef(PRIVATE_SLOT);
-    return reinterpret_cast<HeapPtrRegExpShared&>(ref);
+    return reinterpret_cast<PreBarriered<RegExpShared*>&>(ref);
   }
 
   static void trace(JSTracer* trc, JSObject* obj);
   void trace(JSTracer* trc);
 
-  void initIgnoringLastIndex(JSAtom* source, JS::RegExpFlags flags);
+  void initIgnoringLastIndex(JSAtom* source, RegExpFlag flags);
 
   // NOTE: This method is *only* safe to call on RegExps that haven't been
   //       exposed to script, because it requires that the "lastIndex"
   //       property be writable.
-  void initAndZeroLastIndex(JSAtom* source, JS::RegExpFlags flags,
-                            JSContext* cx);
+  void initAndZeroLastIndex(JSAtom* source, RegExpFlag flags, JSContext* cx);
 
 #ifdef DEBUG
   static MOZ_MUST_USE bool dumpBytecode(JSContext* cx,
@@ -197,22 +193,20 @@ class RegExpObject : public NativeObject {
  *
  * N.B. flagStr must be rooted.
  */
-bool ParseRegExpFlags(JSContext* cx, JSString* flagStr,
-                      JS::RegExpFlags* flagsOut);
+bool ParseRegExpFlags(JSContext* cx, JSString* flagStr, RegExpFlag* flagsOut);
 
-// Assuming GetBuiltinClass(obj) is ESClass::RegExp, return a RegExpShared for
-// obj.
+/* Assuming GetBuiltinClass(obj) is ESClass::RegExp, return a RegExpShared for
+ * obj. */
 inline RegExpShared* RegExpToShared(JSContext* cx, HandleObject obj) {
-  if (obj->is<RegExpObject>()) {
+  if (obj->is<RegExpObject>())
     return RegExpObject::getShared(cx, obj.as<RegExpObject>());
-  }
 
   return Proxy::regexp_toShared(cx, obj);
 }
 
 template <XDRMode mode>
-XDRResult XDRScriptRegExpObject(XDRState<mode>* xdr,
-                                MutableHandle<RegExpObject*> objp);
+bool XDRScriptRegExpObject(XDRState<mode>* xdr,
+                           MutableHandle<RegExpObject*> objp);
 
 extern JSObject* CloneScriptRegExpObject(JSContext* cx, RegExpObject& re);
 

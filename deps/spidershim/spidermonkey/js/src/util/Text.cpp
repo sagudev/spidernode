@@ -1,41 +1,27 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "util/Text.h"
 
-#include "mozilla/Assertions.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/PodOperations.h"
-#include "mozilla/Utf8.h"
-
-#include <stddef.h>
-#include <stdint.h>
 
 #include "gc/GC.h"
 #include "js/GCAPI.h"
-#include "util/Unicode.h"
 #include "vm/JSContext.h"
 #include "vm/StringType.h"
 
 using namespace JS;
 using namespace js;
-
 using js::gc::AutoSuppressGC;
-using mozilla::DecodeOneUtf8CodePoint;
-using mozilla::IsAscii;
-using mozilla::Maybe;
 using mozilla::PodCopy;
-using mozilla::Utf8Unit;
 
 template <typename CharT>
 const CharT* js_strchr_limit(const CharT* s, char16_t c, const CharT* limit) {
   while (s < limit) {
-    if (*s == c) {
-      return s;
-    }
+    if (*s == c) return s;
     s++;
   }
   return nullptr;
@@ -47,109 +33,95 @@ template const Latin1Char* js_strchr_limit(const Latin1Char* s, char16_t c,
 template const char16_t* js_strchr_limit(const char16_t* s, char16_t c,
                                          const char16_t* limit);
 
+JS_PUBLIC_API char* js_strdup(const char* s) {
+  return DuplicateString(s).release();
+}
+
 int32_t js_fputs(const char16_t* s, FILE* f) {
   while (*s != 0) {
-    if (fputwc(wchar_t(*s), f) == WEOF) {
-      return WEOF;
-    }
+    if (fputwc(wchar_t(*s), f) == WEOF) return WEOF;
     s++;
   }
   return 1;
 }
 
-UniqueChars js::DuplicateStringToArena(arena_id_t destArenaId, JSContext* cx,
-                                       const char* s) {
-  size_t n = strlen(s) + 1;
-  auto ret = cx->make_pod_array<char>(n, destArenaId);
-  if (!ret) {
-    return ret;
-  }
-  PodCopy(ret.get(), s, n);
-  return ret;
-}
-
-UniqueTwoByteChars js::DuplicateStringToArena(arena_id_t destArenaId,
-                                              JSContext* cx,
-                                              const char16_t* s) {
-  size_t n = js_strlen(s) + 1;
-  auto ret = cx->make_pod_array<char16_t>(n, destArenaId);
-  if (!ret) {
-    return ret;
-  }
-  PodCopy(ret.get(), s, n);
-  return ret;
-}
-
-UniqueChars js::DuplicateStringToArena(arena_id_t destArenaId, const char* s) {
-  size_t n = strlen(s) + 1;
-  UniqueChars ret(js_pod_arena_malloc<char>(destArenaId, n));
-  if (!ret) {
-    return ret;
-  }
-  PodCopy(ret.get(), s, n);
-  return ret;
-}
-
-UniqueChars js::DuplicateStringToArena(arena_id_t destArenaId, const char* s,
-                                       size_t n) {
-  UniqueChars ret(js_pod_arena_malloc<char>(destArenaId, n + 1));
-  if (!ret) {
-    return nullptr;
-  }
-  PodCopy(ret.get(), s, n);
-  ret[n] = 0;
-  return ret;
-}
-
-UniqueTwoByteChars js::DuplicateStringToArena(arena_id_t destArenaId,
-                                              const char16_t* s) {
-  return DuplicateStringToArena(destArenaId, s, js_strlen(s));
-}
-
-UniqueTwoByteChars js::DuplicateStringToArena(arena_id_t destArenaId,
-                                              const char16_t* s, size_t n) {
-  UniqueTwoByteChars ret(js_pod_arena_malloc<char16_t>(destArenaId, n + 1));
-  if (!ret) {
-    return nullptr;
-  }
-  PodCopy(ret.get(), s, n);
-  ret[n] = 0;
-  return ret;
-}
-
 UniqueChars js::DuplicateString(JSContext* cx, const char* s) {
-  return DuplicateStringToArena(js::MallocArena, cx, s);
+  size_t n = strlen(s) + 1;
+  auto ret = cx->make_pod_array<char>(n);
+  if (!ret) return ret;
+  PodCopy(ret.get(), s, n);
+  return ret;
 }
 
 UniqueTwoByteChars js::DuplicateString(JSContext* cx, const char16_t* s) {
-  return DuplicateStringToArena(js::MallocArena, cx, s);
+  size_t n = js_strlen(s) + 1;
+  auto ret = cx->make_pod_array<char16_t>(n);
+  if (!ret) return ret;
+  PodCopy(ret.get(), s, n);
+  return ret;
 }
 
 UniqueChars js::DuplicateString(const char* s) {
-  return DuplicateStringToArena(js::MallocArena, s);
+  size_t n = strlen(s) + 1;
+  UniqueChars ret(js_pod_malloc<char>(n));
+  if (!ret) return ret;
+  PodCopy(ret.get(), s, n);
+  return ret;
 }
 
 UniqueChars js::DuplicateString(const char* s, size_t n) {
-  return DuplicateStringToArena(js::MallocArena, s, n);
+  UniqueChars ret(js_pod_malloc<char>(n + 1));
+  if (!ret) return nullptr;
+  PodCopy(ret.get(), s, n);
+  ret[n] = 0;
+  return ret;
 }
 
 UniqueTwoByteChars js::DuplicateString(const char16_t* s) {
-  return DuplicateStringToArena(js::MallocArena, s);
+  return DuplicateString(s, js_strlen(s));
 }
 
 UniqueTwoByteChars js::DuplicateString(const char16_t* s, size_t n) {
-  return DuplicateStringToArena(js::MallocArena, s, n);
+  UniqueTwoByteChars ret(js_pod_malloc<char16_t>(n + 1));
+  if (!ret) return nullptr;
+  PodCopy(ret.get(), s, n);
+  ret[n] = 0;
+  return ret;
 }
 
 char16_t* js::InflateString(JSContext* cx, const char* bytes, size_t length) {
   char16_t* chars = cx->pod_malloc<char16_t>(length + 1);
-  if (!chars) {
-    return nullptr;
-  }
+  if (!chars) return nullptr;
   CopyAndInflateChars(chars, bytes, length);
   chars[length] = 0;
   return chars;
 }
+
+template <typename CharT>
+bool js::DeflateStringToBuffer(JSContext* maybecx, const CharT* src,
+                               size_t srclen, char* dst, size_t* dstlenp) {
+  size_t dstlen = *dstlenp;
+  if (srclen > dstlen) {
+    for (size_t i = 0; i < dstlen; i++) dst[i] = char(src[i]);
+    if (maybecx) {
+      AutoSuppressGC suppress(maybecx);
+      JS_ReportErrorNumberASCII(maybecx, GetErrorMessage, nullptr,
+                                JSMSG_BUFFER_TOO_SMALL);
+    }
+    return false;
+  }
+  for (size_t i = 0; i < srclen; i++) dst[i] = char(src[i]);
+  *dstlenp = srclen;
+  return true;
+}
+
+template bool js::DeflateStringToBuffer(JSContext* maybecx,
+                                        const Latin1Char* src, size_t srclen,
+                                        char* dst, size_t* dstlenp);
+
+template bool js::DeflateStringToBuffer(JSContext* maybecx, const char16_t* src,
+                                        size_t srclen, char* dst,
+                                        size_t* dstlenp);
 
 /*
  * Convert one UCS-4 char and write it into a UTF-8 buffer, which must be at
@@ -211,11 +183,10 @@ size_t js::PutEscapedStringImpl(char* buffer, size_t bufferSize,
   MOZ_ASSERT_IF(!buffer, bufferSize == 0);
   MOZ_ASSERT_IF(out, !buffer);
 
-  if (bufferSize == 0) {
+  if (bufferSize == 0)
     buffer = nullptr;
-  } else {
+  else
     bufferSize--;
-  }
 
   const CharT* charsEnd = chars + length;
   size_t n = 0;
@@ -235,9 +206,7 @@ size_t js::PutEscapedStringImpl(char* buffer, size_t bufferSize,
       case LAST_QUOTE:
         state = STOP;
       do_quote:
-        if (quote == 0) {
-          continue;
-        }
+        if (quote == 0) continue;
         c = (char)quote;
         break;
       case CHARS:
@@ -257,9 +226,7 @@ size_t js::PutEscapedStringImpl(char* buffer, size_t bufferSize,
           goto do_hex_escape;
         }
         if (u < 127) {
-          if (u == quote || u == '\\') {
-            goto do_escape;
-          }
+          if (u == quote || u == '\\') goto do_escape;
           c = (char)u;
         } else if (u < 0x100) {
           goto do_hex_escape;
@@ -302,30 +269,13 @@ size_t js::PutEscapedStringImpl(char* buffer, size_t bufferSize,
         buffer = nullptr;
       }
     } else if (out) {
-      if (!out->put(&c, 1)) {
-        return size_t(-1);
-      }
+      if (!out->put(&c, 1)) return size_t(-1);
     }
     n++;
   }
 stop:
-  if (buffer) {
-    buffer[n] = '\0';
-  }
+  if (buffer) buffer[n] = '\0';
   return n;
-}
-
-bool js::ContainsFlag(const char* str, const char* flag) {
-  size_t flaglen = strlen(flag);
-  const char* index = strstr(str, flag);
-  while (index) {
-    if ((index == str || index[-1] == ',') &&
-        (index[flaglen] == 0 || index[flaglen] == ',')) {
-      return true;
-    }
-    index = strstr(index + flaglen, flag);
-  }
-  return false;
 }
 
 template size_t js::PutEscapedStringImpl(char* buffer, size_t bufferSize,
@@ -349,51 +299,3 @@ template size_t js::PutEscapedString(char* buffer, size_t bufferSize,
 template size_t js::PutEscapedString(char* buffer, size_t bufferSize,
                                      const char16_t* chars, size_t length,
                                      uint32_t quote);
-
-size_t js::unicode::CountCodePoints(const Utf8Unit* begin,
-                                    const Utf8Unit* end) {
-  MOZ_ASSERT(begin <= end);
-
-  size_t count = 0;
-  const Utf8Unit* ptr = begin;
-  while (ptr < end) {
-    count++;
-
-    Utf8Unit lead = *ptr++;
-    if (IsAscii(lead)) {
-      continue;
-    }
-
-#ifdef DEBUG
-    Maybe<char32_t> cp =
-#endif
-        DecodeOneUtf8CodePoint(lead, &ptr, end);
-    MOZ_ASSERT(cp.isSome());
-  }
-  MOZ_ASSERT(ptr == end, "bad code unit count in line?");
-
-  return count;
-}
-
-size_t js::unicode::CountCodePoints(const char16_t* begin,
-                                    const char16_t* end) {
-  MOZ_ASSERT(begin <= end);
-
-  size_t count = 0;
-
-  const char16_t* ptr = begin;
-  while (ptr < end) {
-    count++;
-
-    if (!IsLeadSurrogate(*ptr++)) {
-      continue;
-    }
-
-    if (ptr < end && IsTrailSurrogate(*ptr)) {
-      ptr++;
-    }
-  }
-  MOZ_ASSERT(ptr == end, "should have consumed the full range");
-
-  return count;
-}

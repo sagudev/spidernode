@@ -1,6 +1,6 @@
 // Smoke tests for bound function things.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger;
 var gw = dbg.addDebuggee(g);
 var arrw = gw.executeInGlobal("var arr = []; arr;").return;

@@ -2,7 +2,7 @@ function testConversion0(resultType, opcode, paramType, op, expect) {
     if (resultType === 'i64') {
         wasmFullPassI64(`(module
             (func $run (param ${paramType}) (result ${resultType})
-                (${opcode} (local.get 0))
+                (${opcode} (get_local 0))
             )
         )`, expect, {}, `${paramType}.const ${op}`);
 
@@ -15,7 +15,7 @@ function testConversion0(resultType, opcode, paramType, op, expect) {
     } else if (paramType === 'i64') {
         wasmFullPass(`(module
            (func $f (param ${paramType}) (result ${resultType})
-            (${opcode} (local.get 0))
+            (${opcode} (get_local 0))
            )
            (func (export "run") (result ${resultType})
             i64.const ${op}
@@ -25,7 +25,7 @@ function testConversion0(resultType, opcode, paramType, op, expect) {
     } else {
         wasmFullPass(`(module
            (func (param ${paramType}) (result ${resultType})
-            (${opcode} (local.get 0)))
+            (${opcode} (get_local 0)))
             (export "run" 0)
         )`, expect, {}, op);
     }
@@ -33,14 +33,14 @@ function testConversion0(resultType, opcode, paramType, op, expect) {
     for (var bad of ['i32', 'f32', 'f64', 'i64']) {
         if (bad !== resultType) {
             wasmFailValidateText(
-                `(module (func (param ${paramType}) (result ${bad}) (${opcode} (local.get 0))))`,
+                `(module (func (param ${paramType}) (result ${bad}) (${opcode} (get_local 0))))`,
                 mismatchError(resultType, bad)
             );
         }
 
         if (bad !== paramType) {
             wasmFailValidateText(
-                `(module (func (param ${bad}) (result ${resultType}) (${opcode} (local.get 0))))`,
+                `(module (func (param ${bad}) (result ${resultType}) (${opcode} (get_local 0))))`,
                 mismatchError(bad, paramType)
             );
         }
@@ -60,11 +60,11 @@ function testTrap(resultType, opcode, paramType, op) {
         (func
             (param ${paramType})
             (result ${resultType})
-            (${resultType}.${opcode}/${paramType} (local.get 0))
+            (${resultType}.${opcode}/${paramType} (get_local 0))
         )
         (func
             (param ${paramType})
-            local.get 0
+            get_local 0
             call 0
             drop
         )
@@ -240,70 +240,74 @@ testTrap('i64', 'trunc_u', 'f32', "-infinity");
 testConversion('i64', 'reinterpret', 'f64', 40.09999999999968, "0x40440ccccccccca0");
 testConversion('f64', 'reinterpret', 'i64', "0x40440ccccccccca0", 40.09999999999968);
 
-var u64max = '0xffffffffffffffff';
-var s64max = '0x7fffffffffffffff';
-var s64min = '-0x8000000000000000';
-var s32max = 2147483647;
-var s32min = -2147483648;
+if (wasmSaturatingTruncationSupported()) {
+    var u64max = '0xffffffffffffffff';
+    var s64max = '0x7fffffffffffffff';
+    var s64min = '-0x8000000000000000';
+    var s32max = 2147483647;
+    var s32min = -2147483648;
 
-testConversion('i32', 'trunc_s:sat', 'f32', NaN, 0);
-testConversion('i32', 'trunc_s:sat', 'f32', Infinity, s32max);
-testConversion('i32', 'trunc_s:sat', 'f32', -Infinity, s32min);
-testConversion('i32', 'trunc_s:sat', 'f32', p(2, 31), s32max);
-testConversion('i32', 'trunc_s:sat', 'f32', -p(2, 31) - 256, s32min);
+    testConversion('i32', 'trunc_s:sat', 'f32', NaN, 0);
+    testConversion('i32', 'trunc_s:sat', 'f32', Infinity, s32max);
+    testConversion('i32', 'trunc_s:sat', 'f32', -Infinity, s32min);
+    testConversion('i32', 'trunc_s:sat', 'f32', p(2, 31), s32max);
+    testConversion('i32', 'trunc_s:sat', 'f32', -p(2, 31) - 256, s32min);
 
-testConversion('i32', 'trunc_s:sat', 'f64', NaN, 0);
-testConversion('i32', 'trunc_s:sat', 'f64', Infinity, s32max);
-testConversion('i32', 'trunc_s:sat', 'f64', -Infinity, s32min);
-testConversion('i32', 'trunc_s:sat', 'f64', p(2, 31), s32max);
-testConversion('i32', 'trunc_s:sat', 'f64', -p(2, 31) - 1, s32min);
+    testConversion('i32', 'trunc_s:sat', 'f64', NaN, 0);
+    testConversion('i32', 'trunc_s:sat', 'f64', Infinity, s32max);
+    testConversion('i32', 'trunc_s:sat', 'f64', -Infinity, s32min);
+    testConversion('i32', 'trunc_s:sat', 'f64', p(2, 31), s32max);
+    testConversion('i32', 'trunc_s:sat', 'f64', -p(2, 31) - 1, s32min);
 
-testConversion('i32', 'trunc_u:sat', 'f32', NaN, 0);
-testConversion('i32', 'trunc_u:sat', 'f32', Infinity, -1);
-testConversion('i32', 'trunc_u:sat', 'f32', -Infinity, 0);
-testConversion('i32', 'trunc_u:sat', 'f32', -1, 0);
-testConversion('i32', 'trunc_u:sat', 'f32', p(2, 32), -1);
+    testConversion('i32', 'trunc_u:sat', 'f32', NaN, 0);
+    testConversion('i32', 'trunc_u:sat', 'f32', Infinity, -1);
+    testConversion('i32', 'trunc_u:sat', 'f32', -Infinity, 0);
+    testConversion('i32', 'trunc_u:sat', 'f32', -1, 0);
+    testConversion('i32', 'trunc_u:sat', 'f32', p(2, 32), -1);
 
-testConversion('i32', 'trunc_u:sat', 'f64', NaN, 0);
-testConversion('i32', 'trunc_u:sat', 'f64', Infinity, -1);
-testConversion('i32', 'trunc_u:sat', 'f64', -Infinity, 0);
-testConversion('i32', 'trunc_u:sat', 'f64', -1, 0);
-testConversion('i32', 'trunc_u:sat', 'f64', p(2, 32), -1);
+    testConversion('i32', 'trunc_u:sat', 'f64', NaN, 0);
+    testConversion('i32', 'trunc_u:sat', 'f64', Infinity, -1);
+    testConversion('i32', 'trunc_u:sat', 'f64', -Infinity, 0);
+    testConversion('i32', 'trunc_u:sat', 'f64', -1, 0);
+    testConversion('i32', 'trunc_u:sat', 'f64', p(2, 32), -1);
 
-testConversion('i64', 'trunc_s:sat', 'f64', 9223372036854776000.0, s64max);
-testConversion('i64', 'trunc_s:sat', 'f64', -9223372036854778000.0, s64min);
-testConversion('i64', 'trunc_s:sat', 'f64', 'nan', '0');
-testConversion('i64', 'trunc_s:sat', 'f64', 'infinity', s64max);
-testConversion('i64', 'trunc_s:sat', 'f64', '-infinity', s64min);
+    testConversion('i64', 'trunc_s:sat', 'f64', 9223372036854776000.0, s64max);
+    testConversion('i64', 'trunc_s:sat', 'f64', -9223372036854778000.0, s64min);
+    testConversion('i64', 'trunc_s:sat', 'f64', 'nan', '0');
+    testConversion('i64', 'trunc_s:sat', 'f64', 'infinity', s64max);
+    testConversion('i64', 'trunc_s:sat', 'f64', '-infinity', s64min);
 
-testConversion('i64', 'trunc_u:sat', 'f64', -1, '0');
-testConversion('i64', 'trunc_u:sat', 'f64', 18446744073709551616.0, u64max);
-testConversion('i64', 'trunc_u:sat', 'f64', 'nan', '0');
-testConversion('i64', 'trunc_u:sat', 'f64', 'infinity', u64max);
-testConversion('i64', 'trunc_u:sat', 'f64', '-infinity', '0');
+    testConversion('i64', 'trunc_u:sat', 'f64', -1, '0');
+    testConversion('i64', 'trunc_u:sat', 'f64', 18446744073709551616.0, u64max);
+    testConversion('i64', 'trunc_u:sat', 'f64', 'nan', '0');
+    testConversion('i64', 'trunc_u:sat', 'f64', 'infinity', u64max);
+    testConversion('i64', 'trunc_u:sat', 'f64', '-infinity', '0');
 
-testConversion('i64', 'trunc_s:sat', 'f32', 9223372036854776000.0, s64max);
-testConversion('i64', 'trunc_s:sat', 'f32', -9223372586610630000.0, s64min);
-testConversion('i64', 'trunc_s:sat', 'f32', 'nan', '0');
-testConversion('i64', 'trunc_s:sat', 'f32', 'infinity', s64max);
-testConversion('i64', 'trunc_s:sat', 'f32', '-infinity', s64min);
+    testConversion('i64', 'trunc_s:sat', 'f32', 9223372036854776000.0, s64max);
+    testConversion('i64', 'trunc_s:sat', 'f32', -9223372586610630000.0, s64min);
+    testConversion('i64', 'trunc_s:sat', 'f32', 'nan', '0');
+    testConversion('i64', 'trunc_s:sat', 'f32', 'infinity', s64max);
+    testConversion('i64', 'trunc_s:sat', 'f32', '-infinity', s64min);
 
-testConversion('i64', 'trunc_u:sat', 'f32', 18446744073709551616.0, u64max);
-testConversion('i64', 'trunc_u:sat', 'f32', -1, '0');
-testConversion('i64', 'trunc_u:sat', 'f32', 'nan', '0');
-testConversion('i64', 'trunc_u:sat', 'f32', 'infinity', u64max);
-testConversion('i64', 'trunc_u:sat', 'f32', '-infinity', '0');
+    testConversion('i64', 'trunc_u:sat', 'f32', 18446744073709551616.0, u64max);
+    testConversion('i64', 'trunc_u:sat', 'f32', -1, '0');
+    testConversion('i64', 'trunc_u:sat', 'f32', 'nan', '0');
+    testConversion('i64', 'trunc_u:sat', 'f32', 'infinity', u64max);
+    testConversion('i64', 'trunc_u:sat', 'f32', '-infinity', '0');
+}
 
-testSignExtension('i32', 'extend8_s', 'i32', 0x7F, 0x7F);
-testSignExtension('i32', 'extend8_s', 'i32', 0x80, -0x80);
-testSignExtension('i32', 'extend16_s', 'i32', 0x7FFF, 0x7FFF);
-testSignExtension('i32', 'extend16_s', 'i32', 0x8000, -0x8000);
-testSignExtension('i64', 'extend8_s', 'i64', 0x7F, 0x7F);
-testSignExtension('i64', 'extend8_s', 'i64', 0x80, -0x80);
-testSignExtension('i64', 'extend16_s', 'i64', 0x7FFF, 0x7FFF);
-testSignExtension('i64', 'extend16_s', 'i64', 0x8000, -0x8000);
-testSignExtension('i64', 'extend32_s', 'i64', 0x7FFFFFFF, 0x7FFFFFFF);
-testSignExtension('i64', 'extend32_s', 'i64', "0x80000000", "0xFFFFFFFF80000000");
+if (wasmSignExtensionSupported()) {
+    testSignExtension('i32', 'extend8_s', 'i32', 0x7F, 0x7F);
+    testSignExtension('i32', 'extend8_s', 'i32', 0x80, -0x80);
+    testSignExtension('i32', 'extend16_s', 'i32', 0x7FFF, 0x7FFF);
+    testSignExtension('i32', 'extend16_s', 'i32', 0x8000, -0x8000);
+    testSignExtension('i64', 'extend8_s', 'i64', 0x7F, 0x7F);
+    testSignExtension('i64', 'extend8_s', 'i64', 0x80, -0x80);
+    testSignExtension('i64', 'extend16_s', 'i64', 0x7FFF, 0x7FFF);
+    testSignExtension('i64', 'extend16_s', 'i64', 0x8000, -0x8000);
+    testSignExtension('i64', 'extend32_s', 'i64', 0x7FFFFFFF, 0x7FFFFFFF);
+    testSignExtension('i64', 'extend32_s', 'i64', "0x80000000", "0xFFFFFFFF80000000");
+}
 
 // i32.trunc_s* : all values in ] -2**31 - 1; 2**31 [ are acceptable.
 // f32:
@@ -367,4 +371,4 @@ testConversion('f64', 'promote', 'f32', 40.1, 40.099998474121094);
 
 // Non-canonical NaNs.
 wasmFullPass('(module (func (result i32) (i32.reinterpret/f32 (f32.demote/f64 (f64.const -nan:0x4444444444444)))) (export "run" 0))', -0x1dddde);
-wasmFullPass('(module (func (result i32) (local i64) (local.set 0 (i64.reinterpret/f64 (f64.promote/f32 (f32.const -nan:0x222222)))) (i32.xor (i32.wrap/i64 (local.get 0)) (i32.wrap/i64 (i64.shr_u (local.get 0) (i64.const 32))))) (export "run" 0))', -0x4003bbbc);
+wasmFullPass('(module (func (result i32) (local i64) (set_local 0 (i64.reinterpret/f64 (f64.promote/f32 (f32.const -nan:0x222222)))) (i32.xor (i32.wrap/i64 (get_local 0)) (i32.wrap/i64 (i64.shr_u (get_local 0) (i64.const 32))))) (export "run" 0))', -0x4003bbbc);

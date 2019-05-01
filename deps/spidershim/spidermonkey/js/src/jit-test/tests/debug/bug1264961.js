@@ -1,4 +1,7 @@
-// |jit-test| slow; skip-if: !('oomTest' in this)
+// |jit-test| slow;
+
+if (!('oomTest' in this))
+  quit();
 
 loadFile(`
   var o = {}
@@ -17,7 +20,9 @@ function loadFile(lfVarx) {
     var k = 0;
     oomTest(function() {
         // In practice a crash occurs before iteration 4000.
-        if (k++ <= 4000)
-          eval(lfVarx);
+        if (k++ > 4000)
+          quit();
+        eval(lfVarx);
     })
 }
+

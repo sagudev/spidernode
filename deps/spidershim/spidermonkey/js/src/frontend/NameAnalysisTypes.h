@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -63,8 +63,6 @@ class EnvironmentCoordinate {
 
 namespace frontend {
 
-enum class ParseGoal : uint8_t { Script, Module };
-
 // A detailed kind used for tracking declarations in the Parser. Used for
 // specific early error semantics and better error messages.
 enum class DeclarationKind : uint8_t {
@@ -72,6 +70,7 @@ enum class DeclarationKind : uint8_t {
   FormalParameter,
   CoverArrowParameter,
   Var,
+  ForOfVar,
   Let,
   Const,
   Class,  // Handled as same as `let` after parsing.
@@ -96,6 +95,7 @@ static inline BindingKind DeclarationKindToBindingKind(DeclarationKind kind) {
     case DeclarationKind::BodyLevelFunction:
     case DeclarationKind::ModuleBodyLevelFunction:
     case DeclarationKind::VarForAnnexBLexicalFunction:
+    case DeclarationKind::ForOfVar:
       return BindingKind::Var;
 
     case DeclarationKind::Let:

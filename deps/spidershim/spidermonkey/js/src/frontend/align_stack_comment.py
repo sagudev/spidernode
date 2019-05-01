@@ -14,7 +14,7 @@ import re
 import sys
 
 # The column index of '[' of '[stack]'
-ALIGNMENT_COLUMN = 20
+ALIGNMENT_COLUMN = 30
 
 # The maximum column for comment
 MAX_CHARS_PER_LINE = 80
@@ -80,7 +80,6 @@ if __name__ == '__main__':
         print('Usage: align_stack_comment.py FILE',
               file=sys.stderr)
         sys.exit(1)
+    path = sys.argv[1]
 
-    for path in sys.argv[1:]:
-        print(path)
-        align_stack_comment(path)
+    align_stack_comment(path)

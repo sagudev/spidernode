@@ -235,6 +235,7 @@ public:
      */
     virtual const DateFormatSymbols* getDateFormatSymbols(void) const;
 
+    /* Cannot use #ifndef U_HIDE_DRAFT_API for the following draft method since it is virtual */
     /**
      * Set a particular UDisplayContext value in the formatter, such as
      * UDISPCTX_CAPITALIZATION_FOR_STANDALONE. Note: For getContext, see

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -52,13 +52,6 @@ void MacroAssembler::move16To64SignExtend(Register src, Register64 dest) {
 
 void MacroAssembler::move32To64SignExtend(Register src, Register64 dest) {
   ma_sll(dest.reg, src, Imm32(0));
-}
-
-// ===============================================================
-// Load instructions
-
-void MacroAssembler::load32SignExtendToPtr(const Address& src, Register dest) {
-  loadPtr(src, dest);
 }
 
 // ===============================================================
@@ -267,8 +260,6 @@ void MacroAssembler::inc64(AbsoluteAddress dest) {
 
 void MacroAssembler::neg64(Register64 reg) { as_dsubu(reg.reg, zero, reg.reg); }
 
-void MacroAssembler::negPtr(Register reg) { as_dsubu(reg, zero, reg); }
-
 // ===============================================================
 // Shift functions
 
@@ -321,11 +312,10 @@ void MacroAssembler::rotateLeft64(Imm32 count, Register64 src, Register64 dest,
                                   Register temp) {
   MOZ_ASSERT(temp == InvalidReg);
 
-  if (count.value) {
+  if (count.value)
     ma_drol(dest.reg, src.reg, count);
-  } else {
+  else
     ma_move(dest.reg, src.reg);
-  }
 }
 
 void MacroAssembler::rotateLeft64(Register count, Register64 src,
@@ -338,11 +328,10 @@ void MacroAssembler::rotateRight64(Imm32 count, Register64 src, Register64 dest,
                                    Register temp) {
   MOZ_ASSERT(temp == InvalidReg);
 
-  if (count.value) {
+  if (count.value)
     ma_dror(dest.reg, src.reg, count);
-  } else {
+  else
     ma_move(dest.reg, src.reg);
-  }
 }
 
 void MacroAssembler::rotateRight64(Register count, Register64 src,
@@ -417,9 +406,7 @@ void MacroAssembler::branch64(Condition cond, Register64 lhs, Imm64 val,
              "other condition codes not supported");
 
   branchPtr(cond, lhs.reg, ImmWord(val.value), success);
-  if (fail) {
-    jump(fail);
-  }
+  if (fail) jump(fail);
 }
 
 void MacroAssembler::branch64(Condition cond, Register64 lhs, Register64 rhs,
@@ -434,9 +421,7 @@ void MacroAssembler::branch64(Condition cond, Register64 lhs, Register64 rhs,
              "other condition codes not supported");
 
   branchPtr(cond, lhs.reg, rhs.reg, success);
-  if (fail) {
-    jump(fail);
-  }
+  if (fail) jump(fail);
 }
 
 void MacroAssembler::branch64(Condition cond, const Address& lhs, Imm64 val,
@@ -461,9 +446,7 @@ void MacroAssembler::branch64(Condition cond, const Address& lhs,
 
 void MacroAssembler::branchPrivatePtr(Condition cond, const Address& lhs,
                                       Register rhs, Label* label) {
-  if (rhs != ScratchRegister) {
-    movePtr(rhs, ScratchRegister);
-  }
+  if (rhs != ScratchRegister) movePtr(rhs, ScratchRegister);
   // Instead of unboxing lhs, box rhs and do direct comparison with lhs.
   rshiftPtr(Imm32(1), ScratchRegister);
   branchPtr(cond, lhs, ScratchRegister, label);
@@ -555,36 +538,6 @@ void MacroAssembler::branchTestSymbol(Condition cond, const ValueOperand& value,
   branchTestSymbol(cond, scratch2, label);
 }
 
-void MacroAssembler::branchTestBigInt(Condition cond, Register tag,
-                                      Label* label) {
-  MOZ_ASSERT(cond == Equal || cond == NotEqual);
-  ma_b(tag, ImmTag(JSVAL_TAG_BIGINT), label, cond);
-}
-
-void MacroAssembler::branchTestBigInt(Condition cond, const BaseIndex& address,
-                                      Label* label) {
-  SecondScratchRegisterScope scratch2(*this);
-  computeEffectiveAddress(address, scratch2);
-  splitTag(scratch2, scratch2);
-  branchTestBigInt(cond, scratch2, label);
-}
-
-void MacroAssembler::branchTestBigInt(Condition cond, const ValueOperand& value,
-                                      Label* label) {
-  SecondScratchRegisterScope scratch2(*this);
-  splitTag(value, scratch2);
-  branchTestBigInt(cond, scratch2, label);
-}
-
-void MacroAssembler::branchTestBigIntTruthy(bool b, const ValueOperand& value,
-                                            Label* label) {
-  SecondScratchRegisterScope scratch2(*this);
-  unboxBigInt(value, scratch2);
-  loadPtr(Address(scratch2, BigInt::offsetOfLengthSignAndReservedBits()),
-          scratch2);
-  ma_b(scratch2, ImmWord(0), label, b ? NotEqual : Equal);
-}
-
 void MacroAssembler::branchTestNull(Condition cond, const ValueOperand& value,
                                     Label* label) {
   SecondScratchRegisterScope scratch2(*this);
@@ -647,6 +600,23 @@ void MacroAssembler::branchTruncateFloat32MaybeModUint32(FloatRegister src,
   as_sll(dest, dest, 0);
 }
 
+// ========================================================================
+// wasm support
+
+template <class L>
+void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
+                                     Register boundsCheckLimit, L label) {
+  ma_b(index, boundsCheckLimit, label, cond);
+}
+
+template <class L>
+void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
+                                     Address boundsCheckLimit, L label) {
+  SecondScratchRegisterScope scratch2(*this);
+  load32(boundsCheckLimit, SecondScratchReg);
+  ma_b(index, SecondScratchReg, label, cond);
+}
+
 //}}} check_macroassembler_style
 // ===============================================================
 
@@ -674,13 +644,6 @@ inline void MacroAssembler::cmp32Set(Assembler::Condition cond, Register lhs,
   cmp32Set(cond, lhs, ScratchRegister, dest);
 }
 
-template <>
-inline void MacroAssembler::cmp32Set(Assembler::Condition cond, Address lhs,
-                                     Register rhs, Register dest) {
-  load32(lhs, ScratchRegister);
-  cmp32Set(cond, ScratchRegister, rhs, dest);
-}
-
 void MacroAssemblerMIPS64Compat::incrementInt32Value(const Address& addr) {
   asMasm().add32(Imm32(1), addr);
 }
@@ -688,9 +651,7 @@ void MacroAssemblerMIPS64Compat::incrementInt32Value(const Address& addr) {
 void MacroAssemblerMIPS64Compat::computeEffectiveAddress(
     const BaseIndex& address, Register dest) {
   computeScaledAddress(address, dest);
-  if (address.offset) {
-    asMasm().addPtr(Imm32(address.offset), dest);
-  }
+  if (address.offset) asMasm().addPtr(Imm32(address.offset), dest);
 }
 
 void MacroAssemblerMIPS64Compat::retn(Imm32 n) {

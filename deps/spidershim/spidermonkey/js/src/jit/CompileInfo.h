@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -85,9 +85,7 @@ class InlineScriptTree {
   bool isOutermostCaller() const { return caller_ == nullptr; }
   bool hasCaller() const { return caller_ != nullptr; }
   InlineScriptTree* outermostCaller() {
-    if (isOutermostCaller()) {
-      return this;
-    }
+    if (isOutermostCaller()) return this;
     return caller_->outermostCaller();
   }
 
@@ -108,9 +106,7 @@ class InlineScriptTree {
   }
 
   unsigned depth() const {
-    if (isOutermostCaller()) {
-      return 1;
-    }
+    if (isOutermostCaller()) return 1;
     return 1 + caller_->depth();
   }
 };
@@ -181,9 +177,7 @@ class CompileInfo {
         analysisMode_(analysisMode),
         scriptNeedsArgsObj_(scriptNeedsArgsObj),
         hadOverflowBailout_(script->hadOverflowBailout()),
-        hadFrequentBailouts_(script->hadFrequentBailouts()),
         mayReadFrameArgsDirectly_(script->mayReadFrameArgsDirectly()),
-        trackRecordReplayProgress_(script->trackRecordReplayProgress()),
         inlineScriptTree_(inlineScriptTree) {
     MOZ_ASSERT_IF(osrPc, JSOp(*osrPc) == JSOP_LOOPENTRY);
 
@@ -216,9 +210,7 @@ class CompileInfo {
     if (script->isDerivedClassConstructor()) {
       MOZ_ASSERT(script->functionHasThisBinding());
       for (BindingIter bi(script); bi; bi++) {
-        if (bi.name() != runtime->names().dotThis) {
-          continue;
-        }
+        if (bi.name() != runtime->names().dotThis) continue;
         BindingLocation loc = bi.location();
         if (loc.kind() == BindingLocation::Kind::Frame) {
           thisSlotForDerivedClassConstructor_ =
@@ -231,8 +223,6 @@ class CompileInfo {
     // If the script uses an environment in body, the environment chain
     // will need to be observable.
     needsBodyEnvironmentObject_ = script->needsBodyEnvironment();
-    funNeedsSomeEnvironmentObject_ =
-        fun ? fun->needsSomeEnvironmentObject() : false;
   }
 
   explicit CompileInfo(unsigned nlocals)
@@ -241,13 +231,9 @@ class CompileInfo {
         osrPc_(nullptr),
         analysisMode_(Analysis_None),
         scriptNeedsArgsObj_(false),
-        hadOverflowBailout_(false),
-        hadFrequentBailouts_(false),
         mayReadFrameArgsDirectly_(false),
-        trackRecordReplayProgress_(false),
         inlineScriptTree_(nullptr),
-        needsBodyEnvironmentObject_(false),
-        funNeedsSomeEnvironmentObject_(false) {
+        needsBodyEnvironmentObject_(false) {
     nimplicit_ = 0;
     nargs_ = 0;
     nlocals_ = nlocals;
@@ -367,9 +353,7 @@ class CompileInfo {
   bool isSlotAliased(uint32_t index) const {
     MOZ_ASSERT(index >= startArgSlot());
     uint32_t arg = index - firstArgSlot();
-    if (arg < nargs()) {
-      return script()->formalIsAliased(arg);
-    }
+    if (arg < nargs()) return script()->formalIsAliased(arg);
     return false;
   }
 
@@ -397,15 +381,12 @@ class CompileInfo {
   inline bool isObservableSlot(uint32_t slot) const {
     if (slot >= firstLocalSlot()) {
       // The |this| slot for a derived class constructor is a local slot.
-      if (thisSlotForDerivedClassConstructor_) {
+      if (thisSlotForDerivedClassConstructor_)
         return *thisSlotForDerivedClassConstructor_ == slot;
-      }
       return false;
     }
 
-    if (slot < firstArgSlot()) {
-      return isObservableFrameSlot(slot);
-    }
+    if (slot < firstArgSlot()) return isObservableFrameSlot(slot);
 
     return isObservableArgumentSlot(slot);
   }
@@ -413,48 +394,39 @@ class CompileInfo {
   bool isObservableFrameSlot(uint32_t slot) const {
     // The |envChain| value must be preserved if environments are added
     // after the prologue.
-    if (needsBodyEnvironmentObject() && slot == environmentChainSlot()) {
+    if (needsBodyEnvironmentObject() && slot == environmentChainSlot())
       return true;
-    }
 
-    if (!funMaybeLazy()) {
-      return false;
-    }
+    if (!funMaybeLazy()) return false;
 
     // The |this| value must always be observable.
-    if (slot == thisSlot()) {
-      return true;
-    }
+    if (slot == thisSlot()) return true;
 
     // The |this| frame slot in derived class constructors should never be
     // optimized out, as a Debugger might need to perform TDZ checks on it
     // via, e.g., an exceptionUnwind handler. The TDZ check is required
     // for correctness if the handler decides to continue execution.
     if (thisSlotForDerivedClassConstructor_ &&
-        *thisSlotForDerivedClassConstructor_ == slot) {
+        *thisSlotForDerivedClassConstructor_ == slot)
       return true;
-    }
 
-    if (funNeedsSomeEnvironmentObject_ && slot == environmentChainSlot()) {
+    if (funMaybeLazy()->needsSomeEnvironmentObject() &&
+        slot == environmentChainSlot())
       return true;
-    }
 
     // If the function may need an arguments object, then make sure to
     // preserve the env chain, because it may be needed to construct the
     // arguments object during bailout. If we've already created an
     // arguments object (or got one via OSR), preserve that as well.
     if (hasArguments() &&
-        (slot == environmentChainSlot() || slot == argsObjSlot())) {
+        (slot == environmentChainSlot() || slot == argsObjSlot()))
       return true;
-    }
 
     return false;
   }
 
   bool isObservableArgumentSlot(uint32_t slot) const {
-    if (!funMaybeLazy()) {
-      return false;
-    }
+    if (!funMaybeLazy()) return false;
 
     // Function.arguments can be used to access all arguments in non-strict
     // scripts, so we can't optimize out any arguments.
@@ -472,26 +444,17 @@ class CompileInfo {
   bool isRecoverableOperand(uint32_t slot) const {
     // The |envChain| value cannot be recovered if environments can be
     // added in body (after the prologue).
-    if (needsBodyEnvironmentObject() && slot == environmentChainSlot()) {
+    if (needsBodyEnvironmentObject() && slot == environmentChainSlot())
       return false;
-    }
 
-    if (!funMaybeLazy()) {
-      return true;
-    }
+    if (!funMaybeLazy()) return true;
 
     // The |this| and the |envChain| values can be recovered.
-    if (slot == thisSlot() || slot == environmentChainSlot()) {
-      return true;
-    }
+    if (slot == thisSlot() || slot == environmentChainSlot()) return true;
 
-    if (isObservableFrameSlot(slot)) {
-      return false;
-    }
+    if (isObservableFrameSlot(slot)) return false;
 
-    if (needsArgsObj() && isObservableArgumentSlot(slot)) {
-      return false;
-    }
+    if (needsArgsObj() && isObservableArgumentSlot(slot)) return false;
 
     return true;
   }
@@ -499,9 +462,7 @@ class CompileInfo {
   // Check previous bailout states to prevent doing the same bailout in the
   // next compilation.
   bool hadOverflowBailout() const { return hadOverflowBailout_; }
-  bool hadFrequentBailouts() const { return hadFrequentBailouts_; }
   bool mayReadFrameArgsDirectly() const { return mayReadFrameArgsDirectly_; }
-  bool trackRecordReplayProgress() const { return trackRecordReplayProgress_; }
 
  private:
   unsigned nimplicit_;
@@ -523,17 +484,14 @@ class CompileInfo {
   // Record the state of previous bailouts in order to prevent compiling the
   // same function identically the next time.
   bool hadOverflowBailout_;
-  bool hadFrequentBailouts_;
 
   bool mayReadFrameArgsDirectly_;
-  bool trackRecordReplayProgress_;
 
   InlineScriptTree* inlineScriptTree_;
 
   // Whether a script needs environments within its body. This informs us
   // that the environment chain is not easy to reconstruct.
   bool needsBodyEnvironmentObject_;
-  bool funNeedsSomeEnvironmentObject_;
 };
 
 }  // namespace jit

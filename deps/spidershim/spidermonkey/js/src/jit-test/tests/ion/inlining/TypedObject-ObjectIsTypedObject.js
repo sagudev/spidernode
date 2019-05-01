@@ -1,5 +1,3 @@
-// |jit-test| skip-if: !this.TypedObject
-
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -20,6 +18,11 @@
  * inlining of IsObject).  (All of this is at the mercy of the way the
  * code is currently written.)
  */
+
+if (!this.TypedObject) {
+    print("No TypedObject, skipping");
+    quit();
+}
 
 var T = TypedObject;
 var ST = new T.StructType({x:T.int32});

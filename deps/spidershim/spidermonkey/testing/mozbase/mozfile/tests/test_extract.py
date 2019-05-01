@@ -112,16 +112,14 @@ class TestExtract(unittest.TestCase):
         os.write(fd, b'This is not a zipfile or tarball')
         os.close(fd)
         exception = None
-
         try:
             dest = tempfile.mkdtemp()
             mozfile.extract(filename, dest)
-        except Exception as exc:
-            exception = exc
+        except Exception as exception:
+            pass
         finally:
             os.remove(filename)
             os.rmdir(dest)
-
         self.assertTrue(isinstance(exception, Exception))
 
     # utility functions

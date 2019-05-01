@@ -6,6 +6,9 @@ uk{
         "\u0301} ъ ы э {ю\u0301} {я\u0301}]"
     }
     Ellipsis{
+        final{"{0}…"}
+        initial{"…{0}"}
+        medial{"{0}…{1}"}
         word-final{"{0}…"}
         word-initial{"…{0}"}
         word-medial{"{0}…{1}"}
@@ -14,17 +17,18 @@ uk{
     ExemplarCharactersIndex{"[А Б В Г Ґ Д Е Є Ж З И І Ї Й К Л М Н О П Р С Т У Ф Х Ц Ч Ш Щ Ю Я]"}
     ExemplarCharactersNumbers{"[  \\- , % ‰ + 0 1 2 3 4 5 6 7 8 9]"}
     ExemplarCharactersPunctuation{"[\\- – , ; \\: ! ? . ' ’ \u0022 “ „ « » ( ) \\[ \\] \\{ \\} § @ * / \\\\ №]"}
+    MoreInformation{"?"}
     NumberElements{
+        default{"latn"}
         latn{
             miscPatterns{
-                approximately{"~{0}"}
                 atLeast{"{0}+"}
-                atMost{"≤{0}"}
                 range{"{0}–{1}"}
             }
             patterns{
-                accountingFormat{"#,##0.00 ¤"}
+                accountingFormat{"#,##0.00¤;(#,##0.00¤)"}
                 currencyFormat{"#,##0.00 ¤"}
+                decimalFormat{"#,##0.###"}
                 percentFormat{"#,##0%"}
                 scientificFormat{"#E0"}
             }
@@ -260,10 +264,13 @@ uk{
                 group{" "}
                 infinity{"∞"}
                 list{";"}
+                minusSign{"-"}
                 nan{"NaN"}
                 perMille{"‰"}
                 percentSign{"%"}
+                plusSign{"+"}
                 superscriptingExponent{"×"}
+                timeSeparator{":"}
             }
         }
         minimalPairs{
@@ -279,8 +286,9 @@ uk{
             }
         }
         minimumGroupingDigits{"1"}
+        native{"latn"}
     }
-    Version{"2.1.48.42"}
+    Version{"2.1.37.12"}
     calendar{
         buddhist{
             eras{
@@ -296,6 +304,20 @@ uk{
             }
         }
         coptic{
+            eras{
+                abbreviated{
+                    "ERA0",
+                    "ERA1",
+                }
+                narrow{
+                    "ERA0",
+                    "ERA1",
+                }
+                wide{
+                    "ERA0",
+                    "ERA1",
+                }
+            }
             monthNames{
                 format{
                     abbreviated{
@@ -364,6 +386,20 @@ uk{
             }
         }
         ethiopic{
+            eras{
+                abbreviated{
+                    "ERA0",
+                    "ERA1",
+                }
+                narrow{
+                    "ERA0",
+                    "ERA1",
+                }
+                wide{
+                    "ERA0",
+                    "ERA1",
+                }
+            }
             monthNames{
                 format{
                     abbreviated{
@@ -478,17 +514,37 @@ uk{
                 "{1} {0}",
             }
             availableFormats{
+                Bh{"h B"}
+                Bhm{"h:mm B"}
+                Bhms{"h:mm:ss B"}
+                E{"ccc"}
+                EBhm{"E h:mm B"}
+                EBhms{"E h:mm:ss B"}
+                EHm{"E HH:mm"}
+                EHms{"E HH:mm:ss"}
                 Ed{"E, d"}
+                Ehm{"E h:mm a"}
+                Ehms{"E h:mm:ss a"}
                 Gy{"y G"}
                 GyMMM{"LLL y G"}
                 GyMMMEd{"E, d MMM y G"}
                 GyMMMd{"d MMM y G"}
+                H{"HH"}
+                Hm{"HH:mm"}
+                Hms{"HH:mm:ss"}
+                M{"L"}
                 MEd{"E, dd.MM"}
+                MMM{"LLL"}
                 MMMEd{"E, d MMM"}
                 MMMMEd{"E, d MMMM"}
                 MMMMd{"d MMMM"}
                 MMMd{"d MMM"}
                 Md{"dd.MM"}
+                d{"d"}
+                h{"h a"}
+                hm{"h:mm a"}
+                hms{"h:mm:ss a"}
+                ms{"mm:ss"}
                 y{"y G"}
                 yyyy{"y G"}
                 yyyyM{"MM.y G"}
@@ -502,52 +558,19 @@ uk{
                 yyyyQQQQ{"QQQQ y 'р'. G"}
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h–h B"}
+                H{
+                    H{"HH–HH"}
                 }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm–h:mm B"}
-                    m{"h:mm–h:mm B"}
+                Hm{
+                    H{"HH:mm–HH:mm"}
+                    m{"HH:mm–HH:mm"}
                 }
-                Gy{
-                    G{"y 'р'. G – y 'р'. G"}
-                    y{"y–y 'рр'. G"}
+                Hmv{
+                    H{"HH:mm–HH:mm v"}
+                    m{"HH:mm–HH:mm v"}
                 }
-                GyM{
-                    G{"MM.y G – MM.y G"}
-                    M{"MM.y – MM.y G"}
-                    y{"MM.y – MM.y G"}
-                }
-                GyMEd{
-                    G{"ccc, dd.MM.y G – ccc, dd.MM.y G"}
-                    M{"ccc, dd.MM.y – ccc, dd.MM.y G"}
-                    d{"ccc, dd.MM.y – ccc, dd.MM.y G"}
-                    y{"ccc, dd.MM.y – ccc, dd.MM.y G"}
-                }
-                GyMMM{
-                    G{"LLL y 'р'. G – LLL y 'р'. G"}
-                    M{"LLL – LLL y 'р'. G"}
-                    y{"LLL y – LLL y 'рр'. G"}
-                }
-                GyMMMEd{
-                    G{"ccc, d MMM y 'р'. G – ccc, d MMM y 'р'. G"}
-                    M{"ccc, d MMM – ccc, d MMM y 'р'. G"}
-                    d{"ccc, d MMM – ccc, d MMM y 'р'. G"}
-                    y{"ccc, d MMM y – ccc, d MMM y 'рр'. G"}
-                }
-                GyMMMd{
-                    G{"d MMM y 'р'. G – d MMM y 'р'. G"}
-                    M{"d MMM – d MMM y 'р'. G"}
-                    d{"d–d MMM y 'р'. G"}
-                    y{"d MMM y – d MMM y 'рр'. G"}
-                }
-                GyMd{
-                    G{"dd.MM.y G – dd.MM.y G"}
-                    M{"dd.MM.y – dd.MM.y G"}
-                    d{"dd.MM.y – dd.MM.y G"}
-                    y{"dd.MM.y – dd.MM.y G"}
+                Hv{
+                    H{"HH–HH v"}
                 }
                 M{
                     M{"M–M"}
@@ -555,6 +578,9 @@ uk{
                 MEd{
                     M{"E, dd.MM – E, dd.MM"}
                     d{"E, dd.MM – E, dd.MM"}
+                }
+                MMM{
+                    M{"LLL–LLL"}
                 }
                 MMMEd{
                     M{"E, d MMM – E, d MMM"}
@@ -567,6 +593,28 @@ uk{
                 Md{
                     M{"dd.MM – dd.MM"}
                     d{"dd.MM – dd.MM"}
+                }
+                d{
+                    d{"d–d"}
+                }
+                fallback{"{0} – {1}"}
+                h{
+                    a{"h a – h a"}
+                    h{"h–h a"}
+                }
+                hm{
+                    a{"h:mm a – h:mm a"}
+                    h{"h:mm–h:mm a"}
+                    m{"h:mm–h:mm a"}
+                }
+                hmv{
+                    a{"h:mm a – h:mm a v"}
+                    h{"h:mm–h:mm a v"}
+                    m{"h:mm–h:mm a v"}
+                }
+                hv{
+                    a{"h a – h a v"}
+                    h{"h–h a v"}
                 }
                 y{
                     y{"y–y"}
@@ -825,7 +873,7 @@ uk{
                         afternoon1{"день"}
                         am{"дп"}
                         evening1{"вечір"}
-                        midnight{"опівніч"}
+                        midnight{"північ"}
                         morning1{"ранок"}
                         night1{"ніч"}
                         noon{"полудень"}
@@ -852,27 +900,6 @@ uk{
                 }
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h–h B"}
-                }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm–h:mm B"}
-                    m{"h:mm–h:mm B"}
-                }
-                GyM{
-                    G{"MM.y G – MM.y G"}
-                }
-                GyMEd{
-                    G{"ccc, dd.MM.y G – ccc, dd.MM.y G"}
-                    M{"ccc, dd.MM.y – ccc, dd.MM.y G"}
-                    d{"ccc, dd.MM.y – ccc, dd.MM.y G"}
-                    y{"ccc, dd.MM.y – ccc, dd.MM.y G"}
-                }
-                GyMd{
-                    G{"dd.MM.y G – dd.MM.y G"}
-                }
                 H{
                     H{"HH–HH"}
                 }
@@ -1101,6 +1128,17 @@ uk{
             }
         }
         hebrew{
+            eras{
+                abbreviated{
+                    "AM",
+                }
+                narrow{
+                    "AM",
+                }
+                wide{
+                    "AM",
+                }
+            }
             monthNames{
                 format{
                     abbreviated{
@@ -1118,6 +1156,22 @@ uk{
                         "аб",
                         "елул",
                         "адар II",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                        "7",
                     }
                     wide{
                         "тішри",
@@ -1136,9 +1190,38 @@ uk{
                         "адар II",
                     }
                 }
+                stand-alone{
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                        "7",
+                    }
+                }
             }
         }
         indian{
+            eras{
+                abbreviated{
+                    "Saka",
+                }
+                narrow{
+                    "Saka",
+                }
+                wide{
+                    "Saka",
+                }
+            }
             monthNames{
                 format{
                     abbreviated{
@@ -1154,6 +1237,20 @@ uk{
                         "паус.",
                         "маг.",
                         "фаль.",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
                     }
                     wide{
                         "чайтра",
@@ -1185,6 +1282,20 @@ uk{
                         "маг.",
                         "фаль.",
                     }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
+                    }
                     wide{
                         "чайтра",
                         "вайсакха",
@@ -1203,6 +1314,17 @@ uk{
             }
         }
         islamic{
+            eras{
+                abbreviated{
+                    "AH",
+                }
+                narrow{
+                    "AH",
+                }
+                wide{
+                    "AH",
+                }
+            }
             monthNames{
                 format{
                     abbreviated{
@@ -1218,6 +1340,20 @@ uk{
                         "дав.",
                         "зу-ль-к.",
                         "зу-ль-х.",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
                     }
                     wide{
                         "мухаррам",
@@ -1248,6 +1384,20 @@ uk{
                         "дав",
                         "зу-ль-к",
                         "зу-ль-х",
+                    }
+                    narrow{
+                        "1",
+                        "2",
+                        "3",
+                        "4",
+                        "5",
+                        "6",
+                        "7",
+                        "8",
+                        "9",
+                        "10",
+                        "11",
+                        "12",
                     }
                     wide{
                         "мухаррам",
@@ -1313,9 +1463,9 @@ uk{
         female{"жінка"}
         flag{"прапор"}
         flags{"прапори"}
-        food_drink{"їжа та напої"}
+        food_drink{"їжа і напої"}
         format{"формат"}
-        format_whitespace{"формат і знак пробілу"}
+        format_whitespace{"формат і пробільний знак"}
         full_width_form_variant{"варіант повної ширини"}
         geometric_shapes{"геометрична фігура"}
         half_width_form_variant{"варіант половинної ширини"}
@@ -1337,7 +1487,7 @@ uk{
         limited_use{"обмеженого вжитку"}
         male{"чоловік"}
         math_symbols{"математичний символ"}
-        middle_eastern_scripts{"письмо Близького Сходу"}
+        middle_eastern_scripts{"письмо Середнього Сходу"}
         miscellaneous{"некласифікований"}
         modern_scripts{"сучасне письмо"}
         modifier{"модифікатор"}
@@ -1357,7 +1507,7 @@ uk{
         rightwards_arrows{"Стрілки вправо"}
         sign_standard_symbols{"знак чи символ"}
         small_form_variant{"малі варіанти"}
-        smiley{"смайлик"}
+        smiley{"смалик"}
         smileys_people{"смайлик чи людина"}
         south_asian_scripts{"південноазійське письмо"}
         southeast_asian_scripts{"південно-східне азійське письмо"}
@@ -1373,7 +1523,7 @@ uk{
         vocalic_jamo{"Корейські голосні"}
         weather{"погода"}
         western_asian_scripts{"західноазійське письмо"}
-        whitespace{"пробіл"}
+        whitespace{"Пробіл"}
     }
     contextTransforms{
         day-format-except-narrow:intvector{
@@ -1397,10 +1547,6 @@ uk{
             1,
         }
         relative:intvector{
-            1,
-            1,
-        }
-        typographicNames:intvector{
             1,
             1,
         }
@@ -1437,7 +1583,7 @@ uk{
             }
         }
         day-narrow{
-            dn{"д"}
+            dn{"д."}
             relative{
                 "-1"{"учора"}
                 "-2"{"позавчора"}
@@ -1491,7 +1637,7 @@ uk{
             dn{"день року"}
         }
         dayOfYear-short{
-            dn{"д. року"}
+            dn{"день року"}
         }
         dayperiod{
             dn{"дп/пп"}
@@ -1615,7 +1761,7 @@ uk{
             }
         }
         hour-short{
-            dn{"год."}
+            dn{"год"}
             relative{
                 "0"{"цієї години"}
             }
@@ -1675,7 +1821,7 @@ uk{
             }
         }
         minute-short{
-            dn{"хв."}
+            dn{"хв"}
             relative{
                 "0"{"цієї хвилини"}
             }
@@ -1780,7 +1926,7 @@ uk{
             }
         }
         month-narrow{
-            dn{"м"}
+            dn{"міс."}
             relative{
                 "-1"{"минулого місяця"}
                 "0"{"цього місяця"}
@@ -2288,7 +2434,7 @@ uk{
             }
         }
         week-narrow{
-            dn{"т"}
+            dn{"тиж."}
             relative{
                 "-1"{"минулого тижня"}
                 "0"{"цього тижня"}
@@ -2337,7 +2483,7 @@ uk{
             dn{"тиждень місяця"}
         }
         weekOfMonth-narrow{
-            dn{"тиж. міс."}
+            dn{"тиж. місяця"}
         }
         weekOfMonth-short{
             dn{"тиж. місяця"}
@@ -2346,19 +2492,19 @@ uk{
             dn{"день тижня"}
         }
         weekday-narrow{
-            dn{"д тижня"}
+            dn{"день тижня"}
         }
         weekday-short{
-            dn{"д. тижня"}
+            dn{"день тижня"}
         }
         weekdayOfMonth{
             dn{"день місяця"}
         }
         weekdayOfMonth-narrow{
-            dn{"д місяця"}
+            dn{"день місяця"}
         }
         weekdayOfMonth-short{
-            dn{"д. місяця"}
+            dn{"день місяця"}
         }
         year{
             dn{"рік"}
@@ -2383,7 +2529,7 @@ uk{
             }
         }
         year-narrow{
-            dn{"р"}
+            dn{"р."}
             relative{
                 "-1"{"торік"}
                 "0"{"цього року"}
@@ -2430,24 +2576,22 @@ uk{
             dn{"часовий пояс"}
         }
         zone-narrow{
-            dn{"час. п."}
+            dn{"часовий пояс"}
         }
         zone-short{
-            dn{"час. пояс"}
+            dn{"часовий пояс"}
         }
     }
     listPattern{
         or{
             2{"{0} або {1}"}
             end{"{0} або {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
         }
         standard{
             2{"{0} і {1}"}
             end{"{0} і {1}"}
-        }
-        standard-narrow{
-            2{"{0}, {1}"}
-            end{"{0}, {1}"}
             middle{"{0}, {1}"}
             start{"{0}, {1}"}
         }
@@ -2460,6 +2604,20 @@ uk{
         unit{
             2{"{0} і {1}"}
             end{"{0} і {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
+        }
+        unit-narrow{
+            2{"{0}, {1}"}
+            end{"{0}, {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
+        }
+        unit-short{
+            2{"{0}, {1}"}
+            end{"{0}, {1}"}
+            middle{"{0}, {1}"}
+            start{"{0}, {1}"}
         }
     }
     measurementSystemNames{
@@ -2477,13 +2635,8 @@ uk{
         general{
             lenient{
                 "[.․。︒﹒．｡]",
-                "['ʼ՚᾽᾿’＇]",
-                "[%٪﹪％]",
-                "[؉‰]",
                 "[\$﹩＄$]",
                 "[£₤]",
-                "[¥￥]",
-                "[₩￦]",
                 "[₨₹{Rp}{Rs}]",
             }
         }
@@ -2492,6 +2645,10 @@ uk{
                 "[\\-‒⁻₋−➖﹣－]",
                 "[,،٫、︐︑﹐﹑，､]",
                 "[+⁺₊➕﬩﹢＋]",
+            }
+            stricter{
+                "[,٫︐﹐，]",
+                "[.․﹒．｡]",
             }
         }
     }

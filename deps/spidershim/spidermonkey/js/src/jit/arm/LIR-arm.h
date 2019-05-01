@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -113,22 +113,16 @@ class LDivOrModI64
     return static_cast<MBinaryArithInstruction*>(mir_);
   }
   bool canBeDivideByZero() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->canBeDivideByZero();
-    }
+    if (mir_->isMod()) return mir_->toMod()->canBeDivideByZero();
     return mir_->toDiv()->canBeDivideByZero();
   }
   bool canBeNegativeOverflow() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->canBeNegativeDividend();
-    }
+    if (mir_->isMod()) return mir_->toMod()->canBeNegativeDividend();
     return mir_->toDiv()->canBeNegativeOverflow();
   }
   wasm::BytecodeOffset bytecodeOffset() const {
     MOZ_ASSERT(mir_->isDiv() || mir_->isMod());
-    if (mir_->isMod()) {
-      return mir_->toMod()->bytecodeOffset();
-    }
+    if (mir_->isMod()) return mir_->toMod()->bytecodeOffset();
     return mir_->toDiv()->bytecodeOffset();
   }
 };
@@ -152,22 +146,16 @@ class LUDivOrModI64
     return static_cast<MBinaryArithInstruction*>(mir_);
   }
   bool canBeDivideByZero() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->canBeDivideByZero();
-    }
+    if (mir_->isMod()) return mir_->toMod()->canBeDivideByZero();
     return mir_->toDiv()->canBeDivideByZero();
   }
   bool canBeNegativeOverflow() const {
-    if (mir_->isMod()) {
-      return mir_->toMod()->canBeNegativeDividend();
-    }
+    if (mir_->isMod()) return mir_->toMod()->canBeNegativeDividend();
     return mir_->toDiv()->canBeNegativeOverflow();
   }
   wasm::BytecodeOffset bytecodeOffset() const {
     MOZ_ASSERT(mir_->isDiv() || mir_->isMod());
-    if (mir_->isMod()) {
-      return mir_->toMod()->bytecodeOffset();
-    }
+    if (mir_->isMod()) return mir_->toMod()->bytecodeOffset();
     return mir_->toDiv()->bytecodeOffset();
   }
 };

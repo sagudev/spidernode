@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,20 +11,31 @@
 
 #include "gc/Rooting.h"
 #include "js/TypeDecls.h"
-#include "js/Utility.h"
 #include "vm/CommonPropertyNames.h"
+
+class JSAutoByteString;
 
 namespace js {
 
 /*
  * Return a printable, lossless char[] representation of a string-type atom.
- * The returned string is guaranteed to contain only ASCII characters.
+ * The lifetime of the result matches the lifetime of bytes.
  */
-extern UniqueChars AtomToPrintableString(JSContext* cx, JSAtom* atom);
+extern const char* AtomToPrintableString(JSContext* cx, JSAtom* atom,
+                                         JSAutoByteString* bytes);
 
 class PropertyName;
 
 } /* namespace js */
+
+extern bool AtomIsPinned(JSContext* cx, JSAtom* atom);
+
+#ifdef DEBUG
+
+// This may be called either with or without the atoms lock held.
+extern bool AtomIsPinnedInRuntime(JSRuntime* rt, JSAtom* atom);
+
+#endif  // DEBUG
 
 /* Well-known predefined C strings. */
 #define DECLARE_PROTO_STR(name, init, clasp) \
@@ -37,14 +48,21 @@ JS_FOR_EACH_PROTOTYPE(DECLARE_PROTO_STR)
 FOR_EACH_COMMON_PROPERTYNAME(DECLARE_CONST_CHAR_STR)
 #undef DECLARE_CONST_CHAR_STR
 
+/* Constant strings that are not atomized. */
+extern const char js_getter_str[];
+extern const char js_send_str[];
+extern const char js_setter_str[];
+
 namespace js {
 
-class AutoAccessAtomsZone;
+class AutoLockForExclusiveAccess;
 
 /*
  * Atom tracing and garbage collection hooks.
  */
-void TraceAtoms(JSTracer* trc, const AutoAccessAtomsZone& access);
+void TraceAtoms(JSTracer* trc, AutoLockForExclusiveAccess& lock);
+
+void TracePermanentAtoms(JSTracer* trc);
 
 void TraceWellKnownSymbols(JSTracer* trc);
 
@@ -63,9 +81,6 @@ extern JSAtom* AtomizeChars(JSContext* cx, const CharT* chars, size_t length,
 extern JSAtom* AtomizeUTF8Chars(JSContext* cx, const char* utf8Chars,
                                 size_t utf8ByteLength);
 
-extern JSAtom* AtomizeWTF8Chars(JSContext* cx, const char* wtf8Chars,
-                                size_t wtf8ByteLength);
-
 extern JSAtom* AtomizeString(JSContext* cx, JSString* str,
                              js::PinningBehavior pin = js::DoNotPinAtom);
 
@@ -73,13 +88,19 @@ template <AllowGC allowGC>
 extern JSAtom* ToAtom(JSContext* cx,
                       typename MaybeRooted<JS::Value, allowGC>::HandleType v);
 
-// These functions are declared in vm/Xdr.h
-//
-// template<XDRMode mode>
-// XDRResult
-// XDRAtom(XDRState<mode>* xdr, js::MutableHandleAtom atomp);
+enum XDRMode { XDR_ENCODE, XDR_DECODE };
+
+template <XDRMode mode>
+class XDRState;
+
+template <XDRMode mode>
+bool XDRAtom(XDRState<mode>* xdr, js::MutableHandleAtom atomp);
 
 extern JS::Handle<PropertyName*> ClassName(JSProtoKey key, JSContext* cx);
+
+namespace gc {
+void MergeAtomsAddedWhileSweeping(JSRuntime* rt);
+}  // namespace gc
 
 #ifdef DEBUG
 

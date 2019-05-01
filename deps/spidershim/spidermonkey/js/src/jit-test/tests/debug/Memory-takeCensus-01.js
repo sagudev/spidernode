@@ -18,6 +18,6 @@ function checkProperties(census) {
 
 checkProperties(dbg.memory.takeCensus());
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 dbg.addDebuggee(g);
 checkProperties(dbg.memory.takeCensus());

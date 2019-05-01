@@ -4,7 +4,7 @@ var o = {};
 var global = this;
 var p = new Proxy(o, {
   "deleteProperty": function (target, key) {
-    var g = newGlobal({newCompartment: true});
+    var g = newGlobal();
     g.parent = global;
     g.eval("var dbg = new Debugger(parent); dbg.onEnterFrame = function(frame) {};");
     return true;

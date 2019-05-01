@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -53,13 +53,7 @@ class RefCounted {
 
 template <typename T>
 class AtomicRefCounted {
-  // On 64-bit systems, if the refcount type is small (say, 32 bits), there's
-  // a risk that it could overflow.  So require it to be large enough.
-
-  static_assert(sizeof(MozRefCountType) == sizeof(uintptr_t),
-                "You're at risk for ref count overflow.");
-
-  static const MozRefCountType DEAD = ~MozRefCountType(0xffff) | 0xdead;
+  static const MozRefCountType DEAD = 0xffffdead;
 
  protected:
   AtomicRefCounted() : mRefCnt(0) {}
@@ -67,12 +61,12 @@ class AtomicRefCounted {
 
  public:
   void AddRef() const {
+    MOZ_ASSERT(int32_t(mRefCnt) >= 0);
     ++mRefCnt;
-    MOZ_ASSERT(mRefCnt != DEAD);
   }
 
   void Release() const {
-    MOZ_ASSERT(mRefCnt != 0);
+    MOZ_ASSERT(int32_t(mRefCnt) > 0);
     MozRefCountType cnt = --mRefCnt;
     if (0 == cnt) {
 #ifdef DEBUG

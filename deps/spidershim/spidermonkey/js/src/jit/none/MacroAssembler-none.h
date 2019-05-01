@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +7,7 @@
 #ifndef jit_none_MacroAssembler_none_h
 #define jit_none_MacroAssembler_none_h
 
-#include "jit/JitRealm.h"
+#include "jit/JitCompartment.h"
 #include "jit/MoveResolver.h"
 #include "jit/shared/Assembler-shared.h"
 
@@ -16,7 +16,7 @@ namespace jit {
 
 static constexpr Register StackPointer{Registers::invalid_reg};
 static constexpr Register FramePointer{Registers::invalid_reg};
-static constexpr Register ReturnReg{Registers::invalid_reg2};
+static constexpr Register ReturnReg{Registers::invalid_reg};
 static constexpr FloatRegister ReturnFloat32Reg = {FloatRegisters::invalid_reg};
 static constexpr FloatRegister ReturnDoubleReg = {FloatRegisters::invalid_reg};
 static constexpr FloatRegister ReturnSimd128Reg = {FloatRegisters::invalid_reg};
@@ -27,14 +27,6 @@ static constexpr FloatRegister ScratchSimd128Reg = {
     FloatRegisters::invalid_reg};
 static constexpr FloatRegister InvalidFloatReg = {FloatRegisters::invalid_reg};
 
-struct ScratchFloat32Scope : FloatRegister {
-  explicit ScratchFloat32Scope(MacroAssembler& masm) {}
-};
-
-struct ScratchDoubleScope : FloatRegister {
-  explicit ScratchDoubleScope(MacroAssembler& masm) {}
-};
-
 static constexpr Register OsrFrameReg{Registers::invalid_reg};
 static constexpr Register PreBarrierReg{Registers::invalid_reg};
 static constexpr Register CallTempReg0{Registers::invalid_reg};
@@ -44,15 +36,23 @@ static constexpr Register CallTempReg3{Registers::invalid_reg};
 static constexpr Register CallTempReg4{Registers::invalid_reg};
 static constexpr Register CallTempReg5{Registers::invalid_reg};
 static constexpr Register InvalidReg{Registers::invalid_reg};
-static constexpr Register CallTempNonArgRegs[] = {InvalidReg, InvalidReg};
-static const uint32_t NumCallTempNonArgRegs =
-    mozilla::ArrayLength(CallTempNonArgRegs);
 
 static constexpr Register IntArgReg0{Registers::invalid_reg};
 static constexpr Register IntArgReg1{Registers::invalid_reg};
 static constexpr Register IntArgReg2{Registers::invalid_reg};
 static constexpr Register IntArgReg3{Registers::invalid_reg};
 static constexpr Register HeapReg{Registers::invalid_reg};
+
+static constexpr Register WasmIonExitRegCallee{Registers::invalid_reg};
+static constexpr Register WasmIonExitRegE0{Registers::invalid_reg};
+static constexpr Register WasmIonExitRegE1{Registers::invalid_reg};
+
+static constexpr Register WasmIonExitRegReturnData{Registers::invalid_reg};
+static constexpr Register WasmIonExitRegReturnType{Registers::invalid_reg};
+static constexpr Register WasmIonExitTlsReg{Registers::invalid_reg};
+static constexpr Register WasmIonExitRegD0{Registers::invalid_reg};
+static constexpr Register WasmIonExitRegD1{Registers::invalid_reg};
+static constexpr Register WasmIonExitRegD2{Registers::invalid_reg};
 
 static constexpr Register RegExpTesterRegExpReg{Registers::invalid_reg};
 static constexpr Register RegExpTesterStringReg{Registers::invalid_reg};
@@ -75,23 +75,20 @@ static constexpr Register64 ReturnReg64(InvalidReg, InvalidReg);
 static constexpr ValueOperand JSReturnOperand(InvalidReg);
 static constexpr Register64 ReturnReg64(InvalidReg);
 #else
-#  error "Bad architecture"
+#error "Bad architecture"
 #endif
 
 static constexpr Register ABINonArgReg0{Registers::invalid_reg};
 static constexpr Register ABINonArgReg1{Registers::invalid_reg};
 static constexpr Register ABINonArgReg2{Registers::invalid_reg};
-static constexpr Register ABINonArgReg3{Registers::invalid_reg};
 static constexpr Register ABINonArgReturnReg0{Registers::invalid_reg};
 static constexpr Register ABINonArgReturnReg1{Registers::invalid_reg};
-static constexpr Register ABINonVolatileReg{Registers::invalid_reg};
 static constexpr Register ABINonArgReturnVolatileReg{Registers::invalid_reg};
 
 static constexpr FloatRegister ABINonArgDoubleReg = {
     FloatRegisters::invalid_reg};
 
-static constexpr Register WasmTableCallScratchReg0{Registers::invalid_reg};
-static constexpr Register WasmTableCallScratchReg1{Registers::invalid_reg};
+static constexpr Register WasmTableCallScratchReg{Registers::invalid_reg};
 static constexpr Register WasmTableCallSigReg{Registers::invalid_reg};
 static constexpr Register WasmTableCallIndexReg{Registers::invalid_reg};
 static constexpr Register WasmTlsReg{Registers::invalid_reg};
@@ -173,17 +170,15 @@ class Assembler : public AssemblerShared {
                                    const Disassembler::HeapAccess& heapAccess) {
     MOZ_CRASH();
   }
-
-  void setUnlimitedBuffer() { MOZ_CRASH(); }
 };
 
 class Operand {
  public:
-  explicit Operand(const Address&) { MOZ_CRASH(); }
-  explicit Operand(const Register) { MOZ_CRASH(); }
-  explicit Operand(const FloatRegister) { MOZ_CRASH(); }
-  explicit Operand(Register, Imm32) { MOZ_CRASH(); }
-  explicit Operand(Register, int32_t) { MOZ_CRASH(); }
+  Operand(const Address&) { MOZ_CRASH(); }
+  Operand(const Register) { MOZ_CRASH(); }
+  Operand(const FloatRegister) { MOZ_CRASH(); }
+  Operand(Register, Imm32) { MOZ_CRASH(); }
+  Operand(Register, int32_t) { MOZ_CRASH(); }
 };
 
 class ScratchTagScope {
@@ -218,8 +213,7 @@ class MacroAssemblerNone : public Assembler {
   bool appendRawCode(const uint8_t* code, size_t numBytes) { MOZ_CRASH(); }
   bool swapBuffer(wasm::Bytes& bytes) { MOZ_CRASH(); }
 
-  void assertNoGCThings() const { MOZ_CRASH(); }
-
+  void trace(JSTracer*) { MOZ_CRASH(); }
   static void TraceJumpRelocations(JSTracer*, JitCode*, CompactBufferReader&) {
     MOZ_CRASH();
   }
@@ -243,6 +237,7 @@ class MacroAssemblerNone : public Assembler {
   void bind(T) {
     MOZ_CRASH();
   }
+  void bindLater(Label*, wasm::OldTrapDesc) { MOZ_CRASH(); }
   template <typename T>
   void j(Condition, T) {
     MOZ_CRASH();
@@ -278,7 +273,7 @@ class MacroAssemblerNone : public Assembler {
     MOZ_CRASH();
   }
   template <typename T, typename S>
-  void storeValue(const T&, const S&) {
+  void storeValue(T, S) {
     MOZ_CRASH();
   }
   template <typename T, typename S, typename U>
@@ -290,7 +285,7 @@ class MacroAssemblerNone : public Assembler {
     MOZ_CRASH();
   }
   template <typename T>
-  void pushValue(const T&) {
+  void pushValue(T) {
     MOZ_CRASH();
   }
   template <typename T, typename S>
@@ -301,7 +296,7 @@ class MacroAssemblerNone : public Assembler {
   void tagValue(JSValueType, Register, ValueOperand) { MOZ_CRASH(); }
   void retn(Imm32 n) { MOZ_CRASH(); }
   template <typename T>
-  void push(const T&) {
+  void push(T) {
     MOZ_CRASH();
   }
   template <typename T>
@@ -321,7 +316,15 @@ class MacroAssemblerNone : public Assembler {
     MOZ_CRASH();
   }
 
-  CodeOffsetJump jumpWithPatch(RepatchLabel*) { MOZ_CRASH(); }
+  CodeOffsetJump jumpWithPatch(RepatchLabel*, Label* doc = nullptr) {
+    MOZ_CRASH();
+  }
+  CodeOffsetJump jumpWithPatch(RepatchLabel*, Condition, Label* doc = nullptr) {
+    MOZ_CRASH();
+  }
+  CodeOffsetJump backedgeJump(RepatchLabel* label, Label* doc = nullptr) {
+    MOZ_CRASH();
+  }
 
   void testNullSet(Condition, ValueOperand, Register) { MOZ_CRASH(); }
   void testObjectSet(Condition, ValueOperand, Register) { MOZ_CRASH(); }
@@ -345,7 +348,7 @@ class MacroAssemblerNone : public Assembler {
     MOZ_CRASH();
   }
   template <typename T>
-  void move32(const T&, Register) {
+  void move32(T, Register) {
     MOZ_CRASH();
   }
   template <typename T, typename S>
@@ -370,6 +373,31 @@ class MacroAssemblerNone : public Assembler {
   }
 
   template <typename T>
+  void loadInt32x1(T, FloatRegister dest) {
+    MOZ_CRASH();
+  }
+  template <typename T>
+  void loadInt32x2(T, FloatRegister dest) {
+    MOZ_CRASH();
+  }
+  template <typename T>
+  void loadInt32x3(T, FloatRegister dest) {
+    MOZ_CRASH();
+  }
+  template <typename T>
+  void loadInt32x4(T, FloatRegister dest) {
+    MOZ_CRASH();
+  }
+  template <typename T>
+  void loadFloat32x3(T, FloatRegister dest) {
+    MOZ_CRASH();
+  }
+  template <typename T>
+  void loadFloat32x4(T, FloatRegister dest) {
+    MOZ_CRASH();
+  }
+
+  template <typename T>
   void loadPtr(T, Register) {
     MOZ_CRASH();
   }
@@ -383,6 +411,22 @@ class MacroAssemblerNone : public Assembler {
   }
   template <typename T>
   void loadDouble(T, FloatRegister) {
+    MOZ_CRASH();
+  }
+  template <typename T>
+  void loadAlignedSimd128Int(T, FloatRegister) {
+    MOZ_CRASH();
+  }
+  template <typename T>
+  void loadUnalignedSimd128Int(T, FloatRegister) {
+    MOZ_CRASH();
+  }
+  template <typename T>
+  void loadAlignedSimd128Float(T, FloatRegister) {
+    MOZ_CRASH();
+  }
+  template <typename T>
+  void loadUnalignedSimd128Float(T, FloatRegister) {
     MOZ_CRASH();
   }
   template <typename T>
@@ -431,11 +475,51 @@ class MacroAssemblerNone : public Assembler {
     MOZ_CRASH();
   }
   template <typename T, typename S>
+  void storeAlignedSimd128Int(T, S) {
+    MOZ_CRASH();
+  }
+  template <typename T, typename S>
+  void storeUnalignedSimd128Int(T, S) {
+    MOZ_CRASH();
+  }
+  template <typename T, typename S>
+  void storeAlignedSimd128Float(T, S) {
+    MOZ_CRASH();
+  }
+  template <typename T, typename S>
+  void storeUnalignedSimd128Float(T, S) {
+    MOZ_CRASH();
+  }
+  template <typename T, typename S>
   void store8(T, S) {
     MOZ_CRASH();
   }
   template <typename T, typename S>
   void store16(T, S) {
+    MOZ_CRASH();
+  }
+  template <typename T, typename S>
+  void storeInt32x1(T, S) {
+    MOZ_CRASH();
+  }
+  template <typename T, typename S>
+  void storeInt32x2(T, S) {
+    MOZ_CRASH();
+  }
+  template <typename T, typename S>
+  void storeInt32x3(T, S) {
+    MOZ_CRASH();
+  }
+  template <typename T, typename S>
+  void storeInt32x4(T, S) {
+    MOZ_CRASH();
+  }
+  template <typename T, typename S>
+  void storeFloat32x3(T, S) {
+    MOZ_CRASH();
+  }
+  template <typename T, typename S>
+  void storeFloat32x4(T, S) {
     MOZ_CRASH();
   }
   template <typename T, typename S>
@@ -469,10 +553,6 @@ class MacroAssemblerNone : public Assembler {
     MOZ_CRASH();
   }
   template <typename T>
-  void unboxBigInt(T, Register) {
-    MOZ_CRASH();
-  }
-  template <typename T>
   void unboxObject(T, Register) {
     MOZ_CRASH();
   }
@@ -495,13 +575,14 @@ class MacroAssemblerNone : public Assembler {
     MOZ_CRASH();
   }
   void notBoolean(ValueOperand) { MOZ_CRASH(); }
-  MOZ_MUST_USE Register extractObject(Address, Register) { MOZ_CRASH(); }
-  MOZ_MUST_USE Register extractObject(ValueOperand, Register) { MOZ_CRASH(); }
-  MOZ_MUST_USE Register extractSymbol(ValueOperand, Register) { MOZ_CRASH(); }
-  MOZ_MUST_USE Register extractInt32(ValueOperand, Register) { MOZ_CRASH(); }
-  MOZ_MUST_USE Register extractBoolean(ValueOperand, Register) { MOZ_CRASH(); }
+  Register extractObject(Address, Register) { MOZ_CRASH(); }
+  Register extractObject(ValueOperand, Register) { MOZ_CRASH(); }
+  Register extractString(ValueOperand, Register) { MOZ_CRASH(); }
+  Register extractSymbol(ValueOperand, Register) { MOZ_CRASH(); }
+  Register extractInt32(ValueOperand, Register) { MOZ_CRASH(); }
+  Register extractBoolean(ValueOperand, Register) { MOZ_CRASH(); }
   template <typename T>
-  MOZ_MUST_USE Register extractTag(T, Register) {
+  Register extractTag(T, Register) {
     MOZ_CRASH();
   }
 
@@ -531,7 +612,6 @@ class MacroAssemblerNone : public Assembler {
   void loadConstantFloat32(float, FloatRegister) { MOZ_CRASH(); }
   Condition testInt32Truthy(bool, ValueOperand) { MOZ_CRASH(); }
   Condition testStringTruthy(bool, ValueOperand) { MOZ_CRASH(); }
-  Condition testBigIntTruthy(bool, ValueOperand) { MOZ_CRASH(); }
 
   template <typename T>
   void loadUnboxedValue(T, MIRType, AnyRegister) {
@@ -559,7 +639,6 @@ class MacroAssemblerNone : public Assembler {
 
   void setPrinter(Sprinter*) { MOZ_CRASH(); }
   Operand ToPayload(Operand base) { MOZ_CRASH(); }
-  Address ToPayload(Address) { MOZ_CRASH(); }
 
   static const Register getStackPointer() { MOZ_CRASH(); }
 
@@ -568,6 +647,7 @@ class MacroAssemblerNone : public Assembler {
   void profilerExitFrame() { MOZ_CRASH(); }
 
 #ifdef JS_NUNBOX32
+  Address ToPayload(Address) { MOZ_CRASH(); }
   Address ToType(Address) { MOZ_CRASH(); }
 #endif
 };
@@ -582,11 +662,18 @@ class ABIArgGenerator {
   uint32_t stackBytesConsumedSoFar() const { MOZ_CRASH(); }
 };
 
-static inline void PatchJump(CodeLocationJump&, CodeLocationLabel) {
+static inline void PatchJump(CodeLocationJump&, CodeLocationLabel,
+                             ReprotectCode reprotect = DontReprotect) {
   MOZ_CRASH();
 }
 
 static inline bool GetTempRegForIntArg(uint32_t, uint32_t, Register*) {
+  MOZ_CRASH();
+}
+
+static inline void PatchBackedge(CodeLocationJump& jump_,
+                                 CodeLocationLabel label,
+                                 JitZoneGroup::BackedgeTarget target) {
   MOZ_CRASH();
 }
 

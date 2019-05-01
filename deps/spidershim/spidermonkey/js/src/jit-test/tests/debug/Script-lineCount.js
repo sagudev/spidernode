@@ -1,6 +1,6 @@
 // Test Script.lineCount.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = Debugger(g);
 
 function test(scriptText, expectedLineCount) {

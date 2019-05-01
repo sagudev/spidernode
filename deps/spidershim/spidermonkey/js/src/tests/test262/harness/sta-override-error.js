@@ -9,6 +9,7 @@ description: >
         $ERROR
 
     Assert that global $ERROR is overridable
+includes: [sta.js]
 ---*/
 function BaloneyError() {}
 

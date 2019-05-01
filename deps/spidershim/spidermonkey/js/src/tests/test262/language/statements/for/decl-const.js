@@ -10,6 +10,6 @@ negative:
   type: SyntaxError
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 for ( ; false; ) const x = null;

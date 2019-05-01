@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !('oomTest' in this)
+if (!('oomTest' in this))
+    quit();
 
 a = o = s = r = []
 o2 = s2 = r2 = g2 = f2 = m2 = Map

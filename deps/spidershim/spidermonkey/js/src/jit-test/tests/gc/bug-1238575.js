@@ -1,4 +1,7 @@
-// |jit-test| allow-oom; allow-unhandlable-oom; skip-if: !('oomAfterAllocations' in this)
+// |jit-test| allow-oom; allow-unhandlable-oom
+
+if (!('oomAfterAllocations' in this))
+    quit();
 
 oomAfterAllocations(5)
 gcslice(11);

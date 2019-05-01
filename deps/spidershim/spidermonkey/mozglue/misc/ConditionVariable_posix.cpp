@@ -27,7 +27,7 @@ static const long NanoSecPerSec = 1000000000;
 // pthread_condattr_setclock.
 #if defined(HAVE_CLOCK_MONOTONIC) && \
     !(defined(__ANDROID__) && !defined(__LP64__)) && !defined(__APPLE__)
-#  define CV_USE_CLOCK_API
+#define CV_USE_CLOCK_API
 #endif
 
 #ifdef CV_USE_CLOCK_API
@@ -110,7 +110,7 @@ void mozilla::detail::ConditionVariableImpl::wait(MutexImpl& lock) {
   MOZ_RELEASE_ASSERT(r == 0);
 }
 
-mozilla::CVStatus mozilla::detail::ConditionVariableImpl::wait_for(
+mozilla::detail::CVStatus mozilla::detail::ConditionVariableImpl::wait_for(
     MutexImpl& lock, const TimeDuration& a_rel_time) {
   if (a_rel_time == TimeDuration::Forever()) {
     wait(lock);

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -43,26 +43,19 @@ bool document_resolve(JSContext* cx, JS::HandleObject obj, JS::HandleId id,
                       bool* resolvedp) {
   // If id is "all", resolve document.all=true.
   JS::RootedValue v(cx);
-  if (!JS_IdToValue(cx, id, &v)) {
-    return false;
-  }
+  if (!JS_IdToValue(cx, id, &v)) return false;
 
   if (v.isString()) {
     JSString* str = v.toString();
     JSFlatString* flatStr = JS_FlattenString(cx, str);
-    if (!flatStr) {
-      return false;
-    }
+    if (!flatStr) return false;
     if (JS_FlatStringEqualsAscii(flatStr, "all")) {
       JS::Rooted<JSObject*> docAll(cx, JS_NewObject(cx, &DocumentAllClass));
-      if (!docAll) {
-        return false;
-      }
+      if (!docAll) return false;
 
       JS::Rooted<JS::Value> allValue(cx, JS::ObjectValue(*docAll));
-      if (!JS_DefinePropertyById(cx, obj, id, allValue, JSPROP_RESOLVING)) {
+      if (!JS_DefinePropertyById(cx, obj, id, allValue, JSPROP_RESOLVING))
         return false;
-      }
 
       *resolvedp = true;
       return true;

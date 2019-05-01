@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -10,7 +10,7 @@
 #include "js/RootingAPI.h"
 #include "js/SliceBudget.h"
 #include "jsapi-tests/tests.h"
-#include "vm/Realm.h"
+#include "vm/JSCompartment.h"
 
 static bool ConstructCCW(JSContext* cx, const JSClass* globalClasp,
                          JS::HandleObject global1,
@@ -23,7 +23,7 @@ static bool ConstructCCW(JSContext* cx, const JSClass* globalClasp,
   }
 
   // Define a second global in a different zone.
-  JS::RealmOptions options;
+  JS::CompartmentOptions options;
   global2.set(JS_NewGlobalObject(cx, globalClasp, nullptr,
                                  JS::FireOnNewGlobalHook, options));
   if (!global2) {
@@ -46,7 +46,7 @@ static bool ConstructCCW(JSContext* cx, const JSClass* globalClasp,
   // Define an object in compartment 2, that is wrapped by a CCW into
   // compartment 1.
   {
-    JSAutoRealm ar(cx, global2);
+    JSAutoCompartment ac(cx, global2);
     wrappee.set(JS_NewPlainObject(cx));
     if (wrappee->compartment() != global2->compartment()) {
       fprintf(stderr, "wrappee in wrong compartment");
@@ -81,9 +81,8 @@ class CCWTestTracer : public JS::CallbackTracer {
     printf("kind         = %d\n", static_cast<int>(thing.kind()));
     printf("expectedKind = %d\n", static_cast<int>(expectedKind));
 
-    if (thing.asCell() != *expectedThingp || thing.kind() != expectedKind) {
+    if (thing.asCell() != *expectedThingp || thing.kind() != expectedKind)
       okay = false;
-    }
   }
 
  public:
@@ -125,6 +124,7 @@ BEGIN_TEST(testTracingIncomingCCWs) {
   // Ensure that |TraceIncomingCCWs| finds the object wrapped by the CCW.
 
   JS::CompartmentSet compartments;
+  CHECK(compartments.init());
   CHECK(compartments.put(global2->compartment()));
 
   void* thing = wrappee.get();
@@ -137,11 +137,9 @@ BEGIN_TEST(testTracingIncomingCCWs) {
 }
 END_TEST(testTracingIncomingCCWs)
 
-static size_t countWrappers(JS::Compartment* comp) {
+static size_t countWrappers(JSCompartment* comp) {
   size_t count = 0;
-  for (JS::Compartment::WrapperEnum e(comp); !e.empty(); e.popFront()) {
-    ++count;
-  }
+  for (JSCompartment::WrapperEnum e(comp); !e.empty(); e.popFront()) ++count;
   return count;
 }
 
@@ -300,9 +298,7 @@ BEGIN_TEST(testIncrementalRoots) {
   // with leafOwner the object that has the 'obj' and 'leaf2' properties.
 
   JS::RootedObject obj(cx, JS_NewObject(cx, nullptr));
-  if (!obj) {
-    return false;
-  }
+  if (!obj) return false;
 
   JS::RootedObject root(cx, obj);
 
@@ -311,12 +307,8 @@ BEGIN_TEST(testIncrementalRoots) {
 
   for (size_t i = 0; i < 3000; i++) {
     JS::RootedObject subobj(cx, JS_NewObject(cx, nullptr));
-    if (!subobj) {
-      return false;
-    }
-    if (!JS_DefineProperty(cx, obj, "obj", subobj, 0)) {
-      return false;
-    }
+    if (!subobj) return false;
+    if (!JS_DefineProperty(cx, obj, "obj", subobj, 0)) return false;
     leafOwner = obj;
     obj = subobj;
     leaf = subobj;
@@ -325,25 +317,19 @@ BEGIN_TEST(testIncrementalRoots) {
   // Give the leaf owner a second leaf.
   {
     JS::RootedObject leaf2(cx, JS_NewObject(cx, nullptr));
-    if (!leaf2) {
-      return false;
-    }
-    if (!JS_DefineProperty(cx, leafOwner, "leaf2", leaf2, 0)) {
-      return false;
-    }
+    if (!leaf2) return false;
+    if (!JS_DefineProperty(cx, leafOwner, "leaf2", leaf2, 0)) return false;
   }
 
   // This is marked during markRuntime
-  JS::RootedObjectVector vec(cx);
-  if (!vec.append(root)) {
-    return false;
-  }
+  JS::AutoObjectVector vec(cx);
+  if (!vec.append(root)) return false;
 
   // Tenure everything so intentionally unrooted objects don't move before we
   // can use them.
-  cx->runtime()->gc.minorGC(JS::GCReason::API);
+  cx->runtime()->gc.minorGC(JS::gcreason::API);
 
-  // Release all roots except for the RootedObjectVector.
+  // Release all roots except for the AutoObjectVector.
   obj = root = nullptr;
 
   // We need to manipulate interior nodes, but the JSAPI understandably wants
@@ -372,7 +358,7 @@ BEGIN_TEST(testIncrementalRoots) {
   // descendants. It shouldn't make it all the way through (it gets a budget
   // of 1000, and the graph is about 3000 objects deep).
   js::SliceBudget budget(js::WorkBudget(1000));
-  JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_ZONE_INCREMENTAL);
+  JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_INCREMENTAL);
   rt->gc.startDebugGC(GC_NORMAL, budget);
 
   // We'd better be between iGC slices now. There's always a risk that
@@ -395,13 +381,10 @@ BEGIN_TEST(testIncrementalRoots) {
   // 'leaf' out of the graph and stick it into an already-marked region (hang
   // it off the un-prebarriered root, in fact). The pre-barrier on the
   // overwrite of the source location should cause this object to be marked.
-  if (!JS_SetProperty(cx, leafOwnerHandle, "obj", JS::UndefinedHandleValue)) {
+  if (!JS_SetProperty(cx, leafOwnerHandle, "obj", JS::UndefinedHandleValue))
     return false;
-  }
   MOZ_ASSERT(rt->gc.gcNumber() == currentGCNumber);
-  if (!JS_SetProperty(cx, vec[0], "newobj", leafValueHandle)) {
-    return false;
-  }
+  if (!JS_SetProperty(cx, vec[0], "newobj", leafValueHandle)) return false;
   MOZ_ASSERT(rt->gc.gcNumber() == currentGCNumber);
   MOZ_ASSERT(leafHandle->asTenured().isMarkedBlack());
 
@@ -416,14 +399,10 @@ BEGIN_TEST(testIncrementalRoots) {
   // pointers.
   {
     JS::RootedValue leaf2(cx);
-    if (!JS_GetProperty(cx, leafOwnerHandle, "leaf2", &leaf2)) {
-      return false;
-    }
+    if (!JS_GetProperty(cx, leafOwnerHandle, "leaf2", &leaf2)) return false;
     MOZ_ASSERT(rt->gc.gcNumber() == currentGCNumber);
     MOZ_ASSERT(!leaf2.toObject().asTenured().isMarkedBlack());
-    if (!JS_SetProperty(cx, vec[0], "leafcopy", leaf2)) {
-      return false;
-    }
+    if (!JS_SetProperty(cx, vec[0], "leafcopy", leaf2)) return false;
     MOZ_ASSERT(rt->gc.gcNumber() == currentGCNumber);
     MOZ_ASSERT(!leaf2.toObject().asTenured().isMarkedBlack());
   }
@@ -433,9 +412,8 @@ BEGIN_TEST(testIncrementalRoots) {
   rt->gc.debugGCSlice(unlimited);
 
   // Access the leaf object to try to trigger a crash if it is dead.
-  if (!JS_SetProperty(cx, leafHandle, "toes", JS::UndefinedHandleValue)) {
+  if (!JS_SetProperty(cx, leafHandle, "toes", JS::UndefinedHandleValue))
     return false;
-  }
 
   return true;
 }

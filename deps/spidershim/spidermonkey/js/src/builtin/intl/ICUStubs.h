@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,18 +22,18 @@
 #include "mozilla/TypeTraits.h"
 
 #if ENABLE_INTL_API
-#  include "unicode/ucal.h"
-#  include "unicode/ucol.h"
-#  include "unicode/udat.h"
-#  include "unicode/udatpg.h"
-#  include "unicode/udisplaycontext.h"
-#  include "unicode/uenum.h"
-#  include "unicode/uloc.h"
-#  include "unicode/unum.h"
-#  include "unicode/unumsys.h"
-#  include "unicode/upluralrules.h"
-#  include "unicode/ureldatefmt.h"
-#  include "unicode/ustring.h"
+#include "unicode/ucal.h"
+#include "unicode/ucol.h"
+#include "unicode/udat.h"
+#include "unicode/udatpg.h"
+#include "unicode/udisplaycontext.h"
+#include "unicode/uenum.h"
+#include "unicode/uloc.h"
+#include "unicode/unum.h"
+#include "unicode/unumsys.h"
+#include "unicode/upluralrules.h"
+#include "unicode/ureldatefmt.h"
+#include "unicode/ustring.h"
 #endif
 
 /*
@@ -45,8 +45,6 @@
  */
 
 #if !ENABLE_INTL_API
-
-#  define U_ICU_VERSION_MAJOR_NUM 64
 
 enum UErrorCode {
   U_ZERO_ERROR,
@@ -228,8 +226,6 @@ enum UNumberFormatFields {
   UNUM_EXPONENT_SYMBOL_FIELD,
   UNUM_EXPONENT_SIGN_FIELD,
   UNUM_EXPONENT_FIELD,
-  UNUM_MEASURE_UNIT_FIELD,
-  UNUM_COMPACT_FIELD,
   UNUM_FIELD_COUNT,
 };
 

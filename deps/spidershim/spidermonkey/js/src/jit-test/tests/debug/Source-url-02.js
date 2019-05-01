@@ -1,6 +1,6 @@
 // Source.prototype.url returns a synthesized URL for Function code.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.eval('var double = Function("x", "return 2*x;");');
 
 var dbg = new Debugger;

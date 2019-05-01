@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -8,34 +8,25 @@
 #include "gc/Heap.h"
 #include "gc/WeakMap.h"
 #include "gc/Zone.h"
-#include "js/Proxy.h"
 #include "jsapi-tests/tests.h"
 
 using namespace js;
 using namespace js::gc;
 
-namespace js {
-
-struct GCManagedObjectWeakMap : public ObjectWeakMap {
-  using ObjectWeakMap::ObjectWeakMap;
-};
-
-}  // namespace js
-
 namespace JS {
 
 template <>
-struct DeletePolicy<js::GCManagedObjectWeakMap>
-    : public js::GCManagedDeletePolicy<js::GCManagedObjectWeakMap> {};
+struct DeletePolicy<js::ObjectWeakMap>
+    : public js::GCManagedDeletePolicy<js::ObjectWeakMap> {};
 
 template <>
-struct MapTypeToRootKind<js::GCManagedObjectWeakMap*> {
+struct MapTypeToRootKind<js::ObjectWeakMap*> {
   static const JS::RootKind kind = JS::RootKind::Traceable;
 };
 
 template <>
-struct GCPolicy<js::GCManagedObjectWeakMap*>
-    : public NonGCPointerPolicy<js::GCManagedObjectWeakMap*> {};
+struct GCPolicy<js::ObjectWeakMap*>
+    : public NonGCPointerPolicy<js::ObjectWeakMap*> {};
 
 }  // namespace JS
 
@@ -52,7 +43,7 @@ BEGIN_TEST(testGCGrayMarking) {
 #endif /* JS_GC_ZEAL */
 
   CHECK(InitGlobals());
-  JSAutoRealm ar(cx, global1);
+  JSAutoCompartment ac(cx, global1);
 
   InitGrayRootTracer();
 
@@ -228,7 +219,7 @@ bool TestWeakMaps() {
   // Test that a weakmap key is marked gray if it has a gray delegate and the
   // map is either gray or black.
 
-  JSObject* delegate = UncheckedUnwrapWithoutExpose(key);
+  JSObject* delegate = AllocDelegateForKey(key);
   blackRoot1 = weakMap;
   blackRoot2 = nullptr;
   grayRoots.grayRoot1 = delegate;
@@ -308,6 +299,7 @@ bool TestWeakMaps() {
   CHECK(IsMarkedBlack(weakMap));
   CHECK(IsMarkedBlack(value));
 
+  CHECK(AllocDelegateForKey(key));
   blackRoot1 = nullptr;
   blackRoot2 = nullptr;
   grayRoots.grayRoot1 = weakMap;
@@ -327,11 +319,12 @@ bool TestWeakMaps() {
 
 bool TestUnassociatedWeakMaps() {
   // Make a weakmap that's not associated with a JSObject.
-  auto weakMap = cx->make_unique<GCManagedObjectWeakMap>(cx);
+  auto weakMap = cx->make_unique<ObjectWeakMap>(cx);
   CHECK(weakMap);
+  CHECK(weakMap->init());
 
   // Make sure this gets traced during GC.
-  Rooted<GCManagedObjectWeakMap*> rootMap(cx, weakMap.get());
+  Rooted<ObjectWeakMap*> rootMap(cx, weakMap.get());
 
   JSObject* key = AllocWeakmapKeyObject();
   CHECK(key);
@@ -371,7 +364,7 @@ bool TestUnassociatedWeakMaps() {
 
   // Test that a weakmap key is marked gray if it has a gray delegate.
 
-  JSObject* delegate = UncheckedUnwrapWithoutExpose(key);
+  JSObject* delegate = AllocDelegateForKey(key);
   blackRoot = nullptr;
   grayRoots.grayRoot1 = delegate;
   grayRoots.grayRoot2 = nullptr;
@@ -409,6 +402,7 @@ bool TestUnassociatedWeakMaps() {
   CHECK(IsMarkedBlack(key));
   CHECK(IsMarkedBlack(value));
 
+  CHECK(AllocDelegateForKey(key));
   blackRoot = nullptr;
   grayRoots.grayRoot1 = key;
   grayRoots.grayRoot2 = nullptr;
@@ -452,19 +446,19 @@ bool TestCCWs() {
   CHECK(IsMarkedGray(wrapper));
   CHECK(IsMarkedBlack(target));
 
-  JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_ZONE_INCREMENTAL);
+  JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_INCREMENTAL);
   JS::PrepareForFullGC(cx);
   js::SliceBudget budget(js::WorkBudget(1));
   cx->runtime()->gc.startDebugGC(GC_NORMAL, budget);
   CHECK(JS::IsIncrementalGCInProgress(cx));
 
   CHECK(!IsMarkedBlack(wrapper));
-  CHECK(wrapper->zone()->isGCMarkingBlackOnly());
+  CHECK(wrapper->zone()->isGCMarkingBlack());
 
   CHECK(GetCrossCompartmentWrapper(target) == wrapper);
   CHECK(IsMarkedBlack(wrapper));
 
-  JS::FinishIncrementalGC(cx, JS::GCReason::API);
+  JS::FinishIncrementalGC(cx, JS::gcreason::API);
 
   // Test behaviour of gray CCWs marked black by a barrier during incremental
   // GC.
@@ -478,29 +472,28 @@ bool TestCCWs() {
   CHECK(IsMarkedGray(target));
 
   // Incremental zone GC started: the source is now unmarked.
-  JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_ZONE_INCREMENTAL);
+  JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_INCREMENTAL);
   JS::PrepareZoneForGC(wrapper->zone());
   budget = js::SliceBudget(js::WorkBudget(1));
   cx->runtime()->gc.startDebugGC(GC_NORMAL, budget);
   CHECK(JS::IsIncrementalGCInProgress(cx));
-  CHECK(wrapper->zone()->isGCMarkingBlackOnly());
+  CHECK(wrapper->zone()->isGCMarkingBlack());
   CHECK(!target->zone()->wasGCStarted());
   CHECK(!IsMarkedBlack(wrapper));
   CHECK(!IsMarkedGray(wrapper));
   CHECK(IsMarkedGray(target));
 
-  // Betweeen GC slices: source marked black by barrier, target is
-  // still gray. Target will be marked gray
-  // eventually. ObjectIsMarkedGray() is conservative and reports
-  // that target is not marked gray; AssertObjectIsNotGray() will
-  // assert.
+  // Betweeen GC slices: source marked black by barrier, target is still gray.
+  // ObjectIsMarkedGray() and CheckObjectIsNotMarkedGray() should handle this
+  // case and report that target is not marked gray.
   grayRoots.grayRoot1.get();
   CHECK(IsMarkedBlack(wrapper));
   CHECK(IsMarkedGray(target));
   CHECK(!JS::ObjectIsMarkedGray(target));
+  MOZ_ASSERT(JS::ObjectIsNotGray(target));
 
   // Final state: source and target are black.
-  JS::FinishIncrementalGC(cx, JS::GCReason::API);
+  JS::FinishIncrementalGC(cx, JS::gcreason::API);
   CHECK(IsMarkedBlack(wrapper));
   CHECK(IsMarkedBlack(target));
 
@@ -549,26 +542,19 @@ struct ColorCheckFunctor {
   }
 
   bool operator()(JSObject* obj) {
-    if (!CheckCellColor(obj, color)) {
-      return false;
-    }
+    if (!CheckCellColor(obj, color)) return false;
 
     NativeObject& nobj = obj->as<NativeObject>();
-    if (!CheckCellColor(nobj.shape(), color)) {
-      return false;
-    }
+    if (!CheckCellColor(nobj.shape(), color)) return false;
 
     Shape* shape = nobj.shape();
-    if (!CheckCellColor(shape, color)) {
-      return false;
-    }
+    if (!CheckCellColor(shape, color)) return false;
 
     // Shapes and symbols are never marked gray.
     jsid id = shape->propid();
     if (JSID_IS_GCTHING(id) &&
-        !CheckCellColor(JSID_TO_GCTHING(id).asCell(), MarkColor::Black)) {
+        !CheckCellColor(JSID_TO_GCTHING(id).asCell(), MarkColor::Black))
       return false;
-    }
 
     count++;
     return true;
@@ -587,9 +573,7 @@ GrayRoots grayRoots;
 
 bool InitGlobals() {
   global1.init(cx, global);
-  if (!createGlobal()) {
-    return false;
-  }
+  if (!createGlobal()) return false;
   global2.init(cx, global);
   return global2 != nullptr;
 }
@@ -622,14 +606,10 @@ JSObject* AllocPlainObject() {
 
 JSObject* AllocSameCompartmentSourceObject(JSObject* target) {
   JS::RootedObject source(cx, JS_NewPlainObject(cx));
-  if (!source) {
-    return nullptr;
-  }
+  if (!source) return nullptr;
 
   JS::RootedObject obj(cx, target);
-  if (!JS_DefineProperty(cx, source, "ptr", obj, 0)) {
-    return nullptr;
-  }
+  if (!JS_DefineProperty(cx, source, "ptr", obj, 0)) return nullptr;
 
   EvictNursery();
 
@@ -640,10 +620,8 @@ JSObject* AllocSameCompartmentSourceObject(JSObject* target) {
 JSObject* GetCrossCompartmentWrapper(JSObject* target) {
   MOZ_ASSERT(target->compartment() == global1->compartment());
   JS::RootedObject obj(cx, target);
-  JSAutoRealm ar(cx, global2);
-  if (!JS_WrapObject(cx, &obj)) {
-    return nullptr;
-  }
+  JSAutoCompartment ac(cx, global2);
+  if (!JS_WrapObject(cx, &obj)) return nullptr;
 
   EvictNursery();
 
@@ -651,17 +629,30 @@ JSObject* GetCrossCompartmentWrapper(JSObject* target) {
   return obj;
 }
 
-JSObject* AllocWeakmapKeyObject() {
-  JS::RootedObject delegate(cx, JS_NewPlainObject(cx));
-  if (!delegate) {
-    return nullptr;
-  }
+static JSObject* GetKeyDelegate(JSObject* obj) {
+  return static_cast<JSObject*>(obj->as<NativeObject>().getPrivate());
+}
 
-  JS::RootedObject key(cx,
-                       js::Wrapper::New(cx, delegate, &js::Wrapper::singleton));
+JSObject* AllocWeakmapKeyObject() {
+  static const js::ClassExtension KeyClassExtension = {GetKeyDelegate};
+
+  static const js::Class KeyClass = {"keyWithDelegate",  JSCLASS_HAS_PRIVATE,
+                                     JS_NULL_CLASS_OPS,  JS_NULL_CLASS_SPEC,
+                                     &KeyClassExtension, JS_NULL_OBJECT_OPS};
+
+  JS::RootedObject key(cx, JS_NewObject(cx, Jsvalify(&KeyClass)));
+  if (!key) return nullptr;
 
   EvictNursery();
   return key;
+}
+
+JSObject* AllocDelegateForKey(JSObject* key) {
+  JS::RootedObject obj(cx, JS_NewPlainObject(cx));
+  EvictNursery();
+
+  key->as<NativeObject>().setPrivate(obj);
+  return obj;
 }
 
 JSObject* AllocObjectChain(size_t length) {
@@ -671,20 +662,14 @@ JSObject* AllocObjectChain(size_t length) {
   // objects.
   RootedString nextPropName(cx, JS_NewStringCopyZ(cx, "unique14142135"));
   RootedId nextId(cx);
-  if (!JS_StringToId(cx, nextPropName, &nextId)) {
-    return nullptr;
-  }
+  if (!JS_StringToId(cx, nextPropName, &nextId)) return nullptr;
 
   RootedObject head(cx);
   for (size_t i = 0; i < length; i++) {
     RootedValue next(cx, ObjectOrNullValue(head));
     head = AllocPlainObject();
-    if (!head) {
-      return nullptr;
-    }
-    if (!JS_DefinePropertyById(cx, head, nextId, next, 0)) {
-      return nullptr;
-    }
+    if (!head) return nullptr;
+    if (!JS_DefinePropertyById(cx, head, nextId, next, 0)) return nullptr;
   }
 
   return head;
@@ -694,9 +679,7 @@ template <typename F>
 bool IterateObjectChain(JSObject* chain, F f) {
   RootedObject obj(cx, chain);
   while (obj) {
-    if (!f(obj)) {
-      return false;
-    }
+    if (!f(obj)) return false;
 
     // Access the 'next' property via the object's slots to avoid triggering
     // gray marking assertions when calling JS_GetPropertyById.
@@ -739,7 +722,7 @@ bool ZoneGC(JS::Zone* zone) {
   uint32_t oldMode = JS_GetGCParameter(cx, JSGC_MODE);
   JS_SetGCParameter(cx, JSGC_MODE, JSGC_MODE_ZONE);
   JS::PrepareZoneForGC(zone);
-  cx->runtime()->gc.gc(GC_NORMAL, JS::GCReason::API);
+  cx->runtime()->gc.gc(GC_NORMAL, JS::gcreason::API);
   CHECK(!cx->runtime()->gc.isFullGc());
   JS_SetGCParameter(cx, JSGC_MODE, oldMode);
   return true;

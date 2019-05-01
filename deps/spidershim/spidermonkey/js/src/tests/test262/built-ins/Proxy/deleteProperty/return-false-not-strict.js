@@ -7,13 +7,12 @@ description: >
 
     11. If booleanTrapResult is false, return false.
 flags: [noStrict]
-features: [Proxy]
 ---*/
 
 var p = new Proxy({}, {
-  deleteProperty: function() {
-    return false;
-  }
+    deleteProperty: function() {
+        return false;
+    }
 });
 
 assert.sameValue(delete p.attr, false);

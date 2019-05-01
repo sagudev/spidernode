@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -130,7 +130,7 @@ class ArenaCellIterImpl {
     firstThingOffset = Arena::firstThingOffset(kind);
     thingSize = Arena::thingSize(kind);
     traceKind = MapAllocToTraceKind(kind);
-    needsBarrier = mayNeedBarrier && !JS::RuntimeHeapIsCollecting();
+    needsBarrier = mayNeedBarrier && !JS::CurrentThreadIsHeapCollecting();
     reset(arena);
   }
 
@@ -159,9 +159,7 @@ class ArenaCellIterImpl {
     // This can result in a a new reference being created to an object that
     // an ongoing incremental GC may find to be unreachable, so we may need
     // a barrier here.
-    if (needsBarrier) {
-      ExposeGCThingToActiveJS(JS::GCCellPtr(cell, traceKind));
-    }
+    if (needsBarrier) ExposeGCThingToActiveJS(JS::GCCellPtr(cell, traceKind));
 
     return cell;
   }
@@ -176,9 +174,7 @@ class ArenaCellIterImpl {
   void next() {
     MOZ_ASSERT(!done());
     thing += thingSize;
-    if (thing < ArenaSize) {
-      moveForwardIfFree();
-    }
+    if (thing < ArenaSize) moveForwardIfFree();
   }
 };
 
@@ -189,27 +185,26 @@ class ArenaCellIter : public ArenaCellIterImpl {
  public:
   explicit ArenaCellIter(Arena* arena)
       : ArenaCellIterImpl(arena, CellIterMayNeedBarrier) {
-    MOZ_ASSERT(JS::RuntimeHeapIsTracing());
+    MOZ_ASSERT(JS::CurrentThreadIsHeapTracing());
   }
 };
 
 template <typename T>
-class ZoneAllCellIter;
+class ZoneCellIter;
 
 template <>
-class ZoneAllCellIter<TenuredCell> {
+class ZoneCellIter<TenuredCell> {
   ArenaIter arenaIter;
   ArenaCellIterImpl cellIter;
   mozilla::Maybe<JS::AutoAssertNoGC> nogc;
 
  protected:
   // For use when a subclass wants to insert some setup before init().
-  ZoneAllCellIter() {}
+  ZoneCellIter() {}
 
   void init(JS::Zone* zone, AllocKind kind) {
     MOZ_ASSERT_IF(IsNurseryAllocable(kind),
-                  (zone->isAtomsZone() ||
-                   zone->runtimeFromMainThread()->gc.nursery().isEmpty()));
+                  zone->isAtomsZone() || zone->group()->nursery().isEmpty());
     initForTenuredIteration(zone, kind);
   }
 
@@ -218,8 +213,8 @@ class ZoneAllCellIter<TenuredCell> {
 
     // If called from outside a GC, ensure that the heap is in a state
     // that allows us to iterate.
-    if (!JS::RuntimeHeapIsBusy()) {
-      // Assert that no GCs can occur while a ZoneAllCellIter is live.
+    if (!JS::CurrentThreadIsHeapBusy()) {
+      // Assert that no GCs can occur while a ZoneCellIter is live.
       nogc.emplace();
     }
 
@@ -228,29 +223,25 @@ class ZoneAllCellIter<TenuredCell> {
     // background finalization; we may have to wait for this to finish if
     // it's currently active.
     if (IsBackgroundFinalized(kind) &&
-        zone->arenas.needBackgroundFinalizeWait(kind)) {
+        zone->arenas.needBackgroundFinalizeWait(kind))
       rt->gc.waitBackgroundSweepEnd();
-    }
     arenaIter.init(zone, kind);
-    if (!arenaIter.done()) {
+    if (!arenaIter.done())
       cellIter.init(arenaIter.get(), CellIterMayNeedBarrier);
-      settle();
-    }
   }
 
  public:
-  ZoneAllCellIter(JS::Zone* zone, AllocKind kind) {
+  ZoneCellIter(JS::Zone* zone, AllocKind kind) {
     // If we are iterating a nursery-allocated kind then we need to
     // evict first so that we can see all things.
-    if (IsNurseryAllocable(kind)) {
-      zone->runtimeFromMainThread()->gc.evictNursery();
-    }
+    if (IsNurseryAllocable(kind))
+      zone->runtimeFromActiveCooperatingThread()->gc.evictNursery();
 
     init(zone, kind);
   }
 
-  ZoneAllCellIter(JS::Zone* zone, AllocKind kind,
-                  const js::gc::AutoAssertEmptyNursery&) {
+  ZoneCellIter(JS::Zone* zone, AllocKind kind,
+               const js::gc::AutoAssertEmptyNursery&) {
     // No need to evict the nursery. (This constructor is known statically
     // to not GC.)
     init(zone, kind);
@@ -269,19 +260,14 @@ class ZoneAllCellIter<TenuredCell> {
     return cellIter.getCell();
   }
 
-  void settle() {
-    while (cellIter.done() && !arenaIter.done()) {
-      arenaIter.next();
-      if (!arenaIter.done()) {
-        cellIter.reset(arenaIter.get());
-      }
-    }
-  }
-
   void next() {
     MOZ_ASSERT(!done());
     cellIter.next();
-    settle();
+    if (cellIter.done()) {
+      MOZ_ASSERT(!arenaIter.done());
+      arenaIter.next();
+      if (!arenaIter.done()) cellIter.reset(arenaIter.get());
+    }
   }
 };
 
@@ -290,19 +276,17 @@ class ZoneAllCellIter<TenuredCell> {
 // Iterator over the cells in a Zone, where the GC type (JSString, JSObject) is
 // known, for a single AllocKind. Example usages:
 //
-//   for (auto obj = zone->cellIter<JSObject>(AllocKind::OBJECT0); !obj.done(); obj.next()) {
+//   for (auto obj = zone->cellIter<JSObject>(AllocKind::OBJECT0); !obj.done(); obj.next())
 //       ...
-//   }
 //
-//   for (auto script = zone->cellIter<JSScript>(); !script.done(); script.next()) {
+//   for (auto script = zone->cellIter<JSScript>(); !script.done(); script.next())
 //       f(script->code());
-//   }
 //
 // As this code demonstrates, you can use 'script' as if it were a JSScript*.
-// Its actual type is ZoneAllCellIter<JSScript>, but for most purposes it will
+// Its actual type is ZoneCellIter<JSScript>, but for most purposes it will
 // autoconvert to JSScript*.
 //
-// Note that in the JSScript case, ZoneAllCellIter is able to infer the AllocKind
+// Note that in the JSScript case, ZoneCellIter is able to infer the AllocKind
 // from the type 'JSScript', whereas in the JSObject case, the kind must be
 // given (because there are multiple AllocKinds for objects).
 //
@@ -321,13 +305,9 @@ class ZoneAllCellIter<TenuredCell> {
 // by specializing on a GCType that is never allocated in the nursery, or
 // explicitly by passing in a trailing AutoAssertEmptyNursery argument.
 //
-// NOTE: This class can return items that are about to be swept/finalized.
-//       You must not keep pointers to such items across GCs.  Use
-//       ZoneCellIter below to filter these out.
-//
 /* clang-format on */
 template <typename GCType>
-class ZoneAllCellIter : public ZoneAllCellIter<TenuredCell> {
+class ZoneCellIter : public ZoneCellIter<TenuredCell> {
  public:
   // Non-nursery allocated (equivalent to having an entry in
   // MapTypeToFinalizeKind). The template declaration here is to discard this
@@ -339,70 +319,29 @@ class ZoneAllCellIter : public ZoneAllCellIter<TenuredCell> {
   // If we later add a nursery allocable GCType with a single AllocKind, we
   // will want to add an overload of this constructor that does the right
   // thing (ie, it empties the nursery before iterating.)
-  explicit ZoneAllCellIter(JS::Zone* zone) : ZoneAllCellIter<TenuredCell>() {
+  explicit ZoneCellIter(JS::Zone* zone) : ZoneCellIter<TenuredCell>() {
     init(zone, MapTypeToFinalizeKind<GCType>::kind);
   }
 
   // Non-nursery allocated, nursery is known to be empty: same behavior as
   // above.
-  ZoneAllCellIter(JS::Zone* zone, const js::gc::AutoAssertEmptyNursery&)
-      : ZoneAllCellIter(zone) {}
+  ZoneCellIter(JS::Zone* zone, const js::gc::AutoAssertEmptyNursery&)
+      : ZoneCellIter(zone) {}
 
   // Arbitrary kind, which will be assumed to be nursery allocable (and
   // therefore the nursery will be emptied before iterating.)
-  ZoneAllCellIter(JS::Zone* zone, AllocKind kind)
-      : ZoneAllCellIter<TenuredCell>(zone, kind) {}
+  ZoneCellIter(JS::Zone* zone, AllocKind kind)
+      : ZoneCellIter<TenuredCell>(zone, kind) {}
 
   // Arbitrary kind, which will be assumed to be nursery allocable, but the
   // nursery is known to be empty already: same behavior as non-nursery types.
-  ZoneAllCellIter(JS::Zone* zone, AllocKind kind,
-                  const js::gc::AutoAssertEmptyNursery& empty)
-      : ZoneAllCellIter<TenuredCell>(zone, kind, empty) {}
-
-  GCType* get() const { return ZoneAllCellIter<TenuredCell>::get<GCType>(); }
-  operator GCType*() const { return get(); }
-  GCType* operator->() const { return get(); }
-};
-
-// Like the above class but filter out cells that are about to be finalized.
-template <typename T>
-class ZoneCellIter : public ZoneAllCellIter<T> {
- public:
-  /*
-   * The same constructors as above.
-   */
-  explicit ZoneCellIter(JS::Zone* zone) : ZoneAllCellIter<T>(zone) {
-    skipDying();
-  }
-  ZoneCellIter(JS::Zone* zone, const js::gc::AutoAssertEmptyNursery& empty)
-      : ZoneAllCellIter<T>(zone, empty) {
-    skipDying();
-  }
-  ZoneCellIter(JS::Zone* zone, AllocKind kind)
-      : ZoneAllCellIter<T>(zone, kind) {
-    skipDying();
-  }
   ZoneCellIter(JS::Zone* zone, AllocKind kind,
                const js::gc::AutoAssertEmptyNursery& empty)
-      : ZoneAllCellIter<T>(zone, kind, empty) {
-    skipDying();
-  }
+      : ZoneCellIter<TenuredCell>(zone, kind, empty) {}
 
-  void next() {
-    ZoneAllCellIter<T>::next();
-    skipDying();
-  }
-
- private:
-  void skipDying() {
-    while (!ZoneAllCellIter<T>::done()) {
-      T* current = ZoneAllCellIter<T>::get();
-      if (!IsAboutToBeFinalizedUnbarriered(&current)) {
-        return;
-      }
-      ZoneAllCellIter<T>::next();
-    }
-  }
+  GCType* get() const { return ZoneCellIter<TenuredCell>::get<GCType>(); }
+  operator GCType*() const { return get(); }
+  GCType* operator->() const { return get(); }
 };
 
 } /* namespace gc */

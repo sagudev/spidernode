@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,8 +30,22 @@ class ArrayObject : public NativeObject {
   uint32_t length() const { return getElementsHeader()->length; }
 
   void setNonWritableLength(JSContext* cx) {
-    shrinkCapacityToInitializedLength(cx);
-    getElementsHeader()->setNonwritableArrayLength();
+    if (getElementsHeader()->numShiftedElements() > 0) moveShiftedElements();
+
+    // When an array's length becomes non-writable, writes to indexes
+    // greater than or equal to the length don't change the array.  We
+    // handle this with a check for non-writable length in most places.
+    // But in JIT code every check counts -- so we piggyback the check on
+    // the already-required range check for |index < capacity| by making
+    // capacity of arrays with non-writable length never exceed the length.
+    ObjectElements* header = getElementsHeader();
+    uint32_t len = header->initializedLength;
+    if (header->capacity > len) {
+      shrinkElements(cx, len);
+      header = getElementsHeader();
+      header->capacity = len;
+    }
+    header->setNonwritableArrayLength();
   }
 
   inline void setLength(JSContext* cx, uint32_t length);
@@ -40,8 +54,6 @@ class ArrayObject : public NativeObject {
   // int32_t.
   void setLengthInt32(uint32_t length) {
     MOZ_ASSERT(lengthIsWritable());
-    MOZ_ASSERT_IF(length != getElementsHeader()->length,
-                  !denseElementsAreFrozen());
     MOZ_ASSERT(length <= INT32_MAX);
     getElementsHeader()->length = length;
   }

@@ -1,6 +1,6 @@
 // findObjects' result includes objects referenced by other objects.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger();
 var gw = dbg.addDebuggee(g);
 

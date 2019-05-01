@@ -1,3 +1,6 @@
+if (!this.hasOwnProperty("TypedObject"))
+  quit();
+
 // Test for fuzz condition failure. Cause of the failure
 // was that we were not adding a type barrier after the
 // creation of derived typed objects. When run in --ion-eager

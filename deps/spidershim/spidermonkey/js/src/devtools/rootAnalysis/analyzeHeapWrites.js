@@ -28,12 +28,16 @@ function checkExternalFunction(entry)
         "atof",
         /memchr/,
         "strlen",
+        "Servo_ComputedValues_EqualCustomProperties",
         /Servo_DeclarationBlock_GetCssText/,
         "Servo_GetArcStringData",
         "Servo_IsWorkerThread",
         /nsIFrame::AppendOwnedAnonBoxes/,
         // Assume that atomic accesses are threadsafe.
-        /^__atomic_/,
+        /^__atomic_fetch_/,
+        /^__atomic_load_/,
+        /^__atomic_store_/,
+        /^__atomic_thread_fence/,
     ];
     if (entry.matches(whitelist))
         return;
@@ -162,6 +166,9 @@ function treatAsSafeArgument(entry, varName, csuName)
         ["Gecko_CopyMozBindingFrom", "aDest", null],
         ["Gecko_SetNullImageValue", "aImage", null],
         ["Gecko_SetGradientImageValue", "aImage", null],
+        ["Gecko_SetImageOrientation", "aVisibility", null],
+        ["Gecko_SetImageOrientationAsFromImage", "aVisibility", null],
+        ["Gecko_CopyImageOrientationFrom", "aDst", null],
         ["Gecko_SetImageElement", "aImage", null],
         ["Gecko_SetLayerImageImageValue", "aImage", null],
         ["Gecko_CopyImageValueFrom", "aImage", null],
@@ -293,10 +300,6 @@ function checkFieldWrite(entry, location, fields)
 
         if (/\bThreadLocal<\b/.test(field))
             return;
-
-        // Debugging check for string corruption.
-        if (field == "nsStringBuffer.mCanary")
-            return;
     }
 
     var str = "";
@@ -345,12 +348,12 @@ function ignoreCallEdge(entry, callee)
         return true;
     }
 
-    // Document::PropertyTable calls GetExtraPropertyTable (which has side
+    // nsIDocument::PropertyTable calls GetExtraPropertyTable (which has side
     // effects) if the input category is non-zero. If a literal zero was passed
     // in for the category then we treat it as a safe argument, per
     // isEdgeSafeArgument, so just watch for that.
-    if (/Document::GetExtraPropertyTable/.test(callee) &&
-        /Document::PropertyTable/.test(name) &&
+    if (/nsIDocument::GetExtraPropertyTable/.test(callee) &&
+        /nsIDocument::PropertyTable/.test(name) &&
         entry.isSafeArgument(1))
     {
         return true;
@@ -423,8 +426,8 @@ function ignoreContents(entry)
         "abort",
         /MOZ_ReportAssertionFailure/,
         /MOZ_ReportCrash/,
-        /MOZ_Crash/,
         /MOZ_CrashPrintf/,
+        /MOZ_CrashOOL/,
         /AnnotateMozCrashReason/,
         /InvalidArrayIndex_CRASH/,
         /NS_ABORT_OOM/,
@@ -437,7 +440,7 @@ function ignoreContents(entry)
         /NS_DispatchToMainThread/, /NS_ReleaseOnMainThreadSystemGroup/,
         /NS_NewRunnableFunction/, /NS_Atomize/,
         /nsCSSValue::BufferFromString/,
-        /NS_xstrdup/,
+        /NS_strdup/,
         /Assert_NoQueryNeeded/,
         /AssertCurrentThreadOwnsMe/,
         /PlatformThread::CurrentId/,
@@ -472,7 +475,7 @@ function ignoreContents(entry)
 
         // The analysis thinks we'll write to mBits in the DoGetStyleFoo<false>
         // call.  Maybe the template parameter confuses it?
-        /ComputedStyle::PeekStyle/,
+        /nsStyleContext::PeekStyle/,
 
         // The analysis can't cope with the indirection used for the objects
         // being initialized here, from nsCSSValue::Array::Create to the return
@@ -921,7 +924,6 @@ function processAssign(body, entry, location, lhs, edge)
                 return;
         } else if (lhs.Exp[0].Kind == "Fld") {
             const {
-                Name: [ fieldName ],
                 Type: {Kind, Type: fieldType},
                 FieldCSU: {Type: {Kind: containerTypeKind,
                                   Name: containerTypeName}}
@@ -931,10 +933,11 @@ function processAssign(body, entry, location, lhs, edge)
             if (containerTypeKind == 'CSU' &&
                 Kind == 'Pointer' &&
                 isEdgeSafeArgument(entry, containerExpr) &&
-                isSafeMemberPointer(containerTypeName, fieldName, fieldType))
+                isSafeMemberPointer(containerTypeName, fieldType))
             {
                 return;
             }
+
         }
         if (fields.length)
             checkFieldWrite(entry, location, fields);
@@ -1069,7 +1072,7 @@ function maybeProcessMissingFunction(entry, addCallee)
     // This is a bug in the sixgill GCC plugin I think, since sixgill is
     // supposed to follow any typedefs itself.
     if (/mozilla::dom::Element/.test(name)) {
-        var callee = name.replace("mozilla::dom::Element", "Document::Element");
+        var callee = name.replace("mozilla::dom::Element", "nsIDocument::Element");
         addCallee(new CallSite(name, entry.safeArguments, entry.stack[0].location, entry.parameterNames));
         return true;
     }
@@ -1195,16 +1198,6 @@ function expressionValueEdge(exp) {
     return edge;
 }
 
-// Examples:
-//
-//   void foo(type* aSafe) {
-//     type* safeBecauseNew = new type(...);
-//     type* unsafeBecauseMultipleAssignments = new type(...);
-//     if (rand())
-//       unsafeBecauseMultipleAssignments = bar();
-//     type* safeBecauseSingleAssignmentOfSafe = aSafe;
-//   }
-//
 function isSafeVariable(entry, variable)
 {
     var index = safeArgumentIndex(variable);
@@ -1251,8 +1244,7 @@ function isSafeLocalVariable(entry, name)
             // itself is threadsafe.
             if ((isDirectCall(edge, /operator\[\]/) ||
                  isDirectCall(edge, /nsTArray.*?::InsertElementAt\b/) ||
-                 isDirectCall(edge, /nsStyleContent::ContentAt/) ||
-                 isDirectCall(edge, /nsTArray_base.*?::GetAutoArrayBuffer\b/)) &&
+                 isDirectCall(edge, /nsStyleContent::ContentAt/)) &&
                 isEdgeSafeArgument(entry, edge.PEdgeCallInstance.Exp))
             {
                 return true;
@@ -1351,12 +1343,8 @@ function isSafeLocalVariable(entry, name)
     return true;
 }
 
-function isSafeMemberPointer(containerType, memberName, memberType)
+function isSafeMemberPointer(containerType, memberType)
 {
-    // nsTArray owns its header.
-    if (containerType.includes("nsTArray_base") && memberName == "mHdr")
-        return true;
-
     if (memberType.Kind != 'Pointer')
         return false;
 

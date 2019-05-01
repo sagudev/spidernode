@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=4 et :
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: sw=4 ts=4 et :
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -11,24 +11,24 @@
 #if defined(MOZ_MEMORY)
 // mozalloc.cpp is part of the same library as mozmemory, thus MOZ_MEMORY_IMPL
 // is needed.
-#  define MOZ_MEMORY_IMPL
-#  include "mozmemory_wrap.h"
+#define MOZ_MEMORY_IMPL
+#include "mozmemory_wrap.h"
 
 // See mozmemory_wrap.h for more details. This file is part of libmozglue, so
 // it needs to use _impl suffixes. However, with libmozglue growing, this is
 // becoming cumbersome, so we will likely use a malloc.h wrapper of some sort
 // and allow the use of the functions without a _impl suffix.
-#  define MALLOC_DECL(name, return_type, ...) \
-    MOZ_MEMORY_API return_type name##_impl(__VA_ARGS__);
-#  define MALLOC_FUNCS MALLOC_FUNCS_MALLOC
-#  include "malloc_decls.h"
+#define MALLOC_DECL(name, return_type, ...) \
+  MOZ_MEMORY_API return_type name##_impl(__VA_ARGS__);
+#define MALLOC_FUNCS MALLOC_FUNCS_MALLOC
+#include "malloc_decls.h"
 #else
 
-#  include <malloc.h>
-#  define malloc_impl malloc
-#  define calloc_impl calloc
-#  define realloc_impl realloc
-#  define free_impl free
+#include <malloc.h>
+#define malloc_impl malloc
+#define calloc_impl calloc
+#define realloc_impl realloc
+#define free_impl free
 
 #endif
 

@@ -1,11 +1,12 @@
-// |jit-test| skip-if: !this.SharedArrayBuffer
+if (!this.SharedArrayBuffer)
+    quit(0);
 
 load(libdir + "asserts.js");
 
 var sab = new SharedArrayBuffer(1 * Int32Array.BYTES_PER_ELEMENT);
 
 // Make a copy, sharing the same memory
-var sab2 = (setSharedObject(sab), getSharedObject());
+var sab2 = (setSharedArrayBuffer(sab), getSharedArrayBuffer());
 
 // Assert it's not the same object
 assertEq(sab === sab2, false);

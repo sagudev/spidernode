@@ -171,7 +171,7 @@ fr{
             "cruzeiro",
         }
         BSD{
-            "BSD",
+            "$BS",
             "dollar bahaméen",
         }
         BTN{
@@ -620,10 +620,6 @@ fr{
         }
         MRO{
             "MRO",
-            "ouguiya mauritanien (1973–2017)",
-        }
-        MRU{
-            "MRU",
             "ouguiya mauritanien",
         }
         MTL{
@@ -852,10 +848,6 @@ fr{
         }
         STD{
             "STD",
-            "dobra santoméen (1977–2017)",
-        }
-        STN{
-            "STN",
             "dobra santoméen",
         }
         SUR{
@@ -976,10 +968,6 @@ fr{
         }
         VEF{
             "VEF",
-            "bolivar vénézuélien (2008–2018)",
-        }
-        VES{
-            "VES",
             "bolivar vénézuélien",
         }
         VND{
@@ -1067,7 +1055,7 @@ fr{
             "(devise de test)",
         }
         XXX{
-            "¤",
+            "XXX",
             "devise inconnue ou non valide",
         }
         YDD{
@@ -1207,7 +1195,7 @@ fr{
         SHP{"£"}
         SRD{"$"}
         SSP{"£"}
-        STN{"Db"}
+        STD{"Db"}
         SYP{"£"}
         THB{"฿"}
         TOP{"T$"}
@@ -1845,10 +1833,6 @@ fr{
             other{"patacas macanaises"}
         }
         MRO{
-            one{"ouguiya mauritanien (1973–2017)"}
-            other{"ouguiyas mauritaniens (1973–2017)"}
-        }
-        MRU{
             one{"ouguiya mauritanien"}
             other{"ouguiyas mauritaniens"}
         }
@@ -2077,10 +2061,6 @@ fr{
             other{"livres sud-soudanaises"}
         }
         STD{
-            one{"dobra santoméen (1977–2017)"}
-            other{"dobras santoméens (1977–2017)"}
-        }
-        STN{
             one{"dobra santoméen"}
             other{"dobras santoméens"}
         }
@@ -2201,10 +2181,6 @@ fr{
             other{"bolivar vénézuélien (1871–2008)"}
         }
         VEF{
-            one{"bolivar vénézuélien (2008–2018)"}
-            other{"bolivars vénézuéliens (2008–2018)"}
-        }
-        VES{
             one{"bolivar vénézuélien"}
             other{"bolivars vénézuéliens"}
         }
@@ -2353,5 +2329,5 @@ fr{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"2.1.48.43"}
+    Version{"2.1.37.1"}
 }

@@ -1,17 +1,8 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html#License
 wo{
-    Version{"2.1.47.84"}
+    Version{"2.1.37.4"}
     zoneStrings{
-        "Africa:Dakar"{
-            ec{"Dakar"}
-        }
-        "Etc:UTC"{
-            ls{"CUT (waxtu iniwelsel yuñ boole)"}
-        }
-        "Etc:Unknown"{
-            ec{"Dëkk buñ xamul"}
-        }
         "meta:America_Central"{
             ld{"CDT (waxtu bëccëgu sàntaraal"}
             lg{"CT (waxtu sàntaral)"}

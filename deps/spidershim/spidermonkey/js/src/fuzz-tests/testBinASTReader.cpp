@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -9,20 +9,17 @@
 
 #include "jsapi.h"
 
-#include "frontend/BinASTParser.h"
+#include "frontend/BinSource.h"
 #include "frontend/FullParseHandler.h"
 #include "frontend/ParseContext.h"
 #include "frontend/Parser.h"
 #include "fuzz-tests/tests.h"
-#include "js/CompileOptions.h"
 #include "vm/Interpreter.h"
 
 #include "vm/JSContext-inl.h"
 
 using UsedNameTracker = js::frontend::UsedNameTracker;
 using namespace js;
-
-using JS::CompileOptions;
 
 // These are defined and pre-initialized by the harness (in tests.cpp).
 extern JS::PersistentRootedObject gGlobal;
@@ -31,11 +28,9 @@ extern JSContext* gCx;
 static int testBinASTReaderInit(int* argc, char*** argv) { return 0; }
 
 static int testBinASTReaderFuzz(const uint8_t* buf, size_t size) {
-  using namespace js::frontend;
-
   auto gcGuard = mozilla::MakeScopeExit([&] {
     JS::PrepareForFullGC(gCx);
-    JS::NonIncrementalGC(gCx, GC_NORMAL, JS::GCReason::API);
+    JS::GCForReason(gCx, GC_NORMAL, JS::gcreason::API);
   });
 
   if (!size) return 0;
@@ -49,23 +44,17 @@ static int testBinASTReaderFuzz(const uint8_t* buf, size_t size) {
     return 0;
   }
 
-  UsedNameTracker binUsedNames(gCx);
-
-  Directives directives(false);
-  GlobalSharedContext globalsc(gCx, ScopeKind::Global, directives, false);
-
-  RootedScriptSourceObject sourceObj(
-      gCx,
-      frontend::CreateScriptSourceObject(gCx, options, mozilla::Nothing()));
-  if (!sourceObj) {
+  js::frontend::UsedNameTracker binUsedNames(gCx);
+  if (!binUsedNames.init()) {
     ReportOutOfMemory(gCx);
     return 0;
   }
-  BinASTParser<js::frontend::BinASTTokenReaderMultipart> reader(
-      gCx, gCx->tempLifoAlloc(), binUsedNames, options, sourceObj);
+
+  js::frontend::BinASTParser reader(gCx, gCx->tempLifoAlloc(), binUsedNames,
+                                    options);
 
   // Will be deallocated once `reader` goes out of scope.
-  auto binParsed = reader.parse(&globalsc, binSource);
+  auto binParsed = reader.parse(binSource);
   RootedValue binExn(gCx);
   if (binParsed.isErr()) {
     js::GetAndClearException(gCx, &binExn);

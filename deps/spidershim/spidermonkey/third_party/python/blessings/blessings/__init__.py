@@ -5,7 +5,6 @@ from contextlib import contextmanager
 import curses
 from curses import setupterm, tigetnum, tigetstr, tparm
 from fcntl import ioctl
-from six import text_type, string_types
 
 try:
     from io import UnsupportedOperation as IOUnsupportedOperation
@@ -15,12 +14,20 @@ except ImportError:
         ``io.UnsupportedOperation`` in Python 2"""
 
 from os import isatty, environ
+from platform import python_version_tuple
 import struct
 import sys
 from termios import TIOCGWINSZ
 
 
 __all__ = ['Terminal']
+
+
+if ('3', '0', '0') <= python_version_tuple() < ('3', '2', '2+'):  # Good till
+                                                                  # 3.2.10
+    # Python 3.x < 3.2.3 has a bug in which tparm() erroneously takes a string.
+    raise ImportError('Blessings needs Python 3.2.3 or greater for Python 3 '
+                      'support due to http://bugs.python.org/issue10570.')
 
 
 class Terminal(object):
@@ -421,7 +428,7 @@ COMPOUNDABLES = (COLORS |
                       'shadow', 'standout', 'subscript', 'superscript']))
 
 
-class ParametrizingString(text_type):
+class ParametrizingString(unicode):
     """A Unicode string which can be called to parametrize it as a terminal
     capability"""
 
@@ -433,7 +440,7 @@ class ParametrizingString(text_type):
             "normal" capability.
 
         """
-        new = text_type.__new__(cls, formatting)
+        new = unicode.__new__(cls, formatting)
         new._normal = normal
         return new
 
@@ -462,7 +469,7 @@ class ParametrizingString(text_type):
         except TypeError:
             # If the first non-int (i.e. incorrect) arg was a string, suggest
             # something intelligent:
-            if len(args) == 1 and isinstance(args[0], string_types):
+            if len(args) == 1 and isinstance(args[0], basestring):
                 raise TypeError(
                     'A native or nonexistent capability template received '
                     '%r when it was expecting ints. You probably misspelled a '
@@ -473,12 +480,12 @@ class ParametrizingString(text_type):
                 raise
 
 
-class FormattingString(text_type):
+class FormattingString(unicode):
     """A Unicode string which can be called upon a piece of text to wrap it in
     formatting"""
 
     def __new__(cls, formatting, normal):
-        new = text_type.__new__(cls, formatting)
+        new = unicode.__new__(cls, formatting)
         new._normal = normal
         return new
 
@@ -493,7 +500,7 @@ class FormattingString(text_type):
         return self + text + self._normal
 
 
-class NullCallableString(text_type):
+class NullCallableString(unicode):
     """A dummy callable Unicode to stand in for ``FormattingString`` and
     ``ParametrizingString``
 
@@ -501,7 +508,7 @@ class NullCallableString(text_type):
 
     """
     def __new__(cls):
-        new = text_type.__new__(cls, u'')
+        new = unicode.__new__(cls, u'')
         return new
 
     def __call__(self, *args):

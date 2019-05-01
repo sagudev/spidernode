@@ -9,7 +9,9 @@
 
 using mozilla::IsInRange;
 
-static void TestIsInRangeNonClass() {
+static void
+TestIsInRangeNonClass()
+{
   void* nul = nullptr;
   int* intBegin = nullptr;
   int* intEnd = intBegin + 1;
@@ -40,7 +42,9 @@ static void TestIsInRangeNonClass() {
   MOZ_RELEASE_ASSERT(!IsInRange(intEnd2, uintBegin, uintEnd2));
 }
 
-static void TestIsInRangeVoid() {
+static void
+TestIsInRangeVoid()
+{
   int* intBegin = nullptr;
   int* intEnd = intBegin + 1;
   int* intEnd2 = intBegin + 2;
@@ -75,11 +79,11 @@ static void TestIsInRangeVoid() {
   MOZ_RELEASE_ASSERT(!IsInRange(voidEnd2, uintBegin, uintEnd2));
 }
 
-struct Base {
-  int mX;
-};
+struct Base { int mX; };
 
-static void TestIsInRangeClass() {
+static void
+TestIsInRangeClass()
+{
   void* nul = nullptr;
   Base* baseBegin = nullptr;
   Base* baseEnd = baseBegin + 1;
@@ -112,7 +116,9 @@ static void TestIsInRangeClass() {
 
 struct EmptyBase {};
 
-static void TestIsInRangeEmptyClass() {
+static void
+TestIsInRangeEmptyClass()
+{
   void* nul = nullptr;
   EmptyBase* baseBegin = nullptr;
   EmptyBase* baseEnd = baseBegin + 1;
@@ -145,7 +151,9 @@ static void TestIsInRangeEmptyClass() {
 
 struct Derived : Base {};
 
-static void TestIsInRangeClassDerived() {
+static void
+TestIsInRangeClassDerived()
+{
   void* nul = nullptr;
   Derived* derivedBegin = nullptr;
   Derived* derivedEnd = derivedBegin + 1;
@@ -179,7 +187,9 @@ static void TestIsInRangeClassDerived() {
 
 struct DerivedEmpty : EmptyBase {};
 
-static void TestIsInRangeClassDerivedEmpty() {
+static void
+TestIsInRangeClassDerivedEmpty()
+{
   void* nul = nullptr;
   DerivedEmpty* derivedEmptyBegin = nullptr;
   DerivedEmpty* derivedEmptyEnd = derivedEmptyBegin + 1;
@@ -203,24 +213,24 @@ static void TestIsInRangeClassDerivedEmpty() {
   uintptr_t uderivedEmptyEnd = uintptr_t(derivedEmptyEnd);
   uintptr_t uderivedEmptyEnd2 = uintptr_t(derivedEmptyEnd2);
 
-  MOZ_RELEASE_ASSERT(
-      IsInRange(derivedEmptyBegin, uderivedEmptyBegin, uderivedEmptyEnd));
-  MOZ_RELEASE_ASSERT(
-      !IsInRange(derivedEmptyEnd, uderivedEmptyBegin, uderivedEmptyEnd));
+  MOZ_RELEASE_ASSERT(IsInRange(derivedEmptyBegin, uderivedEmptyBegin,
+                               uderivedEmptyEnd));
+  MOZ_RELEASE_ASSERT(!IsInRange(derivedEmptyEnd, uderivedEmptyBegin,
+                                uderivedEmptyEnd));
 
-  MOZ_RELEASE_ASSERT(
-      IsInRange(derivedEmptyBegin, uderivedEmptyBegin, uderivedEmptyEnd2));
-  MOZ_RELEASE_ASSERT(
-      IsInRange(derivedEmptyEnd, uderivedEmptyBegin, uderivedEmptyEnd2));
-  MOZ_RELEASE_ASSERT(
-      !IsInRange(derivedEmptyEnd2, uderivedEmptyBegin, uderivedEmptyEnd2));
+  MOZ_RELEASE_ASSERT(IsInRange(derivedEmptyBegin, uderivedEmptyBegin,
+                               uderivedEmptyEnd2));
+  MOZ_RELEASE_ASSERT(IsInRange(derivedEmptyEnd, uderivedEmptyBegin,
+                               uderivedEmptyEnd2));
+  MOZ_RELEASE_ASSERT(!IsInRange(derivedEmptyEnd2, uderivedEmptyBegin,
+                                uderivedEmptyEnd2));
 }
 
-struct ExtraDerived : Base {
-  int y;
-};
+struct ExtraDerived : Base { int y; };
 
-static void TestIsInRangeClassExtraDerived() {
+static void
+TestIsInRangeClassExtraDerived()
+{
   void* nul = nullptr;
   ExtraDerived* derivedBegin = nullptr;
   ExtraDerived* derivedEnd = derivedBegin + 1;
@@ -252,11 +262,11 @@ static void TestIsInRangeClassExtraDerived() {
   MOZ_RELEASE_ASSERT(!IsInRange(derivedEnd2, uderivedBegin, uderivedEnd2));
 }
 
-struct ExtraDerivedEmpty : EmptyBase {
-  int y;
-};
+struct ExtraDerivedEmpty : EmptyBase { int y; };
 
-static void TestIsInRangeClassExtraDerivedEmpty() {
+static void
+TestIsInRangeClassExtraDerivedEmpty()
+{
   void* nul = nullptr;
   ExtraDerivedEmpty* derivedBegin = nullptr;
   ExtraDerivedEmpty* derivedEnd = derivedBegin + 1;
@@ -288,7 +298,9 @@ static void TestIsInRangeClassExtraDerivedEmpty() {
   MOZ_RELEASE_ASSERT(!IsInRange(derivedEnd2, uderivedBegin, uderivedEnd2));
 }
 
-int main() {
+int
+main()
+{
   TestIsInRangeNonClass();
   TestIsInRangeVoid();
   TestIsInRangeClass();

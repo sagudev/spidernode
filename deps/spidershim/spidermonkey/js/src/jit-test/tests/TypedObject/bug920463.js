@@ -1,3 +1,6 @@
+if (!this.hasOwnProperty("TypedObject"))
+  quit();
+
 var StructType = TypedObject.StructType;
 var float64 = TypedObject.float64;
 

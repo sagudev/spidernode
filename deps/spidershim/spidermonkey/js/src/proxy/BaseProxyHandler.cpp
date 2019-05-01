@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,40 +29,47 @@ bool BaseProxyHandler::has(JSContext* cx, HandleObject proxy, HandleId id,
 
   // Step 2. (Step 1 is a superfluous assertion.)
   // Non-standard: Use our faster hasOwn trap.
-  if (!hasOwn(cx, proxy, id, bp)) {
-    return false;
-  }
+  if (!hasOwn(cx, proxy, id, bp)) return false;
 
   // Step 3.
-  if (*bp) {
-    return true;
-  }
+  if (*bp) return true;
 
   // The spec calls this variable "parent", but that word has weird
   // connotations in SpiderMonkey, so let's go with "proto".
   // Step 4.
   RootedObject proto(cx);
-  if (!GetPrototype(cx, proxy, &proto)) {
-    return false;
-  }
+  if (!GetPrototype(cx, proxy, &proto)) return false;
 
   // Step 5.,5.a.
-  if (proto) {
-    return HasProperty(cx, proto, id, bp);
-  }
+  if (proto) return HasProperty(cx, proto, id, bp);
 
   // Step 6.
   *bp = false;
   return true;
 }
 
+bool BaseProxyHandler::getPropertyDescriptor(
+    JSContext* cx, HandleObject proxy, HandleId id,
+    MutableHandle<PropertyDescriptor> desc) const {
+  assertEnteredPolicy(cx, proxy, id, GET | SET | GET_PROPERTY_DESCRIPTOR);
+
+  if (!getOwnPropertyDescriptor(cx, proxy, id, desc)) return false;
+  if (desc.object()) return true;
+
+  RootedObject proto(cx);
+  if (!GetPrototype(cx, proxy, &proto)) return false;
+  if (!proto) {
+    MOZ_ASSERT(!desc.object());
+    return true;
+  }
+  return GetPropertyDescriptor(cx, proto, id, desc);
+}
+
 bool BaseProxyHandler::hasOwn(JSContext* cx, HandleObject proxy, HandleId id,
                               bool* bp) const {
   assertEnteredPolicy(cx, proxy, id, GET);
   Rooted<PropertyDescriptor> desc(cx);
-  if (!getOwnPropertyDescriptor(cx, proxy, id, &desc)) {
-    return false;
-  }
+  if (!getOwnPropertyDescriptor(cx, proxy, id, &desc)) return false;
   *bp = !!desc.object();
   return true;
 }
@@ -77,9 +84,7 @@ bool BaseProxyHandler::get(JSContext* cx, HandleObject proxy,
 
   // Step 2. (Step 1 is a superfluous assertion.)
   Rooted<PropertyDescriptor> desc(cx);
-  if (!getOwnPropertyDescriptor(cx, proxy, id, &desc)) {
-    return false;
-  }
+  if (!getOwnPropertyDescriptor(cx, proxy, id, &desc)) return false;
   desc.assertCompleteIfFound();
 
   // Step 3.
@@ -88,9 +93,7 @@ bool BaseProxyHandler::get(JSContext* cx, HandleObject proxy,
     // connotations in SpiderMonkey, so let's go with "proto".
     // Step 3.a.
     RootedObject proto(cx);
-    if (!GetPrototype(cx, proxy, &proto)) {
-      return false;
-    }
+    if (!GetPrototype(cx, proxy, &proto)) return false;
 
     // Step 3.b.
     if (!proto) {
@@ -134,9 +137,7 @@ bool BaseProxyHandler::set(JSContext* cx, HandleObject proxy, HandleId id,
 
   // Steps 2-3.  (Step 1 is a superfluous assertion.)
   Rooted<PropertyDescriptor> ownDesc(cx);
-  if (!getOwnPropertyDescriptor(cx, proxy, id, &ownDesc)) {
-    return false;
-  }
+  if (!getOwnPropertyDescriptor(cx, proxy, id, &ownDesc)) return false;
   ownDesc.assertCompleteIfFound();
 
   // The rest is factored out into a separate function with a weird name.
@@ -157,12 +158,8 @@ bool js::SetPropertyIgnoringNamedGetter(JSContext* cx, HandleObject obj,
     // The spec calls this variable "parent", but that word has weird
     // connotations in SpiderMonkey, so let's go with "proto".
     RootedObject proto(cx);
-    if (!GetPrototype(cx, obj, &proto)) {
-      return false;
-    }
-    if (proto) {
-      return SetProperty(cx, proto, id, v, receiver, result);
-    }
+    if (!GetPrototype(cx, obj, &proto)) return false;
+    if (proto) return SetProperty(cx, proto, id, v, receiver, result);
 
     // Step 4.d.
     ownDesc.setDataDescriptor(UndefinedHandleValue, JSPROP_ENUMERATE);
@@ -171,36 +168,27 @@ bool js::SetPropertyIgnoringNamedGetter(JSContext* cx, HandleObject obj,
   // Step 5.
   if (ownDesc.isDataDescriptor()) {
     // Steps 5.a-b.
-    if (!ownDesc.writable()) {
-      return result.fail(JSMSG_READ_ONLY);
-    }
-    if (!receiver.isObject()) {
-      return result.fail(JSMSG_SET_NON_OBJECT_RECEIVER);
-    }
+    if (!ownDesc.writable()) return result.fail(JSMSG_READ_ONLY);
+    if (!receiver.isObject()) return result.fail(JSMSG_SET_NON_OBJECT_RECEIVER);
     RootedObject receiverObj(cx, &receiver.toObject());
 
     // Nonstandard SpiderMonkey special case: setter ops.
-    if (SetterOp setter = ownDesc.setter()) {
+    if (SetterOp setter = ownDesc.setter())
       return CallJSSetterOp(cx, setter, receiverObj, id, v, result);
-    }
 
     // Steps 5.c-d.
     Rooted<PropertyDescriptor> existingDescriptor(cx);
-    if (!GetOwnPropertyDescriptor(cx, receiverObj, id, &existingDescriptor)) {
+    if (!GetOwnPropertyDescriptor(cx, receiverObj, id, &existingDescriptor))
       return false;
-    }
 
     // Step 5.e.
     if (existingDescriptor.object()) {
       // Step 5.e.i.
-      if (existingDescriptor.isAccessorDescriptor()) {
+      if (existingDescriptor.isAccessorDescriptor())
         return result.fail(JSMSG_OVERWRITING_ACCESSOR);
-      }
 
       // Step 5.e.ii.
-      if (!existingDescriptor.writable()) {
-        return result.fail(JSMSG_READ_ONLY);
-      }
+      if (!existingDescriptor.writable()) return result.fail(JSMSG_READ_ONLY);
     }
 
     // Steps 5.e.iii-iv. and 5.f.i.
@@ -215,27 +203,20 @@ bool js::SetPropertyIgnoringNamedGetter(JSContext* cx, HandleObject obj,
   // Step 6.
   MOZ_ASSERT(ownDesc.isAccessorDescriptor());
   RootedObject setter(cx);
-  if (ownDesc.hasSetterObject()) {
-    setter = ownDesc.setterObject();
-  }
-  if (!setter) {
-    return result.fail(JSMSG_GETTER_ONLY);
-  }
+  if (ownDesc.hasSetterObject()) setter = ownDesc.setterObject();
+  if (!setter) return result.fail(JSMSG_GETTER_ONLY);
   RootedValue setterValue(cx, ObjectValue(*setter));
-  if (!CallSetter(cx, receiver, setterValue, v)) {
-    return false;
-  }
+  if (!CallSetter(cx, receiver, setterValue, v)) return false;
   return result.succeed();
 }
 
-bool BaseProxyHandler::getOwnEnumerablePropertyKeys(
-    JSContext* cx, HandleObject proxy, MutableHandleIdVector props) const {
+bool BaseProxyHandler::getOwnEnumerablePropertyKeys(JSContext* cx,
+                                                    HandleObject proxy,
+                                                    AutoIdVector& props) const {
   assertEnteredPolicy(cx, proxy, JSID_VOID, ENUMERATE);
   MOZ_ASSERT(props.length() == 0);
 
-  if (!ownPropertyKeys(cx, proxy, props)) {
-    return false;
-  }
+  if (!ownPropertyKeys(cx, proxy, props)) return false;
 
   /* Select only the enumerable properties through in-place iteration. */
   RootedId id(cx);
@@ -243,38 +224,31 @@ bool BaseProxyHandler::getOwnEnumerablePropertyKeys(
   for (size_t j = 0, len = props.length(); j < len; j++) {
     MOZ_ASSERT(i <= j);
     id = props[j];
-    if (JSID_IS_SYMBOL(id)) {
-      continue;
-    }
+    if (JSID_IS_SYMBOL(id)) continue;
 
     AutoWaivePolicy policy(cx, proxy, id, BaseProxyHandler::GET);
     Rooted<PropertyDescriptor> desc(cx);
-    if (!getOwnPropertyDescriptor(cx, proxy, id, &desc)) {
-      return false;
-    }
+    if (!getOwnPropertyDescriptor(cx, proxy, id, &desc)) return false;
     desc.assertCompleteIfFound();
 
-    if (desc.object() && desc.enumerable()) {
-      props[i++].set(id);
-    }
+    if (desc.object() && desc.enumerable()) props[i++].set(id);
   }
 
   MOZ_ASSERT(i <= props.length());
-  if (!props.resize(i)) {
-    return false;
-  }
+  if (!props.resize(i)) return false;
 
   return true;
 }
 
-bool BaseProxyHandler::enumerate(JSContext* cx, HandleObject proxy,
-                                 MutableHandleIdVector props) const {
+JSObject* BaseProxyHandler::enumerate(JSContext* cx, HandleObject proxy) const {
   assertEnteredPolicy(cx, proxy, JSID_VOID, ENUMERATE);
 
   // GetPropertyKeys will invoke getOwnEnumerablePropertyKeys along the proto
   // chain for us.
-  MOZ_ASSERT(props.empty());
-  return GetPropertyKeys(cx, proxy, 0, props);
+  AutoIdVector props(cx);
+  if (!GetPropertyKeys(cx, proxy, 0, &props)) return nullptr;
+
+  return EnumeratedIdVectorToIterator(cx, proxy, props);
 }
 
 bool BaseProxyHandler::call(JSContext* cx, HandleObject proxy,
@@ -294,13 +268,10 @@ const char* BaseProxyHandler::className(JSContext* cx,
 
 JSString* BaseProxyHandler::fun_toString(JSContext* cx, HandleObject proxy,
                                          bool isToSource) const {
-  if (proxy->isCallable()) {
+  if (proxy->isCallable())
     return JS_NewStringCopyZ(cx, "function () {\n    [native code]\n}");
-  }
-
-  JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                            JSMSG_INCOMPATIBLE_PROTO, js_Function_str,
-                            js_toString_str, "object");
+  RootedValue v(cx, ObjectValue(*proxy));
+  ReportIsNotFunction(cx, v);
   return nullptr;
 }
 
@@ -348,6 +319,10 @@ void BaseProxyHandler::finalize(JSFreeOp* fop, JSObject* proxy) const {}
 
 size_t BaseProxyHandler::objectMoved(JSObject* proxy, JSObject* old) const {
   return 0;
+}
+
+JSObject* BaseProxyHandler::weakmapKeyDelegate(JSObject* proxy) const {
+  return nullptr;
 }
 
 bool BaseProxyHandler::getPrototype(JSContext* cx, HandleObject proxy,

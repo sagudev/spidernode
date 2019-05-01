@@ -333,10 +333,7 @@ U_CDECL_END
 ******************************************************************
 */
 
-static UMutex *lock() {
-    static UMutex m = U_MUTEX_INITIALIZER;
-    return &m;
-}
+static UMutex lock = U_MUTEX_INITIALIZER;
 
 ICUService::ICUService()
 : name()
@@ -361,7 +358,7 @@ ICUService::ICUService(const UnicodeString& newName)
 ICUService::~ICUService()
 {
     {
-        Mutex mutex(lock());
+        Mutex mutex(&lock);
         clearCaches();
         delete factories;
         factories = NULL;
@@ -452,7 +449,7 @@ ICUService::getKey(ICUServiceKey& key, UnicodeString* actualReturn, const ICUSer
         // if factory is not null, we're calling from within the mutex,
         // and since some unix machines don't have reentrant mutexes we
         // need to make sure not to try to lock it again.
-        XMutex mutex(lock(), factory != NULL);
+        XMutex mutex(&lock, factory != NULL);
 
         if (serviceCache == NULL) {
             ncthis->serviceCache = new Hashtable(status);
@@ -550,15 +547,16 @@ outerEnd:
             if (putInCache && cacheResult) {
                 serviceCache->put(result->actualDescriptor, result, status);
                 if (U_FAILURE(status)) {
+                    delete result;
                     return NULL;
                 }
 
                 if (cacheDescriptorList._obj != NULL) {
                     for (int32_t i = cacheDescriptorList._obj->size(); --i >= 0;) {
                         UnicodeString* desc = (UnicodeString*)cacheDescriptorList._obj->elementAt(i);
-
                         serviceCache->put(*desc, result, status);
                         if (U_FAILURE(status)) {
+                            delete result;
                             return NULL;
                         }
 
@@ -618,7 +616,7 @@ ICUService::getVisibleIDs(UVector& result, const UnicodeString* matchID, UErrorC
     }
 
     {
-        Mutex mutex(lock());
+        Mutex mutex(&lock);
         const Hashtable* map = getVisibleIDMap(status);
         if (map != NULL) {
             ICUServiceKey* fallbackKey = createKey(matchID, status);
@@ -695,7 +693,7 @@ ICUService::getDisplayName(const UnicodeString& id, UnicodeString& result, const
 {
     {
         UErrorCode status = U_ZERO_ERROR;
-        Mutex mutex(lock());
+        Mutex mutex(&lock);
         const Hashtable* map = getVisibleIDMap(status);
         if (map != NULL) {
             ICUServiceFactory* f = (ICUServiceFactory*)map->get(id);
@@ -705,9 +703,9 @@ ICUService::getDisplayName(const UnicodeString& id, UnicodeString& result, const
             }
 
             // fallback
-            status = U_ZERO_ERROR;
+            UErrorCode status = U_ZERO_ERROR;
             ICUServiceKey* fallbackKey = createKey(&id, status);
-            while (fallbackKey != NULL && fallbackKey->fallback()) {
+            while (fallbackKey->fallback()) {
                 UnicodeString us;
                 fallbackKey->currentID(us);
                 f = (ICUServiceFactory*)map->get(us);
@@ -747,7 +745,7 @@ ICUService::getDisplayNames(UVector& result,
     result.setDeleter(userv_deleteStringPair);
     if (U_SUCCESS(status)) {
         ICUService* ncthis = (ICUService*)this; // cast away semantic const
-        Mutex mutex(lock());
+        Mutex mutex(&lock);
 
         if (dnCache != NULL && dnCache->locale != locale) {
             delete dnCache;
@@ -852,7 +850,7 @@ URegistryKey
 ICUService::registerFactory(ICUServiceFactory* factoryToAdopt, UErrorCode& status) 
 {
     if (U_SUCCESS(status) && factoryToAdopt != NULL) {
-        Mutex mutex(lock());
+        Mutex mutex(&lock);
 
         if (factories == NULL) {
             factories = new UVector(deleteUObject, NULL, status);
@@ -883,7 +881,7 @@ ICUService::unregister(URegistryKey rkey, UErrorCode& status)
     ICUServiceFactory *factory = (ICUServiceFactory*)rkey;
     UBool result = FALSE;
     if (factory != NULL && factories != NULL) {
-        Mutex mutex(lock());
+        Mutex mutex(&lock);
 
         if (factories->removeElement(factory)) {
             clearCaches();
@@ -903,7 +901,7 @@ void
 ICUService::reset() 
 {
     {
-        Mutex mutex(lock());
+        Mutex mutex(&lock);
         reInitializeFactories();
         clearCaches();
     }

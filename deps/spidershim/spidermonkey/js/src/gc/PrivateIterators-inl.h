@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,15 +40,15 @@ class ArenaCellIterUnbarriered : public ArenaCellIterImpl {
       : ArenaCellIterImpl(arena, CellIterDoesntNeedBarrier) {}
 };
 
-class GrayObjectIter : public ZoneAllCellIter<js::gc::TenuredCell> {
+class GrayObjectIter : public ZoneCellIter<js::gc::TenuredCell> {
  public:
   explicit GrayObjectIter(JS::Zone* zone, AllocKind kind)
-      : ZoneAllCellIter<js::gc::TenuredCell>() {
+      : ZoneCellIter<js::gc::TenuredCell>() {
     initForTenuredIteration(zone, kind);
   }
 
   JSObject* get() const {
-    return ZoneAllCellIter<js::gc::TenuredCell>::get<JSObject>();
+    return ZoneCellIter<js::gc::TenuredCell>::get<JSObject>();
   }
   operator JSObject*() const { return get(); }
   JSObject* operator->() const { return get(); }
@@ -60,13 +60,11 @@ class GCZonesIter {
  public:
   explicit GCZonesIter(JSRuntime* rt, ZoneSelector selector = WithAtoms)
       : zone(rt, selector) {
-    MOZ_ASSERT(JS::RuntimeHeapIsBusy());
+    MOZ_ASSERT(JS::CurrentThreadIsHeapBusy());
     MOZ_ASSERT_IF(rt->gc.atomsZone->isCollectingFromAnyThread(),
                   !rt->hasHelperThreadZones());
 
-    if (!done() && !zone->isCollectingFromAnyThread()) {
-      next();
-    }
+    if (!zone->isCollectingFromAnyThread()) next();
   }
 
   bool done() const { return zone.done(); }
@@ -87,28 +85,16 @@ class GCZonesIter {
   JS::Zone* operator->() const { return get(); }
 };
 
-using GCCompartmentsIter =
-    CompartmentsOrRealmsIterT<GCZonesIter, CompartmentsInZoneIter>;
-using GCRealmsIter = CompartmentsOrRealmsIterT<GCZonesIter, RealmsInZoneIter>;
+typedef CompartmentsIterT<GCZonesIter> GCCompartmentsIter;
 
 /* Iterates over all zones in the current sweep group. */
 class SweepGroupZonesIter {
   JS::Zone* current;
-  ZoneSelector selector;
 
  public:
-  explicit SweepGroupZonesIter(JSRuntime* rt, ZoneSelector selector = WithAtoms)
-      : selector(selector) {
+  explicit SweepGroupZonesIter(JSRuntime* rt) {
     MOZ_ASSERT(CurrentThreadIsPerformingGC());
     current = rt->gc.getCurrentSweepGroup();
-    maybeSkipAtomsZone();
-  }
-
-  void maybeSkipAtomsZone() {
-    if (selector == SkipAtoms && current && current->isAtomsZone()) {
-      current = current->nextNodeInGroup();
-      MOZ_ASSERT_IF(current, !current->isAtomsZone());
-    }
   }
 
   bool done() const { return !current; }
@@ -116,7 +102,6 @@ class SweepGroupZonesIter {
   void next() {
     MOZ_ASSERT(!done());
     current = current->nextNodeInGroup();
-    maybeSkipAtomsZone();
   }
 
   JS::Zone* get() const {
@@ -128,10 +113,7 @@ class SweepGroupZonesIter {
   JS::Zone* operator->() const { return get(); }
 };
 
-using SweepGroupCompartmentsIter =
-    CompartmentsOrRealmsIterT<SweepGroupZonesIter, CompartmentsInZoneIter>;
-using SweepGroupRealmsIter =
-    CompartmentsOrRealmsIterT<SweepGroupZonesIter, RealmsInZoneIter>;
+typedef CompartmentsIterT<SweepGroupZonesIter> SweepGroupCompartmentsIter;
 
 // Iterate the free cells in an arena. See also ArenaCellIterImpl which iterates
 // the allocated cells.

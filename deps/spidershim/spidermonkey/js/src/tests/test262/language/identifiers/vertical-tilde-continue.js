@@ -12,6 +12,6 @@ negative:
   phase: parse
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 var aⸯ; // U+2E2F

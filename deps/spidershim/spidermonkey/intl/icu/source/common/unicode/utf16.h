@@ -213,6 +213,8 @@
     } \
 }
 
+#ifndef U_HIDE_DRAFT_API
+
 /**
  * Get a code point from a string at a random-access offset,
  * without changing the offset.
@@ -234,7 +236,7 @@
  * @param length string length
  * @param c output UChar32 variable
  * @see U16_GET_UNSAFE
- * @stable ICU 60
+ * @draft ICU 60
  */
 #define U16_GET_OR_FFFD(s, start, i, length, c) { \
     (c)=(s)[i]; \
@@ -255,6 +257,8 @@
         } \
     } \
 }
+
+#endif  // U_HIDE_DRAFT_API
 
 /* definitions with forward iteration --------------------------------------- */
 
@@ -316,6 +320,8 @@
     } \
 }
 
+#ifndef U_HIDE_DRAFT_API
+
 /**
  * Get a code point from a string at a code point boundary offset,
  * and advance the offset to the next code point boundary.
@@ -335,7 +341,7 @@
  * @param length string length
  * @param c output UChar32 variable
  * @see U16_NEXT_UNSAFE
- * @stable ICU 60
+ * @draft ICU 60
  */
 #define U16_NEXT_OR_FFFD(s, i, length, c) { \
     (c)=(s)[(i)++]; \
@@ -349,6 +355,8 @@
         } \
     } \
 }
+
+#endif  // U_HIDE_DRAFT_API
 
 /**
  * Append a code point to a string, overwriting 1 or 2 code units.
@@ -577,6 +585,8 @@
     } \
 }
 
+#ifndef U_HIDE_DRAFT_API
+
 /**
  * Move the string offset from one code point boundary to the previous one
  * and get the code point between them.
@@ -595,7 +605,7 @@
  * @param i string offset, must be start<i
  * @param c output UChar32 variable
  * @see U16_PREV_UNSAFE
- * @stable ICU 60
+ * @draft ICU 60
  */
 #define U16_PREV_OR_FFFD(s, start, i, c) { \
     (c)=(s)[--(i)]; \
@@ -609,6 +619,8 @@
         } \
     } \
 }
+
+#endif  // U_HIDE_DRAFT_API
 
 /**
  * Move the string offset from one code point boundary to the previous one.

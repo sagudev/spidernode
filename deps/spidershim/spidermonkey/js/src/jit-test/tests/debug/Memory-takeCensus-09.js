@@ -1,6 +1,6 @@
 // Debugger.Memory.prototype.takeCensus: by: allocationStack breakdown
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 
 g.evaluate(`

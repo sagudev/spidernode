@@ -1,6 +1,6 @@
 // Debugger.Object.prototype.isArrowFunction recognizes arrow functions.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger;
 var gDO = dbg.addDebuggee(g);
 var hits = 0;

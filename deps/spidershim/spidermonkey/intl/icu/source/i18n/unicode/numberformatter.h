@@ -11,16 +11,12 @@
 #include "unicode/dcfmtsym.h"
 #include "unicode/currunit.h"
 #include "unicode/fieldpos.h"
-#include "unicode/formattedvalue.h"
 #include "unicode/fpositer.h"
 #include "unicode/measunit.h"
 #include "unicode/nounit.h"
-#include "unicode/parseerr.h"
 #include "unicode/plurrule.h"
 #include "unicode/ucurr.h"
 #include "unicode/unum.h"
-#include "unicode/unumberformatter.h"
-#include "unicode/uobject.h"
 
 #ifndef U_HIDE_DRAFT_API
 
@@ -35,41 +31,39 @@
  * // Most basic usage:
  * NumberFormatter::withLocale(...).format(123).toString();  // 1,234 in en-US
  *
- * // Custom notation, unit, and rounding precision:
+ * // Custom notation, unit, and rounding strategy:
  * NumberFormatter::with()
  *     .notation(Notation::compactShort())
  *     .unit(CurrencyUnit("EUR", status))
- *     .precision(Precision::maxDigits(2))
+ *     .rounding(Rounder::maxDigits(2))
  *     .locale(...)
  *     .format(1234)
  *     .toString();  // €1.2K in en-US
  *
- * // Create a formatter in a singleton by value for use later:
+ * // Create a formatter in a singleton for use later:
  * static const LocalizedNumberFormatter formatter = NumberFormatter::withLocale(...)
  *     .unit(NoUnit::percent())
- *     .precision(Precision::fixedFraction(3));
+ *     .rounding(Rounder::fixedFraction(3));
  * formatter.format(5.9831).toString();  // 5.983% in en-US
  *
- * // Create a "template" in a singleton unique_ptr but without setting a locale until the call site:
- * std::unique_ptr<UnlocalizedNumberFormatter> template = NumberFormatter::with()
+ * // Create a "template" in a singleton but without setting a locale until the call site:
+ * static const UnlocalizedNumberFormatter template = NumberFormatter::with()
  *     .sign(UNumberSignDisplay::UNUM_SIGN_ALWAYS)
- *     .unit(MeasureUnit::getMeter())
- *     .unitWidth(UNumberUnitWidth::UNUM_UNIT_WIDTH_FULL_NAME)
- *     .clone();
- * template->locale(...).format(1234).toString();  // +1,234 meters in en-US
+ *     .adoptUnit(MeasureUnit::createMeter(status))
+ *     .unitWidth(UNumberUnitWidth::UNUM_UNIT_WIDTH_FULL_NAME);
+ * template.locale(...).format(1234).toString();  // +1,234 meters in en-US
  * </pre>
  *
  * <p>
  * This API offers more features than DecimalFormat and is geared toward new users of ICU.
  *
  * <p>
- * NumberFormatter instances (i.e., LocalizedNumberFormatter and UnlocalizedNumberFormatter)
- * are immutable and thread safe. This means that invoking a configuration method has no
+ * NumberFormatter instances are immutable and thread safe. This means that invoking a configuration method has no
  * effect on the receiving instance; you must store and use the new number formatter instance it returns instead.
  *
  * <pre>
  * UnlocalizedNumberFormatter formatter = UnlocalizedNumberFormatter::with().notation(Notation::scientific());
- * formatter.precision(Precision.maxFraction(2)); // does nothing!
+ * formatter.rounding(Rounder.maxFraction(2)); // does nothing!
  * formatter.locale(Locale.getEnglish()).format(9.8765).toString(); // prints "9.8765E0", not "9.88E0"
  * </pre>
  *
@@ -80,23 +74,204 @@
  * @author Shane Carr
  */
 
-U_NAMESPACE_BEGIN
+/**
+ * An enum declaring how to render units, including currencies. Example outputs when formatting 123 USD and 123
+ * meters in <em>en-CA</em>:
+ *
+ * <p>
+ * <ul>
+ * <li>NARROW*: "$123.00" and "123 m"
+ * <li>SHORT: "US$ 123.00" and "123 m"
+ * <li>FULL_NAME: "123.00 US dollars" and "123 meters"
+ * <li>ISO_CODE: "USD 123.00" and undefined behavior
+ * <li>HIDDEN: "123.00" and "123"
+ * </ul>
+ *
+ * <p>
+ * * The narrow format for currencies is not currently supported; this is a known issue that will be fixed in a
+ * future version. See #11666 for more information.
+ *
+ * <p>
+ * This enum is similar to {@link com.ibm.icu.text.MeasureFormat.FormatWidth}.
+ *
+ * @draft ICU 60
+ */
+typedef enum UNumberUnitWidth {
+    /**
+     * Print an abbreviated version of the unit name. Similar to SHORT, but always use the shortest available
+     * abbreviation or symbol. This option can be used when the context hints at the identity of the unit. For more
+     * information on the difference between NARROW and SHORT, see SHORT.
+     *
+     * <p>
+     * In CLDR, this option corresponds to the "Narrow" format for measure units and the "¤¤¤¤¤" placeholder for
+     * currencies.
+     *
+     * @draft ICU 60
+     */
+            UNUM_UNIT_WIDTH_NARROW,
 
-// Forward declarations:
-class IFixedDecimal;
-class FieldPositionIteratorHandler;
+    /**
+     * Print an abbreviated version of the unit name. Similar to NARROW, but use a slightly wider abbreviation or
+     * symbol when there may be ambiguity. This is the default behavior.
+     *
+     * <p>
+     * For example, in <em>es-US</em>, the SHORT form for Fahrenheit is "{0} °F", but the NARROW form is "{0}°",
+     * since Fahrenheit is the customary unit for temperature in that locale.
+     *
+     * <p>
+     * In CLDR, this option corresponds to the "Short" format for measure units and the "¤" placeholder for
+     * currencies.
+     *
+     * @draft ICU 60
+     */
+            UNUM_UNIT_WIDTH_SHORT,
 
-namespace numparse {
-namespace impl {
+    /**
+     * Print the full name of the unit, without any abbreviations.
+     *
+     * <p>
+     * In CLDR, this option corresponds to the default format for measure units and the "¤¤¤" placeholder for
+     * currencies.
+     *
+     * @draft ICU 60
+     */
+            UNUM_UNIT_WIDTH_FULL_NAME,
 
-// Forward declarations:
-class NumberParserImpl;
-class MultiplierParseHandler;
+    /**
+     * Use the three-digit ISO XXX code in place of the symbol for displaying currencies. The behavior of this
+     * option is currently undefined for use with measure units.
+     *
+     * <p>
+     * In CLDR, this option corresponds to the "¤¤" placeholder for currencies.
+     *
+     * @draft ICU 60
+     */
+            UNUM_UNIT_WIDTH_ISO_CODE,
 
-}
-}
+    /**
+     * Format the number according to the specified unit, but do not display the unit. For currencies, apply
+     * monetary symbols and formats as with SHORT, but omit the currency symbol. For measure units, the behavior is
+     * equivalent to not specifying the unit at all.
+     *
+     * @draft ICU 60
+     */
+            UNUM_UNIT_WIDTH_HIDDEN,
 
-namespace number {  // icu::number
+    /**
+     * One more than the highest UNumberUnitWidth value.
+     *
+     * @internal ICU 60: The numeric value may change over time; see ICU ticket #12420.
+     */
+            UNUM_UNIT_WIDTH_COUNT
+} UNumberUnitWidth;
+
+/**
+ * An enum declaring how to denote positive and negative numbers. Example outputs when formatting 123 and -123 in
+ * <em>en-US</em>:
+ *
+ * <p>
+ * <ul>
+ * <li>AUTO: "123", "-123"
+ * <li>ALWAYS: "+123", "-123"
+ * <li>NEVER: "123", "123"
+ * <li>ACCOUNTING: "$123", "($123)"
+ * <li>ACCOUNTING_ALWAYS: "+$123", "($123)"
+ * </ul>
+ *
+ * <p>
+ * The exact format, including the position and the code point of the sign, differ by locale.
+ *
+ * @draft ICU 60
+ */
+typedef enum UNumberSignDisplay {
+    /**
+     * Show the minus sign on negative numbers, and do not show the sign on positive numbers. This is the default
+     * behavior.
+     *
+     * @draft ICU 60
+     */
+            UNUM_SIGN_AUTO,
+
+    /**
+     * Show the minus sign on negative numbers and the plus sign on positive numbers.
+     *
+     * @draft ICU 60
+     */
+            UNUM_SIGN_ALWAYS,
+
+    /**
+     * Do not show the sign on positive or negative numbers.
+     *
+     * @draft ICU 60
+     */
+            UNUM_SIGN_NEVER,
+
+    /**
+     * Use the locale-dependent accounting format on negative numbers, and do not show the sign on positive numbers.
+     *
+     * <p>
+     * The accounting format is defined in CLDR and varies by locale; in many Western locales, the format is a pair
+     * of parentheses around the number.
+     *
+     * <p>
+     * Note: Since CLDR defines the accounting format in the monetary context only, this option falls back to the
+     * AUTO sign display strategy when formatting without a currency unit. This limitation may be lifted in the
+     * future.
+     *
+     * @draft ICU 60
+     */
+            UNUM_SIGN_ACCOUNTING,
+
+    /**
+     * Use the locale-dependent accounting format on negative numbers, and show the plus sign on positive numbers.
+     * For more information on the accounting format, see the ACCOUNTING sign display strategy.
+     *
+     * @draft ICU 60
+     */
+            UNUM_SIGN_ACCOUNTING_ALWAYS,
+
+    /**
+     * One more than the highest UNumberSignDisplay value.
+     *
+     * @internal ICU 60: The numeric value may change over time; see ICU ticket #12420.
+     */
+            UNUM_SIGN_COUNT
+} UNumberSignDisplay;
+
+/**
+ * An enum declaring how to render the decimal separator.
+ *
+ * <p>
+ * <ul>
+ * <li>UNUM_DECIMAL_SEPARATOR_AUTO: "1", "1.1"
+ * <li>UNUM_DECIMAL_SEPARATOR_ALWAYS: "1.", "1.1"
+ * </ul>
+ */
+typedef enum UNumberDecimalSeparatorDisplay {
+    /**
+     * Show the decimal separator when there are one or more digits to display after the separator, and do not show
+     * it otherwise. This is the default behavior.
+     *
+     * @draft ICU 60
+     */
+            UNUM_DECIMAL_SEPARATOR_AUTO,
+
+    /**
+     * Always show the decimal separator, even if there are no digits to display after the separator.
+     *
+     * @draft ICU 60
+     */
+            UNUM_DECIMAL_SEPARATOR_ALWAYS,
+
+    /**
+     * One more than the highest UNumberDecimalSeparatorDisplay value.
+     *
+     * @internal ICU 60: The numeric value may change over time; see ICU ticket #12420.
+     */
+            UNUM_DECIMAL_SEPARATOR_COUNT
+} UNumberDecimalMarkDisplay;
+
+U_NAMESPACE_BEGIN namespace number {  // icu::number
 
 // Forward declarations:
 class UnlocalizedNumberFormatter;
@@ -104,78 +279,36 @@ class LocalizedNumberFormatter;
 class FormattedNumber;
 class Notation;
 class ScientificNotation;
-class Precision;
-class FractionPrecision;
-class CurrencyPrecision;
-class IncrementPrecision;
+class Rounder;
+class FractionRounder;
+class CurrencyRounder;
+class IncrementRounder;
+class Grouper;
 class IntegerWidth;
 
 namespace impl {
-
-// can't be #ifndef U_HIDE_INTERNAL_API; referenced throughout this file in public classes
-/**
- * Datatype for minimum/maximum fraction digits. Must be able to hold kMaxIntFracSig.
- *
- * @internal
- */
-typedef int16_t digits_t;
-
-// can't be #ifndef U_HIDE_INTERNAL_API; needed for struct initialization
-/**
- * Use a default threshold of 3. This means that the third time .format() is called, the data structures get built
- * using the "safe" code path. The first two calls to .format() will trigger the unsafe code path.
- *
- * @internal
- */
-static constexpr int32_t kInternalDefaultThreshold = 3;
 
 // Forward declarations:
 class Padder;
 struct MacroProps;
 struct MicroProps;
 class DecimalQuantity;
-class UFormattedNumberData;
+struct NumberFormatterResults;
 class NumberFormatterImpl;
 struct ParsedPatternInfo;
 class ScientificModifier;
 class MultiplierProducer;
-class RoundingImpl;
+class MutablePatternModifier;
+class LongNameHandler;
 class ScientificHandler;
+class CompactHandler;
 class Modifier;
 class NumberStringBuilder;
-class AffixPatternProvider;
-class NumberPropertyMapper;
-struct DecimalFormatProperties;
-class MultiplierFormatHandler;
-class CurrencySymbols;
-class GeneratorHelpers;
-class DecNum;
-class NumberRangeFormatterImpl;
-struct RangeMacroProps;
-struct UFormattedNumberImpl;
-
-/**
- * Used for NumberRangeFormatter and implemented in numrange_fluent.cpp.
- * Declared here so it can be friended.
- *
- * @internal
- */
-void touchRangeLocales(impl::RangeMacroProps& macros);
 
 } // namespace impl
 
-/**
- * Extra name reserved in case it is needed in the future.
- *
- * @draft ICU 63
- */
+// Reserve extra names in case they are added as classes in the future:
 typedef Notation CompactNotation;
-
-/**
- * Extra name reserved in case it is needed in the future.
- *
- * @draft ICU 63
- */
 typedef Notation SimpleNotation;
 
 /**
@@ -264,13 +397,13 @@ class U_I18N_API Notation : public UMemory {
      * </pre>
      *
      * <p>
-     * When compact notation is specified without an explicit rounding precision, numbers are rounded off to the closest
+     * When compact notation is specified without an explicit rounding strategy, numbers are rounded off to the closest
      * integer after scaling the number by the corresponding power of 10, but with a digit shown after the decimal
-     * separator if there is only one digit before the decimal separator. The default compact notation rounding precision
+     * separator if there is only one digit before the decimal separator. The default compact notation rounding strategy
      * is equivalent to:
      *
      * <pre>
-     * Precision::integer().withMinDigits(2)
+     * Rounder.integer().withMinDigits(2)
      * </pre>
      *
      * @return A CompactNotation for passing to the NumberFormatter notation() setter.
@@ -335,15 +468,10 @@ class U_I18N_API Notation : public UMemory {
 
     union NotationUnion {
         // For NTN_SCIENTIFIC
-        /** @internal */
         struct ScientificSettings {
-            /** @internal */
             int8_t fEngineeringInterval;
-            /** @internal */
             bool fRequireMinInt;
-            /** @internal */
-            impl::digits_t fMinExponentDigits;
-            /** @internal */
+            int8_t fMinExponentDigits;
             UNumberSignDisplay fExponentSignDisplay;
         } scientific;
 
@@ -380,9 +508,6 @@ class U_I18N_API Notation : public UMemory {
     friend class impl::NumberFormatterImpl;
     friend class impl::ScientificModifier;
     friend class impl::ScientificHandler;
-
-    // To allow access to the skeleton generation code:
-    friend class impl::GeneratorHelpers;
 };
 
 /**
@@ -429,32 +554,21 @@ class U_I18N_API ScientificNotation : public Notation {
     // Inherit constructor
     using Notation::Notation;
 
-    // Raw constructor for NumberPropertyMapper
-    ScientificNotation(int8_t fEngineeringInterval, bool fRequireMinInt, impl::digits_t fMinExponentDigits,
-                       UNumberSignDisplay fExponentSignDisplay);
-
     friend class Notation;
-
-    // So that NumberPropertyMapper can create instances
-    friend class impl::NumberPropertyMapper;
 };
 
-/**
- * Extra name reserved in case it is needed in the future.
- *
- * @draft ICU 63
- */
-typedef Precision SignificantDigitsPrecision;
+// Reserve extra names in case they are added as classes in the future:
+typedef Rounder DigitRounder;
 
 /**
- * A class that defines the rounding precision to be used when formatting numbers in NumberFormatter.
+ * A class that defines the rounding strategy to be used when formatting numbers in NumberFormatter.
  *
  * <p>
- * To create a Precision, use one of the factory methods.
+ * To create a Rounder, use one of the factory methods.
  *
  * @draft ICU 60
  */
-class U_I18N_API Precision : public UMemory {
+class U_I18N_API Rounder : public UMemory {
 
   public:
     /**
@@ -462,27 +576,26 @@ class U_I18N_API Precision : public UMemory {
      *
      * <p>
      * <strong>NOTE:</strong> When formatting a <em>double</em>, this method, along with {@link #minFraction} and
-     * {@link #minSignificantDigits}, will trigger complex algorithm similar to <em>Dragon4</em> to determine the
-     * low-order digits and the number of digits to display based on the value of the double.
-     * If the number of fraction places or significant digits can be bounded, consider using {@link #maxFraction}
-     * or {@link #maxSignificantDigits} instead to maximize performance.
-     * For more information, read the following blog post.
+     * {@link #minDigits}, will trigger complex algorithm similar to <em>Dragon4</em> to determine the low-order digits
+     * and the number of digits to display based on the value of the double. If the number of fraction places or
+     * significant digits can be bounded, consider using {@link #maxFraction} or {@link #maxDigits} instead to maximize
+     * performance. For more information, read the following blog post.
      *
      * <p>
      * http://www.serpentine.com/blog/2011/06/29/here-be-dragons-advances-in-problems-you-didnt-even-know-you-had/
      *
-     * @return A Precision for chaining or passing to the NumberFormatter precision() setter.
+     * @return A Rounder for chaining or passing to the NumberFormatter rounding() setter.
      * @draft ICU 60
      */
-    static Precision unlimited();
+    static Rounder unlimited();
 
     /**
      * Show numbers rounded if necessary to the nearest integer.
      *
-     * @return A FractionPrecision for chaining or passing to the NumberFormatter precision() setter.
+     * @return A FractionRounder for chaining or passing to the NumberFormatter rounding() setter.
      * @draft ICU 60
      */
-    static FractionPrecision integer();
+    static FractionRounder integer();
 
     /**
      * Show numbers rounded if necessary to a certain number of fraction places (numerals after the decimal separator).
@@ -508,10 +621,10 @@ class U_I18N_API Precision : public UMemory {
      * @param minMaxFractionPlaces
      *            The minimum and maximum number of numerals to display after the decimal separator (rounding if too
      *            long or padding with zeros if too short).
-     * @return A FractionPrecision for chaining or passing to the NumberFormatter precision() setter.
+     * @return A FractionRounder for chaining or passing to the NumberFormatter rounding() setter.
      * @draft ICU 60
      */
-    static FractionPrecision fixedFraction(int32_t minMaxFractionPlaces);
+    static FractionRounder fixedFraction(int32_t minMaxFractionPlaces);
 
     /**
      * Always show at least a certain number of fraction places after the decimal separator, padding with zeros if
@@ -523,10 +636,10 @@ class U_I18N_API Precision : public UMemory {
      * @param minFractionPlaces
      *            The minimum number of numerals to display after the decimal separator (padding with zeros if
      *            necessary).
-     * @return A FractionPrecision for chaining or passing to the NumberFormatter precision() setter.
+     * @return A FractionRounder for chaining or passing to the NumberFormatter rounding() setter.
      * @draft ICU 60
      */
-    static FractionPrecision minFraction(int32_t minFractionPlaces);
+    static FractionRounder minFraction(int32_t minFractionPlaces);
 
     /**
      * Show numbers rounded if necessary to a certain number of fraction places (numerals after the decimal separator).
@@ -535,10 +648,10 @@ class U_I18N_API Precision : public UMemory {
      *
      * @param maxFractionPlaces
      *            The maximum number of numerals to display after the decimal mark (rounding if necessary).
-     * @return A FractionPrecision for chaining or passing to the NumberFormatter precision() setter.
+     * @return A FractionRounder for chaining or passing to the NumberFormatter rounding() setter.
      * @draft ICU 60
      */
-    static FractionPrecision maxFraction(int32_t maxFractionPlaces);
+    static FractionRounder maxFraction(int32_t maxFractionPlaces);
 
     /**
      * Show numbers rounded if necessary to a certain number of fraction places (numerals after the decimal separator);
@@ -550,25 +663,25 @@ class U_I18N_API Precision : public UMemory {
      *            necessary).
      * @param maxFractionPlaces
      *            The maximum number of numerals to display after the decimal separator (rounding if necessary).
-     * @return A FractionPrecision for chaining or passing to the NumberFormatter precision() setter.
+     * @return A FractionRounder for chaining or passing to the NumberFormatter rounding() setter.
      * @draft ICU 60
      */
-    static FractionPrecision minMaxFraction(int32_t minFractionPlaces, int32_t maxFractionPlaces);
+    static FractionRounder minMaxFraction(int32_t minFractionPlaces, int32_t maxFractionPlaces);
 
     /**
      * Show numbers rounded if necessary to a certain number of significant digits or significant figures. Additionally,
      * pad with zeros to ensure that this number of significant digits/figures are always shown.
      *
      * <p>
-     * This method is equivalent to {@link #minMaxSignificantDigits} with both arguments equal.
+     * This method is equivalent to {@link #minMaxDigits} with both arguments equal.
      *
      * @param minMaxSignificantDigits
      *            The minimum and maximum number of significant digits to display (rounding if too long or padding with
      *            zeros if too short).
-     * @return A precision for chaining or passing to the NumberFormatter precision() setter.
-     * @draft ICU 62
+     * @return A Rounder for chaining or passing to the NumberFormatter rounding() setter.
+     * @draft ICU 60
      */
-    static SignificantDigitsPrecision fixedSignificantDigits(int32_t minMaxSignificantDigits);
+    static DigitRounder fixedDigits(int32_t minMaxSignificantDigits);
 
     /**
      * Always show at least a certain number of significant digits/figures, padding with zeros if necessary. Do not
@@ -579,20 +692,20 @@ class U_I18N_API Precision : public UMemory {
      *
      * @param minSignificantDigits
      *            The minimum number of significant digits to display (padding with zeros if too short).
-     * @return A precision for chaining or passing to the NumberFormatter precision() setter.
-     * @draft ICU 62
+     * @return A Rounder for chaining or passing to the NumberFormatter rounding() setter.
+     * @draft ICU 60
      */
-    static SignificantDigitsPrecision minSignificantDigits(int32_t minSignificantDigits);
+    static DigitRounder minDigits(int32_t minSignificantDigits);
 
     /**
      * Show numbers rounded if necessary to a certain number of significant digits/figures.
      *
      * @param maxSignificantDigits
      *            The maximum number of significant digits to display (rounding if too long).
-     * @return A precision for chaining or passing to the NumberFormatter precision() setter.
-     * @draft ICU 62
+     * @return A Rounder for chaining or passing to the NumberFormatter rounding() setter.
+     * @draft ICU 60
      */
-    static SignificantDigitsPrecision maxSignificantDigits(int32_t maxSignificantDigits);
+    static DigitRounder maxDigits(int32_t maxSignificantDigits);
 
     /**
      * Show numbers rounded if necessary to a certain number of significant digits/figures; in addition, always show at
@@ -602,11 +715,10 @@ class U_I18N_API Precision : public UMemory {
      *            The minimum number of significant digits to display (padding with zeros if necessary).
      * @param maxSignificantDigits
      *            The maximum number of significant digits to display (rounding if necessary).
-     * @return A precision for chaining or passing to the NumberFormatter precision() setter.
-     * @draft ICU 62
+     * @return A Rounder for chaining or passing to the NumberFormatter rounding() setter.
+     * @draft ICU 60
      */
-    static SignificantDigitsPrecision minMaxSignificantDigits(int32_t minSignificantDigits,
-                                                              int32_t maxSignificantDigits);
+    static DigitRounder minMaxDigits(int32_t minSignificantDigits, int32_t maxSignificantDigits);
 
     /**
      * Show numbers rounded if necessary to the closest multiple of a certain rounding increment. For example, if the
@@ -619,21 +731,20 @@ class U_I18N_API Precision : public UMemory {
      * decimal separator (to display 1.2 as "1.00" and 1.3 as "1.50"), you can run:
      *
      * <pre>
-     * Precision::increment(0.5).withMinFraction(2)
+     * Rounder::increment(0.5).withMinFraction(2)
      * </pre>
      *
      * @param roundingIncrement
      *            The increment to which to round numbers.
-     * @return A precision for chaining or passing to the NumberFormatter precision() setter.
+     * @return A Rounder for chaining or passing to the NumberFormatter rounding() setter.
      * @draft ICU 60
      */
-    static IncrementPrecision increment(double roundingIncrement);
+    static IncrementRounder increment(double roundingIncrement);
 
     /**
-     * Show numbers rounded and padded according to the rules for the currency unit. The most common
-     * rounding precision settings for currencies include <code>Precision::fixedFraction(2)</code>,
-     * <code>Precision::integer()</code>, and <code>Precision::increment(0.05)</code> for cash transactions
-     * ("nickel rounding").
+     * Show numbers rounded and padded according to the rules for the currency unit. The most common rounding settings
+     * for currencies include <code>Rounder.fixedFraction(2)</code>, <code>Rounder.integer()</code>, and
+     * <code>Rounder.increment(0.05)</code> for cash transactions ("nickel rounding").
      *
      * <p>
      * The exact rounding details will be resolved at runtime based on the currency unit specified in the
@@ -643,76 +754,64 @@ class U_I18N_API Precision : public UMemory {
      * @param currencyUsage
      *            Either STANDARD (for digital transactions) or CASH (for transactions where the rounding increment may
      *            be limited by the available denominations of cash or coins).
-     * @return A CurrencyPrecision for chaining or passing to the NumberFormatter precision() setter.
+     * @return A CurrencyRounder for chaining or passing to the NumberFormatter rounding() setter.
      * @draft ICU 60
      */
-    static CurrencyPrecision currency(UCurrencyUsage currencyUsage);
+    static CurrencyRounder currency(UCurrencyUsage currencyUsage);
+
+    /**
+     * Sets the rounding mode to use when picking the direction to round (up or down). Common values
+     * include HALF_EVEN, HALF_UP, and FLOOR. The default is HALF_EVEN.
+     *
+     * @param roundingMode
+     *            The RoundingMode to use.
+     * @return A Rounder for passing to the NumberFormatter rounding() setter.
+     * @draft ICU 60
+     */
+    Rounder withMode(UNumberFormatRoundingMode roundingMode) const;
 
   private:
-    enum PrecisionType {
+    enum RounderType {
         RND_BOGUS,
         RND_NONE,
         RND_FRACTION,
         RND_SIGNIFICANT,
         RND_FRACTION_SIGNIFICANT,
-
-        // Used for strange increments like 3.14.
         RND_INCREMENT,
-
-        // Used for increments with 1 as the only digit. This is different than fraction
-        // rounding because it supports having additional trailing zeros. For example, this
-        // class is used to round with the increment 0.010.
-        RND_INCREMENT_ONE,
-
-        // Used for increments with 5 as the only digit (nickel rounding).
-        RND_INCREMENT_FIVE,
-
         RND_CURRENCY,
+        RND_PASS_THROUGH,
         RND_ERROR
     } fType;
 
-    union PrecisionUnion {
-        /** @internal */
+    union RounderUnion {
         struct FractionSignificantSettings {
             // For RND_FRACTION, RND_SIGNIFICANT, and RND_FRACTION_SIGNIFICANT
-            /** @internal */
-            impl::digits_t fMinFrac;
-            /** @internal */
-            impl::digits_t fMaxFrac;
-            /** @internal */
-            impl::digits_t fMinSig;
-            /** @internal */
-            impl::digits_t fMaxSig;
+            int8_t fMinFrac;
+            int8_t fMaxFrac;
+            int8_t fMinSig;
+            int8_t fMaxSig;
         } fracSig;
-        /** @internal */
         struct IncrementSettings {
-            // For RND_INCREMENT, RND_INCREMENT_ONE, and RND_INCREMENT_FIVE
-            /** @internal */
             double fIncrement;
-            /** @internal */
-            impl::digits_t fMinFrac;
-            /** @internal */
-            impl::digits_t fMaxFrac;
-        } increment;
+            int32_t fMinFrac;
+        } increment; // For RND_INCREMENT
         UCurrencyUsage currencyUsage; // For RND_CURRENCY
         UErrorCode errorCode; // For RND_ERROR
     } fUnion;
 
-    typedef PrecisionUnion::FractionSignificantSettings FractionSignificantSettings;
-    typedef PrecisionUnion::IncrementSettings IncrementSettings;
+    typedef RounderUnion::FractionSignificantSettings FractionSignificantSettings;
+    typedef RounderUnion::IncrementSettings IncrementSettings;
 
-    /** The Precision encapsulates the RoundingMode when used within the implementation. */
     UNumberFormatRoundingMode fRoundingMode;
 
-    Precision(const PrecisionType& type, const PrecisionUnion& union_,
-              UNumberFormatRoundingMode roundingMode)
+    Rounder(const RounderType &type, const RounderUnion &union_, UNumberFormatRoundingMode roundingMode)
             : fType(type), fUnion(union_), fRoundingMode(roundingMode) {}
 
-    Precision(UErrorCode errorCode) : fType(RND_ERROR) {
+    Rounder(UErrorCode errorCode) : fType(RND_ERROR) {
         fUnion.errorCode = errorCode;
     }
 
-    Precision() : fType(RND_BOGUS) {}
+    Rounder() : fType(RND_BOGUS) {}
 
     bool isBogus() const {
         return fType == RND_BOGUS;
@@ -726,21 +825,33 @@ class U_I18N_API Precision : public UMemory {
         return FALSE;
     }
 
-    // On the parent type so that this method can be called internally on Precision instances.
-    Precision withCurrency(const CurrencyUnit &currency, UErrorCode &status) const;
+    // On the parent type so that this method can be called internally on Rounder instances.
+    Rounder withCurrency(const CurrencyUnit &currency, UErrorCode &status) const;
 
-    static FractionPrecision constructFraction(int32_t minFrac, int32_t maxFrac);
+    /** NON-CONST: mutates the current instance. */
+    void setLocaleData(const CurrencyUnit &currency, UErrorCode &status);
 
-    static Precision constructSignificant(int32_t minSig, int32_t maxSig);
+    void apply(impl::DecimalQuantity &value, UErrorCode &status) const;
 
-    static Precision
-    constructFractionSignificant(const FractionPrecision &base, int32_t minSig, int32_t maxSig);
+    /** Version of {@link #apply} that obeys minInt constraints. Used for scientific notation compatibility mode. */
+    void apply(impl::DecimalQuantity &value, int32_t minInt, UErrorCode status);
 
-    static IncrementPrecision constructIncrement(double increment, int32_t minFrac);
+    int32_t
+    chooseMultiplierAndApply(impl::DecimalQuantity &input, const impl::MultiplierProducer &producer,
+                             UErrorCode &status);
 
-    static CurrencyPrecision constructCurrency(UCurrencyUsage usage);
+    static FractionRounder constructFraction(int32_t minFrac, int32_t maxFrac);
 
-    static Precision constructPassThrough();
+    static Rounder constructSignificant(int32_t minSig, int32_t maxSig);
+
+    static Rounder
+    constructFractionSignificant(const FractionRounder &base, int32_t minSig, int32_t maxSig);
+
+    static IncrementRounder constructIncrement(double increment, int32_t minFrac);
+
+    static CurrencyRounder constructCurrency(UCurrencyUsage usage);
+
+    static Rounder constructPassThrough();
 
     // To allow MacroProps/MicroProps to initialize bogus instances:
     friend struct impl::MacroProps;
@@ -749,31 +860,28 @@ class U_I18N_API Precision : public UMemory {
     // To allow NumberFormatterImpl to access isBogus() and other internal methods:
     friend class impl::NumberFormatterImpl;
 
-    // To allow NumberPropertyMapper to create instances from DecimalFormatProperties:
-    friend class impl::NumberPropertyMapper;
-
-    // To allow access to the main implementation class:
-    friend class impl::RoundingImpl;
+    // To give access to apply() and chooseMultiplierAndApply():
+    friend class impl::MutablePatternModifier;
+    friend class impl::LongNameHandler;
+    friend class impl::ScientificHandler;
+    friend class impl::CompactHandler;
 
     // To allow child classes to call private methods:
-    friend class FractionPrecision;
-    friend class CurrencyPrecision;
-    friend class IncrementPrecision;
-
-    // To allow access to the skeleton generation code:
-    friend class impl::GeneratorHelpers;
+    friend class FractionRounder;
+    friend class CurrencyRounder;
+    friend class IncrementRounder;
 };
 
 /**
- * A class that defines a rounding precision based on a number of fraction places and optionally significant digits to be
+ * A class that defines a rounding strategy based on a number of fraction places and optionally significant digits to be
  * used when formatting numbers in NumberFormatter.
  *
  * <p>
- * To create a FractionPrecision, use one of the factory methods on Precision.
+ * To create a FractionRounder, use one of the factory methods on Rounder.
  *
  * @draft ICU 60
  */
-class U_I18N_API FractionPrecision : public Precision {
+class U_I18N_API FractionRounder : public Rounder {
   public:
     /**
      * Ensure that no less than this number of significant digits are retained when rounding according to fraction
@@ -788,10 +896,10 @@ class U_I18N_API FractionPrecision : public Precision {
      *
      * @param minSignificantDigits
      *            The number of significant figures to guarantee.
-     * @return A precision for chaining or passing to the NumberFormatter precision() setter.
+     * @return A Rounder for chaining or passing to the NumberFormatter rounding() setter.
      * @draft ICU 60
      */
-    Precision withMinDigits(int32_t minSignificantDigits) const;
+    Rounder withMinDigits(int32_t minSignificantDigits) const;
 
     /**
      * Ensure that no more than this number of significant digits are retained when rounding according to fraction
@@ -807,36 +915,36 @@ class U_I18N_API FractionPrecision : public Precision {
      *
      * @param maxSignificantDigits
      *            Round the number to no more than this number of significant figures.
-     * @return A precision for chaining or passing to the NumberFormatter precision() setter.
+     * @return A Rounder for chaining or passing to the NumberFormatter rounding() setter.
      * @draft ICU 60
      */
-    Precision withMaxDigits(int32_t maxSignificantDigits) const;
+    Rounder withMaxDigits(int32_t maxSignificantDigits) const;
 
   private:
     // Inherit constructor
-    using Precision::Precision;
+    using Rounder::Rounder;
 
     // To allow parent class to call this class's constructor:
-    friend class Precision;
+    friend class Rounder;
 };
 
 /**
- * A class that defines a rounding precision parameterized by a currency to be used when formatting numbers in
+ * A class that defines a rounding strategy parameterized by a currency to be used when formatting numbers in
  * NumberFormatter.
  *
  * <p>
- * To create a CurrencyPrecision, use one of the factory methods on Precision.
+ * To create a CurrencyRounder, use one of the factory methods on Rounder.
  *
  * @draft ICU 60
  */
-class U_I18N_API CurrencyPrecision : public Precision {
+class U_I18N_API CurrencyRounder : public Rounder {
   public:
     /**
-      * Associates a currency with this rounding precision.
+      * Associates a currency with this rounding strategy.
       *
       * <p>
       * <strong>Calling this method is <em>not required</em></strong>, because the currency specified in unit()
-      * is automatically applied to currency rounding precisions. However,
+      * is automatically applied to currency rounding strategies. However,
       * this method enables you to override that automatic association.
       *
       * <p>
@@ -844,30 +952,30 @@ class U_I18N_API CurrencyPrecision : public Precision {
       * currency format.
       *
       * @param currency
-      *            The currency to associate with this rounding precision.
-      * @return A precision for chaining or passing to the NumberFormatter precision() setter.
+      *            The currency to associate with this rounding strategy.
+      * @return A Rounder for chaining or passing to the NumberFormatter rounding() setter.
       * @draft ICU 60
       */
-    Precision withCurrency(const CurrencyUnit &currency) const;
+    Rounder withCurrency(const CurrencyUnit &currency) const;
 
   private:
     // Inherit constructor
-    using Precision::Precision;
+    using Rounder::Rounder;
 
     // To allow parent class to call this class's constructor:
-    friend class Precision;
+    friend class Rounder;
 };
 
 /**
- * A class that defines a rounding precision parameterized by a rounding increment to be used when formatting numbers in
+ * A class that defines a rounding strategy parameterized by a rounding increment to be used when formatting numbers in
  * NumberFormatter.
  *
  * <p>
- * To create an IncrementPrecision, use one of the factory methods on Precision.
+ * To create an IncrementRounder, use one of the factory methods on Rounder.
  *
  * @draft ICU 60
  */
-class U_I18N_API IncrementPrecision : public Precision {
+class U_I18N_API IncrementRounder : public Rounder {
   public:
     /**
      * Specifies the minimum number of fraction digits to render after the decimal separator, padding with zeros if
@@ -881,17 +989,64 @@ class U_I18N_API IncrementPrecision : public Precision {
      * Note: In ICU4J, this functionality is accomplished via the scale of the BigDecimal rounding increment.
      *
      * @param minFrac The minimum number of digits after the decimal separator.
-     * @return A precision for chaining or passing to the NumberFormatter precision() setter.
+     * @return A Rounder for chaining or passing to the NumberFormatter rounding() setter.
      * @draft ICU 60
      */
-    Precision withMinFraction(int32_t minFrac) const;
+    Rounder withMinFraction(int32_t minFrac) const;
 
   private:
     // Inherit constructor
-    using Precision::Precision;
+    using Rounder::Rounder;
 
     // To allow parent class to call this class's constructor:
-    friend class Precision;
+    friend class Rounder;
+};
+
+/**
+ * @internal This API is a technical preview.  It is likely to change in an upcoming release.
+ */
+class U_I18N_API Grouper : public UMemory {
+  public:
+    /**
+     * @internal This API is a technical preview.  It is likely to change in an upcoming release.
+     */
+    static Grouper defaults();
+
+    /**
+     * @internal This API is a technical preview.  It is likely to change in an upcoming release.
+     */
+    static Grouper minTwoDigits();
+
+    /**
+     * @internal This API is a technical preview.  It is likely to change in an upcoming release.
+     */
+    static Grouper none();
+
+  private:
+    int8_t fGrouping1; // -3 means "bogus"; -2 means "needs locale data"; -1 means "no grouping"
+    int8_t fGrouping2;
+    bool fMin2;
+
+    Grouper(int8_t grouping1, int8_t grouping2, bool min2)
+            : fGrouping1(grouping1), fGrouping2(grouping2), fMin2(min2) {}
+
+    Grouper() : fGrouping1(-3) {};
+
+    bool isBogus() const {
+        return fGrouping1 == -3;
+    }
+
+    /** NON-CONST: mutates the current instance. */
+    void setLocaleData(const impl::ParsedPatternInfo &patternInfo);
+
+    bool groupAtPosition(int32_t position, const impl::DecimalQuantity &value) const;
+
+    // To allow MacroProps/MicroProps to initialize empty instances:
+    friend struct impl::MacroProps;
+    friend struct impl::MicroProps;
+
+    // To allow NumberFormatterImpl to access isBogus() and perform other operations:
+    friend class impl::NumberFormatterImpl;
 };
 
 /**
@@ -915,6 +1070,7 @@ class U_I18N_API IntegerWidth : public UMemory {
      *            The minimum number of places before the decimal separator.
      * @return An IntegerWidth for chaining or passing to the NumberFormatter integerWidth() setter.
      * @draft ICU 60
+     * @see NumberFormatter
      */
     static IntegerWidth zeroFillTo(int32_t minInt);
 
@@ -924,25 +1080,24 @@ class U_I18N_API IntegerWidth : public UMemory {
      * For example, with maxInt=3, the number 1234 will get printed as "234".
      *
      * @param maxInt
-     *            The maximum number of places before the decimal separator. maxInt == -1 means no
-     *            truncation.
+     *            The maximum number of places before the decimal separator.
      * @return An IntegerWidth for passing to the NumberFormatter integerWidth() setter.
      * @draft ICU 60
+     * @see NumberFormatter
      */
     IntegerWidth truncateAt(int32_t maxInt);
 
   private:
     union {
         struct {
-            impl::digits_t fMinInt;
-            impl::digits_t fMaxInt;
-            bool fFormatFailIfMoreThanMaxDigits;
+            int8_t fMinInt;
+            int8_t fMaxInt;
         } minMaxInt;
         UErrorCode errorCode;
     } fUnion;
     bool fHasError = false;
 
-    IntegerWidth(impl::digits_t minInt, impl::digits_t maxInt, bool formatFailIfMoreThanMaxDigits);
+    IntegerWidth(int8_t minInt, int8_t maxInt);
 
     IntegerWidth(UErrorCode errorCode) { // NOLINT
         fUnion.errorCode = errorCode;
@@ -951,11 +1106,6 @@ class U_I18N_API IntegerWidth : public UMemory {
 
     IntegerWidth() { // NOLINT
         fUnion.minMaxInt.fMinInt = -1;
-    }
-
-    /** Returns the default instance. */
-    static IntegerWidth standard() {
-        return IntegerWidth::zeroFillTo(1);
     }
 
     bool isBogus() const {
@@ -972,153 +1122,24 @@ class U_I18N_API IntegerWidth : public UMemory {
 
     void apply(impl::DecimalQuantity &quantity, UErrorCode &status) const;
 
-    bool operator==(const IntegerWidth& other) const;
-
     // To allow MacroProps/MicroProps to initialize empty instances:
     friend struct impl::MacroProps;
     friend struct impl::MicroProps;
 
     // To allow NumberFormatterImpl to access isBogus() and perform other operations:
     friend class impl::NumberFormatterImpl;
-
-    // So that NumberPropertyMapper can create instances
-    friend class impl::NumberPropertyMapper;
-
-    // To allow access to the skeleton generation code:
-    friend class impl::GeneratorHelpers;
-};
-
-/**
- * A class that defines a quantity by which a number should be multiplied when formatting.
- *
- * <p>
- * To create a Scale, use one of the factory methods.
- *
- * @draft ICU 62
- */
-class U_I18N_API Scale : public UMemory {
-  public:
-    /**
-     * Do not change the value of numbers when formatting or parsing.
-     *
-     * @return A Scale to prevent any multiplication.
-     * @draft ICU 62
-     */
-    static Scale none();
-
-    /**
-     * Multiply numbers by a power of ten before formatting. Useful for combining with a percent unit:
-     *
-     * <pre>
-     * NumberFormatter::with().unit(NoUnit::percent()).multiplier(Scale::powerOfTen(2))
-     * </pre>
-     *
-     * @return A Scale for passing to the setter in NumberFormatter.
-     * @draft ICU 62
-     */
-    static Scale powerOfTen(int32_t power);
-
-    /**
-     * Multiply numbers by an arbitrary value before formatting. Useful for unit conversions.
-     *
-     * This method takes a string in a decimal number format with syntax
-     * as defined in the Decimal Arithmetic Specification, available at
-     * http://speleotrove.com/decimal
-     *
-     * Also see the version of this method that takes a double.
-     *
-     * @return A Scale for passing to the setter in NumberFormatter.
-     * @draft ICU 62
-     */
-    static Scale byDecimal(StringPiece multiplicand);
-
-    /**
-     * Multiply numbers by an arbitrary value before formatting. Useful for unit conversions.
-     *
-     * This method takes a double; also see the version of this method that takes an exact decimal.
-     *
-     * @return A Scale for passing to the setter in NumberFormatter.
-     * @draft ICU 62
-     */
-    static Scale byDouble(double multiplicand);
-
-    /**
-     * Multiply a number by both a power of ten and by an arbitrary double value.
-     *
-     * @return A Scale for passing to the setter in NumberFormatter.
-     * @draft ICU 62
-     */
-    static Scale byDoubleAndPowerOfTen(double multiplicand, int32_t power);
-
-    // We need a custom destructor for the DecNum, which means we need to declare
-    // the copy/move constructor/assignment quartet.
-
-    /** @draft ICU 62 */
-    Scale(const Scale& other);
-
-    /** @draft ICU 62 */
-    Scale& operator=(const Scale& other);
-
-    /** @draft ICU 62 */
-    Scale(Scale&& src) U_NOEXCEPT;
-
-    /** @draft ICU 62 */
-    Scale& operator=(Scale&& src) U_NOEXCEPT;
-
-    /** @draft ICU 62 */
-    ~Scale();
-
-#ifndef U_HIDE_INTERNAL_API
-    /** @internal */
-    Scale(int32_t magnitude, impl::DecNum* arbitraryToAdopt);
-#endif  /* U_HIDE_INTERNAL_API */
-
-  private:
-    int32_t fMagnitude;
-    impl::DecNum* fArbitrary;
-    UErrorCode fError;
-
-    Scale(UErrorCode error) : fMagnitude(0), fArbitrary(nullptr), fError(error) {}
-
-    Scale() : fMagnitude(0), fArbitrary(nullptr), fError(U_ZERO_ERROR) {}
-
-    bool isValid() const {
-        return fMagnitude != 0 || fArbitrary != nullptr;
-    }
-
-    UBool copyErrorTo(UErrorCode &status) const {
-        if (fError != U_ZERO_ERROR) {
-            status = fError;
-            return TRUE;
-        }
-        return FALSE;
-    }
-
-    void applyTo(impl::DecimalQuantity& quantity) const;
-
-    void applyReciprocalTo(impl::DecimalQuantity& quantity) const;
-
-    // To allow MacroProps/MicroProps to initialize empty instances:
-    friend struct impl::MacroProps;
-    friend struct impl::MicroProps;
-
-    // To allow NumberFormatterImpl to access isBogus() and perform other operations:
-    friend class impl::NumberFormatterImpl;
-
-    // To allow the helper class MultiplierFormatHandler access to private fields:
-    friend class impl::MultiplierFormatHandler;
-
-    // To allow access to the skeleton generation code:
-    friend class impl::GeneratorHelpers;
-
-    // To allow access to parsing code:
-    friend class ::icu::numparse::impl::NumberParserImpl;
-    friend class ::icu::numparse::impl::MultiplierParseHandler;
 };
 
 namespace impl {
 
-// Do not enclose entire SymbolsWrapper with #ifndef U_HIDE_INTERNAL_API, needed for a protected field
+/**
+ * Use a default threshold of 3. This means that the third time .format() is called, the data structures get built
+ * using the "safe" code path. The first two calls to .format() will trigger the unsafe code path.
+ *
+ * @internal
+ */
+static constexpr int32_t DEFAULT_THRESHOLD = 3;
+
 /** @internal */
 class U_I18N_API SymbolsWrapper : public UMemory {
   public:
@@ -1129,18 +1150,10 @@ class U_I18N_API SymbolsWrapper : public UMemory {
     SymbolsWrapper(const SymbolsWrapper &other);
 
     /** @internal */
-    SymbolsWrapper &operator=(const SymbolsWrapper &other);
-
-    /** @internal */
-    SymbolsWrapper(SymbolsWrapper&& src) U_NOEXCEPT;
-
-    /** @internal */
-    SymbolsWrapper &operator=(SymbolsWrapper&& src) U_NOEXCEPT;
-
-    /** @internal */
     ~SymbolsWrapper();
 
-#ifndef U_HIDE_INTERNAL_API
+    /** @internal */
+    SymbolsWrapper &operator=(const SymbolsWrapper &other);
 
     /**
      * The provided object is copied, but we do not adopt it.
@@ -1178,8 +1191,6 @@ class U_I18N_API SymbolsWrapper : public UMemory {
      */
     const NumberingSystem *getNumberingSystem() const;
 
-#endif  // U_HIDE_INTERNAL_API
-
     /** @internal */
     UBool copyErrorTo(UErrorCode &status) const {
         if (fType == SYMPTR_DFS && fPtr.dfs == nullptr) {
@@ -1204,107 +1215,17 @@ class U_I18N_API SymbolsWrapper : public UMemory {
 
     void doCopyFrom(const SymbolsWrapper &other);
 
-    void doMoveFrom(SymbolsWrapper&& src);
-
     void doCleanup();
 };
 
-// Do not enclose entire Grouper with #ifndef U_HIDE_INTERNAL_API, needed for a protected field
-/** @internal */
-class U_I18N_API Grouper : public UMemory {
-  public:
-#ifndef U_HIDE_INTERNAL_API
-    /** @internal */
-    static Grouper forStrategy(UNumberGroupingStrategy grouping);
-
-    /**
-     * Resolve the values in Properties to a Grouper object.
-     * @internal
-     */
-    static Grouper forProperties(const DecimalFormatProperties& properties);
-
-    // Future: static Grouper forProperties(DecimalFormatProperties& properties);
-
-    /** @internal */
-    Grouper(int16_t grouping1, int16_t grouping2, int16_t minGrouping, UNumberGroupingStrategy strategy)
-            : fGrouping1(grouping1),
-              fGrouping2(grouping2),
-              fMinGrouping(minGrouping),
-              fStrategy(strategy) {}
-#endif  // U_HIDE_INTERNAL_API
-
-    /** @internal */
-    int16_t getPrimary() const;
-
-    /** @internal */
-    int16_t getSecondary() const;
-
-  private:
-    /**
-     * The grouping sizes, with the following special values:
-     * <ul>
-     * <li>-1 = no grouping
-     * <li>-2 = needs locale data
-     * <li>-4 = fall back to Western grouping if not in locale
-     * </ul>
-     */
-    int16_t fGrouping1;
-    int16_t fGrouping2;
-
-    /**
-     * The minimum grouping size, with the following special values:
-     * <ul>
-     * <li>-2 = needs locale data
-     * <li>-3 = no less than 2
-     * </ul>
-     */
-    int16_t fMinGrouping;
-
-    /**
-     * The UNumberGroupingStrategy that was used to create this Grouper, or UNUM_GROUPING_COUNT if this
-     * was not created from a UNumberGroupingStrategy.
-     */
-    UNumberGroupingStrategy fStrategy;
-
-    Grouper() : fGrouping1(-3) {}
-
-    bool isBogus() const {
-        return fGrouping1 == -3;
-    }
-
-    /** NON-CONST: mutates the current instance. */
-    void setLocaleData(const impl::ParsedPatternInfo &patternInfo, const Locale& locale);
-
-    bool groupAtPosition(int32_t position, const impl::DecimalQuantity &value) const;
-
-    // To allow MacroProps/MicroProps to initialize empty instances:
-    friend struct MacroProps;
-    friend struct MicroProps;
-
-    // To allow NumberFormatterImpl to access isBogus() and perform other operations:
-    friend class NumberFormatterImpl;
-
-    // To allow NumberParserImpl to perform setLocaleData():
-    friend class ::icu::numparse::impl::NumberParserImpl;
-
-    // To allow access to the skeleton generation code:
-    friend class impl::GeneratorHelpers;
-};
-
-// Do not enclose entire Padder with #ifndef U_HIDE_INTERNAL_API, needed for a protected field
 /** @internal */
 class U_I18N_API Padder : public UMemory {
   public:
-#ifndef U_HIDE_INTERNAL_API
     /** @internal */
     static Padder none();
 
     /** @internal */
     static Padder codePoints(UChar32 cp, int32_t targetWidth, UNumberFormatPadPosition position);
-#endif  // U_HIDE_INTERNAL_API
-
-    /** @internal */
-    static Padder forProperties(const DecimalFormatProperties& properties);
 
   private:
     UChar32 fWidth;  // -3 = error; -2 = bogus; -1 = no padding
@@ -1352,12 +1273,8 @@ class U_I18N_API Padder : public UMemory {
 
     // To allow NumberFormatterImpl to access isBogus() and perform other operations:
     friend class impl::NumberFormatterImpl;
-
-    // To allow access to the skeleton generation code:
-    friend class impl::GeneratorHelpers;
 };
 
-// Do not enclose entire MacroProps with #ifndef U_HIDE_INTERNAL_API, needed for a protected field
 /** @internal */
 struct U_I18N_API MacroProps : public UMemory {
     /** @internal */
@@ -1367,13 +1284,7 @@ struct U_I18N_API MacroProps : public UMemory {
     MeasureUnit unit; // = NoUnit::base();
 
     /** @internal */
-    MeasureUnit perUnit; // = NoUnit::base();
-
-    /** @internal */
-    Precision precision;  // = Precision();  (bogus)
-
-    /** @internal */
-    UNumberFormatRoundingMode roundingMode = UNUM_ROUND_HALFEVEN;
+    Rounder rounder;  // = Rounder();  (bogus)
 
     /** @internal */
     Grouper grouper;  // = Grouper();  (bogus)
@@ -1399,33 +1310,20 @@ struct U_I18N_API MacroProps : public UMemory {
     UNumberDecimalSeparatorDisplay decimal = UNUM_DECIMAL_SEPARATOR_COUNT;
 
     /** @internal */
-    Scale scale;  // = Scale();  (benign value)
+    PluralRules *rules = nullptr;  // no ownership
 
     /** @internal */
-    const AffixPatternProvider* affixProvider = nullptr;  // no ownership
-
-    /** @internal */
-    const PluralRules* rules = nullptr;  // no ownership
-
-    /** @internal */
-    const CurrencySymbols* currencySymbols = nullptr;  // no ownership
-
-    /** @internal */
-    int32_t threshold = kInternalDefaultThreshold;
-
-    /** @internal */
+    int32_t threshold = DEFAULT_THRESHOLD;
     Locale locale;
-
-    // NOTE: Uses default copy and move constructors.
 
     /**
      * Check all members for errors.
      * @internal
      */
     bool copyErrorTo(UErrorCode &status) const {
-        return notation.copyErrorTo(status) || precision.copyErrorTo(status) ||
+        return notation.copyErrorTo(status) || rounder.copyErrorTo(status) ||
                padder.copyErrorTo(status) || integerWidth.copyErrorTo(status) ||
-               symbols.copyErrorTo(status) || scale.copyErrorTo(status);
+               symbols.copyErrorTo(status);
     }
 };
 
@@ -1433,8 +1331,7 @@ struct U_I18N_API MacroProps : public UMemory {
 
 /**
  * An abstract base class for specifying settings related to number formatting. This class is implemented by
- * {@link UnlocalizedNumberFormatter} and {@link LocalizedNumberFormatter}. This class is not intended for
- * public subclassing.
+ * {@link UnlocalizedNumberFormatter} and {@link LocalizedNumberFormatter}.
  */
 template<typename Derived>
 class U_I18N_API NumberFormatterSettings {
@@ -1450,7 +1347,7 @@ class U_I18N_API NumberFormatterSettings {
      *
      * <p>
      * All notation styles will be properly localized with locale data, and all notation styles are compatible with
-     * units, rounding precisions, and other number formatter settings.
+     * units, rounding strategies, and other number formatter settings.
      *
      * <p>
      * Pass this method the return value of a {@link Notation} factory method. For example:
@@ -1467,18 +1364,7 @@ class U_I18N_API NumberFormatterSettings {
      * @see Notation
      * @draft ICU 60
      */
-    Derived notation(const Notation &notation) const &;
-
-    /**
-     * Overload of notation() for use on an rvalue reference.
-     *
-     * @param notation
-     *            The notation strategy to use.
-     * @return The fluent chain.
-     * @see #notation
-     * @draft ICU 62
-     */
-    Derived notation(const Notation &notation) &&;
+    Derived notation(const Notation &notation) const;
 
     /**
      * Specifies the unit (unit of measure, currency, or percent) to associate with rendered numbers.
@@ -1489,28 +1375,28 @@ class U_I18N_API NumberFormatterSettings {
      * <li>Percent: "12.3%"
      * </ul>
      *
+     * <p>
      * All units will be properly localized with locale data, and all units are compatible with notation styles,
-     * rounding precisions, and other number formatter settings.
+     * rounding strategies, and other number formatter settings.
      *
+     * <p>
      * Pass this method any instance of {@link MeasureUnit}. For units of measure:
      *
      * <pre>
-     * NumberFormatter::with().unit(MeasureUnit::getMeter())
+     * NumberFormatter.with().adoptUnit(MeasureUnit::createMeter(status))
      * </pre>
      *
      * Currency:
      *
      * <pre>
-     * NumberFormatter::with().unit(CurrencyUnit(u"USD", status))
+     * NumberFormatter.with()::unit(CurrencyUnit(u"USD", status))
      * </pre>
      *
      * Percent:
      *
      * <pre>
-     * NumberFormatter::with().unit(NoUnit.percent())
+     * NumberFormatter.with()::unit(NoUnit.percent())
      * </pre>
-     *
-     * See {@link #perUnit} for information on how to format strings like "5 meters per second".
      *
      * The default is to render without units (equivalent to NoUnit.base()).
      *
@@ -1520,111 +1406,25 @@ class U_I18N_API NumberFormatterSettings {
      * @see MeasureUnit
      * @see Currency
      * @see NoUnit
-     * @see #perUnit
      * @draft ICU 60
      */
-    Derived unit(const icu::MeasureUnit &unit) const &;
-
-    /**
-     * Overload of unit() for use on an rvalue reference.
-     *
-     * @param unit
-     *            The unit to render.
-     * @return The fluent chain.
-     * @see #unit
-     * @draft ICU 62
-     */
-    Derived unit(const icu::MeasureUnit &unit) &&;
+    Derived unit(const icu::MeasureUnit &unit) const;
 
     /**
      * Like unit(), but takes ownership of a pointer.  Convenient for use with the MeasureFormat factory
-     * methods that return pointers that need ownership.
-     *
-     * Note: consider using the MeasureFormat factory methods that return by value.
+     * methods, which return pointers that need ownership.
      *
      * @param unit
-     *            The unit to render.
+     * The unit to render.
      * @return The fluent chain.
      * @see #unit
      * @see MeasureUnit
      * @draft ICU 60
      */
-    Derived adoptUnit(icu::MeasureUnit *unit) const &;
+    Derived adoptUnit(const icu::MeasureUnit *unit) const;
 
     /**
-     * Overload of adoptUnit() for use on an rvalue reference.
-     *
-     * @param unit
-     *            The unit to render.
-     * @return The fluent chain.
-     * @see #adoptUnit
-     * @draft ICU 62
-     */
-    Derived adoptUnit(icu::MeasureUnit *unit) &&;
-
-    /**
-     * Sets a unit to be used in the denominator. For example, to format "3 m/s", pass METER to the unit and SECOND to
-     * the perUnit.
-     *
-     * Pass this method any instance of {@link MeasureUnit}. Example:
-     *
-     * <pre>
-     * NumberFormatter::with()
-     *      .unit(MeasureUnit::getMeter())
-     *      .perUnit(MeasureUnit::getSecond())
-     * </pre>
-     *
-     * The default is not to display any unit in the denominator.
-     *
-     * If a per-unit is specified without a primary unit via {@link #unit}, the behavior is undefined.
-     *
-     * @param perUnit
-     *            The unit to render in the denominator.
-     * @return The fluent chain
-     * @see #unit
-     * @draft ICU 61
-     */
-    Derived perUnit(const icu::MeasureUnit &perUnit) const &;
-
-    /**
-     * Overload of perUnit() for use on an rvalue reference.
-     *
-     * @param perUnit
-     *            The unit to render in the denominator.
-     * @return The fluent chain.
-     * @see #perUnit
-     * @draft ICU 62
-     */
-    Derived perUnit(const icu::MeasureUnit &perUnit) &&;
-
-    /**
-     * Like perUnit(), but takes ownership of a pointer.  Convenient for use with the MeasureFormat factory
-     * methods that return pointers that need ownership.
-     *
-     * Note: consider using the MeasureFormat factory methods that return by value.
-     *
-     * @param perUnit
-     *            The unit to render in the denominator.
-     * @return The fluent chain.
-     * @see #perUnit
-     * @see MeasureUnit
-     * @draft ICU 61
-     */
-    Derived adoptPerUnit(icu::MeasureUnit *perUnit) const &;
-
-    /**
-     * Overload of adoptPerUnit() for use on an rvalue reference.
-     *
-     * @param perUnit
-     *            The unit to render in the denominator.
-     * @return The fluent chain.
-     * @see #adoptPerUnit
-     * @draft ICU 62
-     */
-    Derived adoptPerUnit(icu::MeasureUnit *perUnit) &&;
-
-    /**
-     * Specifies the rounding precision to use when formatting numbers.
+     * Specifies the rounding strategy to use when formatting numbers.
      *
      * <ul>
      * <li>Round to 3 decimal places: "3.142"
@@ -1634,67 +1434,29 @@ class U_I18N_API NumberFormatterSettings {
      * </ul>
      *
      * <p>
-     * Pass this method the return value of one of the factory methods on {@link Precision}. For example:
+     * Pass this method the return value of one of the factory methods on {@link Rounder}. For example:
      *
      * <pre>
-     * NumberFormatter::with().precision(Precision::fixedFraction(2))
+     * NumberFormatter::with().rounding(Rounder::fixedFraction(2))
      * </pre>
      *
      * <p>
      * In most cases, the default rounding strategy is to round to 6 fraction places; i.e.,
-     * <code>Precision.maxFraction(6)</code>. The exceptions are if compact notation is being used, then the compact
+     * <code>Rounder.maxFraction(6)</code>. The exceptions are if compact notation is being used, then the compact
      * notation rounding strategy is used (see {@link Notation#compactShort} for details), or if the unit is a currency,
-     * then standard currency rounding is used, which varies from currency to currency (see {@link Precision#currency} for
+     * then standard currency rounding is used, which varies from currency to currency (see {@link Rounder#currency} for
      * details).
      *
-     * @param precision
-     *            The rounding precision to use.
+     * @param rounder
+     *            The rounding strategy to use.
      * @return The fluent chain.
-     * @see Precision
-     * @draft ICU 62
+     * @see Rounder
+     * @provisional This API might change or be removed in a future release.
+     * @draft ICU 60
      */
-    Derived precision(const Precision& precision) const &;
+    Derived rounding(const Rounder &rounder) const;
 
-    /**
-     * Overload of precision() for use on an rvalue reference.
-     *
-     * @param precision
-     *            The rounding precision to use.
-     * @return The fluent chain.
-     * @see #precision
-     * @draft ICU 62
-     */
-    Derived precision(const Precision& precision) &&;
-
-    /**
-     * Specifies how to determine the direction to round a number when it has more digits than fit in the
-     * desired precision.  When formatting 1.235:
-     *
-     * <ul>
-     * <li>Ceiling rounding mode with integer precision: "2"
-     * <li>Half-down rounding mode with 2 fixed fraction digits: "1.23"
-     * <li>Half-up rounding mode with 2 fixed fraction digits: "1.24"
-     * </ul>
-     *
-     * The default is HALF_EVEN. For more information on rounding mode, see the ICU userguide here:
-     *
-     * http://userguide.icu-project.org/formatparse/numbers/rounding-modes
-     *
-     * @param roundingMode The rounding mode to use.
-     * @return The fluent chain.
-     * @draft ICU 62
-     */
-    Derived roundingMode(UNumberFormatRoundingMode roundingMode) const &;
-
-    /**
-     * Overload of roundingMode() for use on an rvalue reference.
-     *
-     * @param roundingMode The rounding mode to use.
-     * @return The fluent chain.
-     * @see #roundingMode
-     * @draft ICU 62
-     */
-    Derived roundingMode(UNumberFormatRoundingMode roundingMode) &&;
+#ifndef U_HIDE_INTERNAL_API
 
     /**
      * Specifies the grouping strategy to use when formatting numbers.
@@ -1709,32 +1471,25 @@ class U_I18N_API NumberFormatterSettings {
      * The exact grouping widths will be chosen based on the locale.
      *
      * <p>
-     * Pass this method an element from the {@link UNumberGroupingStrategy} enum. For example:
+     * Pass this method the return value of one of the factory methods on {@link Grouper}. For example:
      *
      * <pre>
-     * NumberFormatter::with().grouping(UNUM_GROUPING_MIN2)
+     * NumberFormatter::with().grouping(Grouper::min2())
      * </pre>
      *
-     * The default is to perform grouping according to locale data; most locales, but not all locales,
-     * enable it by default.
+     * The default is to perform grouping without concern for the minimum grouping digits.
      *
-     * @param strategy
+     * @param grouper
      *            The grouping strategy to use.
      * @return The fluent chain.
-     * @draft ICU 61
+     * @see Grouper
+     * @see Notation
+     * @internal
+     * @internal ICU 60: This API is technical preview.
      */
-    Derived grouping(UNumberGroupingStrategy strategy) const &;
+    Derived grouping(const Grouper &grouper) const;
 
-    /**
-     * Overload of grouping() for use on an rvalue reference.
-     *
-     * @param strategy
-     *            The grouping strategy to use.
-     * @return The fluent chain.
-     * @see #grouping
-     * @draft ICU 62
-     */
-    Derived grouping(UNumberGroupingStrategy strategy) &&;
+#endif  /* U_HIDE_INTERNAL_API */
 
     /**
      * Specifies the minimum and maximum number of digits to render before the decimal mark.
@@ -1746,7 +1501,7 @@ class U_I18N_API NumberFormatterSettings {
      * </ul>
      *
      * <p>
-     * Pass this method the return value of {@link IntegerWidth#zeroFillTo}. For example:
+     * Pass this method the return value of {@link IntegerWidth#zeroFillTo(int)}. For example:
      *
      * <pre>
      * NumberFormatter::with().integerWidth(IntegerWidth::zeroFillTo(2))
@@ -1760,18 +1515,7 @@ class U_I18N_API NumberFormatterSettings {
      * @see IntegerWidth
      * @draft ICU 60
      */
-    Derived integerWidth(const IntegerWidth &style) const &;
-
-    /**
-     * Overload of integerWidth() for use on an rvalue reference.
-     *
-     * @param style
-     *            The integer width to use.
-     * @return The fluent chain.
-     * @see #integerWidth
-     * @draft ICU 62
-     */
-    Derived integerWidth(const IntegerWidth &style) &&;
+    Derived integerWidth(const IntegerWidth &style) const;
 
     /**
      * Specifies the symbols (decimal separator, grouping separator, percent sign, numerals, etc.) to use when rendering
@@ -1801,8 +1545,8 @@ class U_I18N_API NumberFormatterSettings {
      * after passing it into the fluent chain will not be seen.
      *
      * <p>
-     * <strong>Note:</strong> Calling this method will override any previously specified DecimalFormatSymbols
-     * or NumberingSystem.
+     * <strong>Note:</strong> Calling this method will override the NumberingSystem previously specified in
+     * {@link #symbols(NumberingSystem)}.
      *
      * <p>
      * The default is to choose the symbols based on the locale specified in the fluent chain.
@@ -1813,18 +1557,7 @@ class U_I18N_API NumberFormatterSettings {
      * @see DecimalFormatSymbols
      * @draft ICU 60
      */
-    Derived symbols(const DecimalFormatSymbols &symbols) const &;
-
-    /**
-     * Overload of symbols() for use on an rvalue reference.
-     *
-     * @param symbols
-     *            The DecimalFormatSymbols to use.
-     * @return The fluent chain.
-     * @see #symbols
-     * @draft ICU 62
-     */
-    Derived symbols(const DecimalFormatSymbols &symbols) &&;
+    Derived symbols(const DecimalFormatSymbols &symbols) const;
 
     /**
      * Specifies that the given numbering system should be used when fetching symbols.
@@ -1844,8 +1577,8 @@ class U_I18N_API NumberFormatterSettings {
      * </pre>
      *
      * <p>
-     * <strong>Note:</strong> Calling this method will override any previously specified DecimalFormatSymbols
-     * or NumberingSystem.
+     * <strong>Note:</strong> Calling this method will override the DecimalFormatSymbols previously specified in
+     * {@link #symbols(DecimalFormatSymbols)}.
      *
      * <p>
      * The default is to choose the best numbering system for the locale.
@@ -1859,18 +1592,7 @@ class U_I18N_API NumberFormatterSettings {
      * @see NumberingSystem
      * @draft ICU 60
      */
-    Derived adoptSymbols(NumberingSystem *symbols) const &;
-
-    /**
-     * Overload of adoptSymbols() for use on an rvalue reference.
-     *
-     * @param symbols
-     *            The NumberingSystem to use.
-     * @return The fluent chain.
-     * @see #adoptSymbols
-     * @draft ICU 62
-     */
-    Derived adoptSymbols(NumberingSystem *symbols) &&;
+    Derived adoptSymbols(const NumberingSystem *symbols) const;
 
     /**
      * Sets the width of the unit (measure unit or currency).  Most common values:
@@ -1897,18 +1619,7 @@ class U_I18N_API NumberFormatterSettings {
      * @see UNumberUnitWidth
      * @draft ICU 60
      */
-    Derived unitWidth(UNumberUnitWidth width) const &;
-
-    /**
-     * Overload of unitWidth() for use on an rvalue reference.
-     *
-     * @param width
-     *            The width to use when rendering numbers.
-     * @return The fluent chain.
-     * @see #unitWidth
-     * @draft ICU 62
-     */
-    Derived unitWidth(UNumberUnitWidth width) &&;
+    Derived unitWidth(const UNumberUnitWidth &width) const;
 
     /**
      * Sets the plus/minus sign display strategy. Most common values:
@@ -1929,24 +1640,14 @@ class U_I18N_API NumberFormatterSettings {
      * <p>
      * The default is AUTO sign display.
      *
-     * @param style
+     * @param width
      *            The sign display strategy to use when rendering numbers.
      * @return The fluent chain
      * @see UNumberSignDisplay
+     * @provisional This API might change or be removed in a future release.
      * @draft ICU 60
      */
-    Derived sign(UNumberSignDisplay style) const &;
-
-    /**
-     * Overload of sign() for use on an rvalue reference.
-     *
-     * @param style
-     *            The sign display strategy to use when rendering numbers.
-     * @return The fluent chain.
-     * @see #sign
-     * @draft ICU 62
-     */
-    Derived sign(UNumberSignDisplay style) &&;
+    Derived sign(const UNumberSignDisplay &width) const;
 
     /**
      * Sets the decimal separator display strategy. This affects integer numbers with no fraction part. Most common
@@ -1967,73 +1668,23 @@ class U_I18N_API NumberFormatterSettings {
      * <p>
      * The default is AUTO decimal separator display.
      *
-     * @param style
+     * @param width
      *            The decimal separator display strategy to use when rendering numbers.
      * @return The fluent chain
      * @see UNumberDecimalSeparatorDisplay
+     * @provisional This API might change or be removed in a future release.
      * @draft ICU 60
      */
-    Derived decimal(UNumberDecimalSeparatorDisplay style) const &;
-
-    /**
-     * Overload of decimal() for use on an rvalue reference.
-     *
-     * @param style
-     *            The decimal separator display strategy to use when rendering numbers.
-     * @return The fluent chain.
-     * @see #decimal
-     * @draft ICU 62
-     */
-    Derived decimal(UNumberDecimalSeparatorDisplay style) &&;
-
-    /**
-     * Sets a scale (multiplier) to be used to scale the number by an arbitrary amount before formatting.
-     * Most common values:
-     *
-     * <ul>
-     * <li>Multiply by 100: useful for percentages.
-     * <li>Multiply by an arbitrary value: useful for unit conversions.
-     * </ul>
-     *
-     * <p>
-     * Pass an element from a {@link Scale} factory method to this setter. For example:
-     *
-     * <pre>
-     * NumberFormatter::with().scale(Scale::powerOfTen(2))
-     * </pre>
-     *
-     * <p>
-     * The default is to not apply any multiplier.
-     *
-     * @param scale
-     *            The scale to apply when rendering numbers.
-     * @return The fluent chain
-     * @draft ICU 62
-     */
-    Derived scale(const Scale &scale) const &;
-
-    /**
-     * Overload of scale() for use on an rvalue reference.
-     *
-     * @param scale
-     *            The scale to apply when rendering numbers.
-     * @return The fluent chain.
-     * @see #scale
-     * @draft ICU 62
-     */
-    Derived scale(const Scale &scale) &&;
+    Derived decimal(const UNumberDecimalSeparatorDisplay &width) const;
 
 #ifndef U_HIDE_INTERNAL_API
 
     /**
-     * Set the padding strategy. May be added in the future; see #13338.
+     * Set the padding strategy. May be added to ICU 61; see #13338.
      *
      * @internal ICU 60: This API is ICU internal only.
      */
-    Derived padding(const impl::Padder &padder) const &;
-
-    /** @internal */
-    Derived padding(const impl::Padder &padder) &&;
+    Derived padding(const impl::Padder &padder) const;
 
     /**
      * Internal fluent setter to support a custom regulation threshold. A threshold of 1 causes the data structures to
@@ -2041,66 +1692,9 @@ class U_I18N_API NumberFormatterSettings {
      *
      * @internal ICU 60: This API is ICU internal only.
      */
-    Derived threshold(int32_t threshold) const &;
-
-    /** @internal */
-    Derived threshold(int32_t threshold) &&;
-
-    /**
-     * Internal fluent setter to overwrite the entire macros object.
-     *
-     * @internal ICU 60: This API is ICU internal only.
-     */
-    Derived macros(const impl::MacroProps& macros) const &;
-
-    /** @internal */
-    Derived macros(const impl::MacroProps& macros) &&;
-
-    /** @internal */
-    Derived macros(impl::MacroProps&& macros) const &;
-
-    /** @internal */
-    Derived macros(impl::MacroProps&& macros) &&;
+    Derived threshold(int32_t threshold) const;
 
 #endif  /* U_HIDE_INTERNAL_API */
-
-    /**
-     * Creates a skeleton string representation of this number formatter. A skeleton string is a
-     * locale-agnostic serialized form of a number formatter.
-     *
-     * Not all options are capable of being represented in the skeleton string; for example, a
-     * DecimalFormatSymbols object. If any such option is encountered, the error code is set to
-     * U_UNSUPPORTED_ERROR.
-     *
-     * The returned skeleton is in normalized form, such that two number formatters with equivalent
-     * behavior should produce the same skeleton.
-     *
-     * @return A number skeleton string with behavior corresponding to this number formatter.
-     * @draft ICU 62
-     */
-    UnicodeString toSkeleton(UErrorCode& status) const;
-
-    /**
-     * Returns the current (Un)LocalizedNumberFormatter as a LocalPointer
-     * wrapping a heap-allocated copy of the current object.
-     *
-     * This is equivalent to new-ing the move constructor with a value object
-     * as the argument.
-     *
-     * @return A wrapped (Un)LocalizedNumberFormatter pointer, or a wrapped
-     *         nullptr on failure.
-     * @draft ICU 64
-     */
-    LocalPointer<Derived> clone() const &;
-
-    /**
-     * Overload of clone for use on an rvalue reference.
-     *
-     * @return A wrapped (Un)LocalizedNumberFormatter pointer, or a wrapped
-     *         nullptr on failure.
-     * @draft ICU 64
-     */
-    LocalPointer<Derived> clone() &&;
 
     /**
      * Sets the UErrorCode if an error occurred in the fluent chain.
@@ -2117,26 +1711,19 @@ class U_I18N_API NumberFormatterSettings {
         return U_FAILURE(outErrorCode);
     }
 
-    // NOTE: Uses default copy and move constructors.
-
-  private:
+  protected:
     impl::MacroProps fMacros;
 
+  private:
     // Don't construct me directly!  Use (Un)LocalizedNumberFormatter.
     NumberFormatterSettings() = default;
 
     friend class LocalizedNumberFormatter;
     friend class UnlocalizedNumberFormatter;
-
-    // Give NumberRangeFormatter access to the MacroProps
-    friend void impl::touchRangeLocales(impl::RangeMacroProps& macros);
-    friend class impl::NumberRangeFormatterImpl;
 };
 
 /**
  * A NumberFormatter that does not yet have a locale. In order to format numbers, a locale must be specified.
- *
- * Instances of this class are immutable and thread-safe.
  *
  * @see NumberFormatter
  * @draft ICU 60
@@ -2149,62 +1736,33 @@ class U_I18N_API UnlocalizedNumberFormatter
      * Associate the given locale with the number formatter. The locale is used for picking the appropriate symbols,
      * formats, and other data for number display.
      *
+     * <p>
+     * To use the Java default locale, call Locale::getDefault():
+     *
+     * <pre>
+     * NumberFormatter::with(). ... .locale(Locale::getDefault())
+     * </pre>
+     *
      * @param locale
      *            The locale to use when loading data for number formatting.
      * @return The fluent chain.
      * @draft ICU 60
      */
-    LocalizedNumberFormatter locale(const icu::Locale &locale) const &;
+    LocalizedNumberFormatter locale(const icu::Locale &locale) const;
 
-    /**
-     * Overload of locale() for use on an rvalue reference.
-     *
-     * @param locale
-     *            The locale to use when loading data for number formatting.
-     * @return The fluent chain.
-     * @see #locale
-     * @draft ICU 62
-     */
-    LocalizedNumberFormatter locale(const icu::Locale &locale) &&;
-
-    /**
-     * Default constructor: puts the formatter into a valid but undefined state.
-     *
-     * @draft ICU 62
-     */
-    UnlocalizedNumberFormatter() = default;
-
+    // Make default copy constructor call the NumberFormatterSettings copy constructor.
     /**
      * Returns a copy of this UnlocalizedNumberFormatter.
      * @draft ICU 60
      */
-    UnlocalizedNumberFormatter(const UnlocalizedNumberFormatter &other);
-
-    /**
-     * Move constructor:
-     * The source UnlocalizedNumberFormatter will be left in a valid but undefined state.
-     * @draft ICU 62
-     */
-    UnlocalizedNumberFormatter(UnlocalizedNumberFormatter&& src) U_NOEXCEPT;
-
-    /**
-     * Copy assignment operator.
-     * @draft ICU 62
-     */
-    UnlocalizedNumberFormatter& operator=(const UnlocalizedNumberFormatter& other);
-
-    /**
-     * Move assignment operator:
-     * The source UnlocalizedNumberFormatter will be left in a valid but undefined state.
-     * @draft ICU 62
-     */
-    UnlocalizedNumberFormatter& operator=(UnlocalizedNumberFormatter&& src) U_NOEXCEPT;
+    UnlocalizedNumberFormatter(const UnlocalizedNumberFormatter &other) : UnlocalizedNumberFormatter(
+            static_cast<const NumberFormatterSettings<UnlocalizedNumberFormatter> &>(other)) {}
 
   private:
-    explicit UnlocalizedNumberFormatter(const NumberFormatterSettings<UnlocalizedNumberFormatter>& other);
+    UnlocalizedNumberFormatter() = default;
 
     explicit UnlocalizedNumberFormatter(
-            NumberFormatterSettings<UnlocalizedNumberFormatter>&& src) U_NOEXCEPT;
+            const NumberFormatterSettings<UnlocalizedNumberFormatter> &other);
 
     // To give the fluent setters access to this class's constructor:
     friend class NumberFormatterSettings<UnlocalizedNumberFormatter>;
@@ -2215,8 +1773,6 @@ class U_I18N_API UnlocalizedNumberFormatter
 
 /**
  * A NumberFormatter that has a locale associated with it; this means .format() methods are available.
- *
- * Instances of this class are immutable and thread-safe.
  *
  * @see NumberFormatter
  * @draft ICU 60
@@ -2264,83 +1820,31 @@ class U_I18N_API LocalizedNumberFormatter
      * @return A FormattedNumber object; call .toString() to get the string.
      * @draft ICU 60
      */
-    FormattedNumber formatDecimal(StringPiece value, UErrorCode& status) const;
+    FormattedNumber formatDecimal(StringPiece value, UErrorCode &status) const;
 
-#ifndef U_HIDE_INTERNAL_API
-
-    /** Internal method.
-     * @internal
-     */
-    FormattedNumber formatDecimalQuantity(const impl::DecimalQuantity& dq, UErrorCode& status) const;
-
-    /** Internal method for DecimalFormat compatibility.
-     * @internal
-     */
-    void getAffixImpl(bool isPrefix, bool isNegative, UnicodeString& result, UErrorCode& status) const;
-
-    /**
-     * Internal method for testing.
-     * @internal
-     */
-    const impl::NumberFormatterImpl* getCompiled() const;
-
-    /**
-     * Internal method for testing.
-     * @internal
-     */
-    int32_t getCallCount() const;
-
-#endif  /* U_HIDE_INTERNAL_API */
-
-    /**
-     * Creates a representation of this LocalizedNumberFormat as an icu::Format, enabling the use
-     * of this number formatter with APIs that need an object of that type, such as MessageFormat.
-     *
-     * This API is not intended to be used other than for enabling API compatibility. The formatDouble,
-     * formatInt, and formatDecimal methods should normally be used when formatting numbers, not the Format
-     * object returned by this method.
-     *
-     * The caller owns the returned object and must delete it when finished.
-     *
-     * @return A Format wrapping this LocalizedNumberFormatter.
-     * @draft ICU 62
-     */
-    Format* toFormat(UErrorCode& status) const;
-
-    /**
-     * Default constructor: puts the formatter into a valid but undefined state.
-     *
-     * @draft ICU 62
-     */
-    LocalizedNumberFormatter() = default;
-
+    // Make default copy constructor call the NumberFormatterSettings copy constructor.
     /**
      * Returns a copy of this LocalizedNumberFormatter.
      * @draft ICU 60
      */
-    LocalizedNumberFormatter(const LocalizedNumberFormatter &other);
+    LocalizedNumberFormatter(const LocalizedNumberFormatter &other) : LocalizedNumberFormatter(
+            static_cast<const NumberFormatterSettings<LocalizedNumberFormatter> &>(other)) {}
 
     /**
-     * Move constructor:
-     * The source LocalizedNumberFormatter will be left in a valid but undefined state.
-     * @draft ICU 62
+     * Destruct this LocalizedNumberFormatter, cleaning up any memory it might own.
+     * @draft ICU 60
      */
-    LocalizedNumberFormatter(LocalizedNumberFormatter&& src) U_NOEXCEPT;
+    ~LocalizedNumberFormatter();
 
-    /**
-     * Copy assignment operator.
-     * @draft ICU 62
-     */
-    LocalizedNumberFormatter& operator=(const LocalizedNumberFormatter& other);
+  private:
+    const impl::NumberFormatterImpl* fCompiled {nullptr};
+    char fUnsafeCallCount[8] {};  // internally cast to u_atomic_int32_t
 
-    /**
-     * Move assignment operator:
-     * The source LocalizedNumberFormatter will be left in a valid but undefined state.
-     * @draft ICU 62
-     */
-    LocalizedNumberFormatter& operator=(LocalizedNumberFormatter&& src) U_NOEXCEPT;
+    LocalizedNumberFormatter() = default;
 
-#ifndef U_HIDE_INTERNAL_API
+    explicit LocalizedNumberFormatter(const NumberFormatterSettings<LocalizedNumberFormatter> &other);
+
+    LocalizedNumberFormatter(const impl::MacroProps &macros, const Locale &locale);
 
     /**
      * This is the core entrypoint to the number formatting pipeline. It performs self-regulation: a static code path
@@ -2350,42 +1854,10 @@ class U_I18N_API LocalizedNumberFormatter
      * This function is very hot, being called in every call to the number formatting pipeline.
      *
      * @param results
-     *            The results object. This method will mutate it to save the results.
-     * @param status
-     * @internal
+     *            The results object. This method takes ownership.
+     * @return The formatted number result.
      */
-    void formatImpl(impl::UFormattedNumberData *results, UErrorCode &status) const;
-
-#endif  /* U_HIDE_INTERNAL_API */
-
-    /**
-     * Destruct this LocalizedNumberFormatter, cleaning up any memory it might own.
-     * @draft ICU 60
-     */
-    ~LocalizedNumberFormatter();
-
-  private:
-    // Note: fCompiled can't be a LocalPointer because impl::NumberFormatterImpl is defined in an internal
-    // header, and LocalPointer needs the full class definition in order to delete the instance.
-    const impl::NumberFormatterImpl* fCompiled {nullptr};
-    char fUnsafeCallCount[8] {};  // internally cast to u_atomic_int32_t
-
-    explicit LocalizedNumberFormatter(const NumberFormatterSettings<LocalizedNumberFormatter>& other);
-
-    explicit LocalizedNumberFormatter(NumberFormatterSettings<LocalizedNumberFormatter>&& src) U_NOEXCEPT;
-
-    LocalizedNumberFormatter(const impl::MacroProps &macros, const Locale &locale);
-
-    LocalizedNumberFormatter(impl::MacroProps &&macros, const Locale &locale);
-
-    void clear();
-
-    void lnfMoveHelper(LocalizedNumberFormatter&& src);
-
-    /**
-     * @return true if the compiled formatter is available.
-     */
-    bool computeCompiled(UErrorCode& status) const;
+    FormattedNumber formatImpl(impl::NumberFormatterResults *results, UErrorCode &status) const;
 
     // To give the fluent setters access to this class's constructor:
     friend class NumberFormatterSettings<UnlocalizedNumberFormatter>;
@@ -2399,162 +1871,87 @@ class U_I18N_API LocalizedNumberFormatter
  * The result of a number formatting operation. This class allows the result to be exported in several data types,
  * including a UnicodeString and a FieldPositionIterator.
  *
- * Instances of this class are immutable and thread-safe.
- *
  * @draft ICU 60
  */
-class U_I18N_API FormattedNumber : public UMemory, public FormattedValue {
+class U_I18N_API FormattedNumber : public UMemory {
   public:
-
     /**
-     * Default constructor; makes an empty FormattedNumber.
-     * @draft ICU 64
-     */
-    FormattedNumber()
-        : fData(nullptr), fErrorCode(U_INVALID_STATE_ERROR) {}
-
-    /**
-     * Move constructor: Leaves the source FormattedNumber in an undefined state.
-     * @draft ICU 62
-     */
-    FormattedNumber(FormattedNumber&& src) U_NOEXCEPT;
-
-    /**
-     * Destruct an instance of FormattedNumber.
+     * Returns a UnicodeString representation of the formatted number.
+     *
+     * @return a UnicodeString containing the localized number.
      * @draft ICU 60
      */
-    virtual ~FormattedNumber() U_OVERRIDE;
-
-    /** Copying not supported; use move constructor instead. */
-    FormattedNumber(const FormattedNumber&) = delete;
-
-    /** Copying not supported; use move assignment instead. */
-    FormattedNumber& operator=(const FormattedNumber&) = delete;
+    UnicodeString toString() const;
 
     /**
-     * Move assignment: Leaves the source FormattedNumber in an undefined state.
-     * @draft ICU 62
+     * Appends the formatted number to an Appendable.
+     *
+     * @param appendable
+     *            The Appendable to which to append the formatted number string.
+     * @return The same Appendable, for chaining.
+     * @draft ICU 60
+     * @see Appendable
      */
-    FormattedNumber& operator=(FormattedNumber&& src) U_NOEXCEPT;
-
-    // Copybrief: this method is older than the parent method
-    /**
-     * @copybrief FormattedValue::toString()
-     *
-     * For more information, see FormattedValue::toString()
-     *
-     * @draft ICU 62
-     */
-    UnicodeString toString(UErrorCode& status) const U_OVERRIDE;
-
-    // Copydoc: this method is new in ICU 64
-    /** @copydoc FormattedValue::toTempString() */
-    UnicodeString toTempString(UErrorCode& status) const U_OVERRIDE;
-
-    // Copybrief: this method is older than the parent method
-    /**
-     * @copybrief FormattedValue::appendTo()
-     *
-     * For more information, see FormattedValue::appendTo()
-     *
-     * @draft ICU 62
-     */
-    Appendable &appendTo(Appendable& appendable, UErrorCode& status) const U_OVERRIDE;
-
-    // Copydoc: this method is new in ICU 64
-    /** @copydoc FormattedValue::nextPosition() */
-    UBool nextPosition(ConstrainedFieldPosition& cfpos, UErrorCode& status) const U_OVERRIDE;
+    Appendable &appendTo(Appendable &appendable);
 
     /**
-     * Determines the start (inclusive) and end (exclusive) indices of the next occurrence of the given
-     * <em>field</em> in the output string. This allows you to determine the locations of, for example,
-     * the integer part, fraction part, or symbols.
+     * Determine the start and end indices of the first occurrence of the given <em>field</em> in the output string.
+     * This allows you to determine the locations of the integer part, fraction part, and sign.
      *
-     * This is a simpler but less powerful alternative to {@link #nextPosition}.
+     * <p>
+     * If multiple different field attributes are needed, this method can be called repeatedly, or if <em>all</em> field
+     * attributes are needed, consider using populateFieldPositionIterator().
      *
-     * If a field occurs just once, calling this method will find that occurrence and return it. If a
-     * field occurs multiple times, this method may be called repeatedly with the following pattern:
-     *
-     * <pre>
-     * FieldPosition fpos(UNUM_GROUPING_SEPARATOR_FIELD);
-     * while (formattedNumber.nextFieldPosition(fpos, status)) {
-     *   // do something with fpos.
-     * }
-     * </pre>
-     *
-     * This method is useful if you know which field to query. If you want all available field position
-     * information, use {@link #nextPosition} or {@link #getAllFieldPositions}.
+     * <p>
+     * If a field occurs multiple times in an output string, such as a grouping separator, this method will only ever
+     * return the first occurrence. Use populateFieldPositionIterator() to access all occurrences of an attribute.
      *
      * @param fieldPosition
-     *            Input+output variable. On input, the "field" property determines which field to look
-     *            up, and the "beginIndex" and "endIndex" properties determine where to begin the search.
-     *            On output, the "beginIndex" is set to the beginning of the first occurrence of the
-     *            field with either begin or end indices after the input indices; "endIndex" is set to
-     *            the end of that occurrence of the field (exclusive index). If a field position is not
-     *            found, the method returns FALSE and the FieldPosition may or may not be changed.
+     *            The FieldPosition to populate with the start and end indices of the desired field.
      * @param status
      *            Set if an error occurs while populating the FieldPosition.
-     * @return TRUE if a new occurrence of the field was found; FALSE otherwise.
-     * @draft ICU 62
+     * @draft ICU 60
      * @see UNumberFormatFields
      */
-    UBool nextFieldPosition(FieldPosition& fieldPosition, UErrorCode& status) const;
+    void populateFieldPosition(FieldPosition &fieldPosition, UErrorCode &status);
 
     /**
      * Export the formatted number to a FieldPositionIterator. This allows you to determine which characters in
      * the output string correspond to which <em>fields</em>, such as the integer part, fraction part, and sign.
      *
-     * This is an alternative to the more powerful #nextPosition() API.
-     *
-     * If information on only one field is needed, use #nextPosition() or #nextFieldPosition() instead.
+     * <p>
+     * If information on only one field is needed, consider using populateFieldPosition() instead.
      *
      * @param iterator
      *            The FieldPositionIterator to populate with all of the fields present in the formatted number.
      * @param status
      *            Set if an error occurs while populating the FieldPositionIterator.
-     * @draft ICU 62
+     * @draft ICU 60
      * @see UNumberFormatFields
      */
-    void getAllFieldPositions(FieldPositionIterator &iterator, UErrorCode &status) const;
-
-#ifndef U_HIDE_INTERNAL_API
+    void populateFieldPositionIterator(FieldPositionIterator &iterator, UErrorCode &status);
 
     /**
-     *  Gets the raw DecimalQuantity for plural rule selection.
-     *  @internal
+     * Destruct an instance of FormattedNumber, cleaning up any memory it might own.
+     * @draft ICU 60
      */
-    void getDecimalQuantity(impl::DecimalQuantity& output, UErrorCode& status) const;
-
-    /**
-     * Populates the mutable builder type FieldPositionIteratorHandler.
-     * @internal
-     */
-    void getAllFieldPositionsImpl(FieldPositionIteratorHandler& fpih, UErrorCode& status) const;
-
-#endif  /* U_HIDE_INTERNAL_API */
+    ~FormattedNumber();
 
   private:
-    // Can't use LocalPointer because UFormattedNumberData is forward-declared
-    const impl::UFormattedNumberData *fData;
+    // Can't use LocalPointer because NumberFormatterResults is forward-declared
+    const impl::NumberFormatterResults *fResults;
 
     // Error code for the terminal methods
     UErrorCode fErrorCode;
 
-    /**
-     * Internal constructor from data type. Adopts the data pointer.
-     * @internal
-     */
-    explicit FormattedNumber(impl::UFormattedNumberData *results)
-        : fData(results), fErrorCode(U_ZERO_ERROR) {}
+    explicit FormattedNumber(impl::NumberFormatterResults *results)
+        : fResults(results), fErrorCode(U_ZERO_ERROR) {};
 
     explicit FormattedNumber(UErrorCode errorCode)
-        : fData(nullptr), fErrorCode(errorCode) {}
+        : fResults(nullptr), fErrorCode(errorCode) {};
 
     // To give LocalizedNumberFormatter format methods access to this class's constructor:
     friend class LocalizedNumberFormatter;
-
-    // To give C API access to internals
-    friend struct impl::UFormattedNumberImpl;
 };
 
 /**
@@ -2585,43 +1982,8 @@ class U_I18N_API NumberFormatter final {
     static LocalizedNumberFormatter withLocale(const Locale &locale);
 
     /**
-     * Call this method at the beginning of a NumberFormatter fluent chain to create an instance based
-     * on a given number skeleton string.
-     *
-     * It is possible for an error to occur while parsing. See the overload of this method if you are
-     * interested in the location of a possible parse error.
-     *
-     * @param skeleton
-     *            The skeleton string off of which to base this NumberFormatter.
-     * @param status
-     *            Set to U_NUMBER_SKELETON_SYNTAX_ERROR if the skeleton was invalid.
-     * @return An UnlocalizedNumberFormatter, to be used for chaining.
-     * @draft ICU 62
-     */
-    static UnlocalizedNumberFormatter forSkeleton(const UnicodeString& skeleton, UErrorCode& status);
-
-    /**
-     * Call this method at the beginning of a NumberFormatter fluent chain to create an instance based
-     * on a given number skeleton string.
-     *
-     * If an error occurs while parsing the skeleton string, the offset into the skeleton string at
-     * which the error occurred will be saved into the UParseError, if provided.
-     *
-     * @param skeleton
-     *            The skeleton string off of which to base this NumberFormatter.
-     * @param perror
-     *            A parse error struct populated if an error occurs when parsing.
- *                If no error occurs, perror.offset will be set to -1.
-     * @param status
-     *            Set to U_NUMBER_SKELETON_SYNTAX_ERROR if the skeleton was invalid.
-     * @return An UnlocalizedNumberFormatter, to be used for chaining.
-     * @draft ICU 64
-     */
-    static UnlocalizedNumberFormatter forSkeleton(const UnicodeString& skeleton,
-                                                  UParseError& perror, UErrorCode& status);
-
-    /**
      * Use factory methods instead of the constructor to create a NumberFormatter.
+     * @draft ICU 60
      */
     NumberFormatter() = delete;
 };

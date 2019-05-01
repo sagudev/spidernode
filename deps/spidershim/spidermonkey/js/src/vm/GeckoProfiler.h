@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,7 +32,7 @@
  * is pushed onto a stack that the profiler owns and maintains. This
  * information is then popped at the end of the JS function. The profiler
  * informs the JS engine of this stack at runtime, and it can by turned on/off
- * dynamically. Each stack frame has type ProfilingStackFrame.
+ * dynamically. Each stack entry has type ProfileEntry.
  *
  * Throughout execution, the size of the stack recorded in memory may exceed the
  * maximum. The JS engine will not write any information past the maximum limit,
@@ -46,7 +46,7 @@
  * available. The other bit of information is the relevant C++ (native) stack
  * pointer. This stack pointer is what enables the interleaving of the C++ and
  * the JS stack. Finally, throughout execution of the function, some extra
- * information may be updated on the ProfilingStackFrame structure.
+ * information may be updated on the ProfileEntry structure.
  *
  * = Profile Strings
  *
@@ -82,7 +82,7 @@
  *
  * One goal of sampling is to get both a backtrace of the JS stack, but also
  * know where within each function on the stack execution currently is. For
- * this, each ProfilingStackFrame has a 'pc' field to tell where its execution
+ * this, each ProfileEntry has a 'pc' field to tell where its execution
  * currently is. This field is updated whenever a call is made to another JS
  * function, and for the JIT it is also updated whenever the JIT is left.
  *
@@ -93,7 +93,7 @@
  *
  * As an invariant, if the pc is nullptr, then the JIT is currently executing
  * generated code. Otherwise execution is in another JS function or in C++. With
- * this in place, only the top frame of the stack can ever have nullptr as its
+ * this in place, only the top entry of the stack can ever have nullptr as its
  * pc. Additionally with this invariant, it is possible to maintain mappings of
  * JIT code to pc which can be accessed safely because they will only be
  * accessed from a signal handler when the JIT code is executing.
@@ -118,6 +118,8 @@ class GeckoProfilerRuntime {
 
  public:
   explicit GeckoProfilerRuntime(JSRuntime* rt);
+
+  bool init();
 
   /* management of whether instrumentation is on or off */
   bool enabled() { return enabled_; }
@@ -169,7 +171,7 @@ class MOZ_RAII GeckoProfilerEntryMarker {
 };
 
 /*
- * RAII class to automatically add Gecko Profiler profiling stack frames.
+ * RAII class to automatically add Gecko Profiler pseudo frame entries.
  *
  * NB: The `label` string must be statically allocated.
  */
@@ -177,8 +179,8 @@ class MOZ_NONHEAP_CLASS AutoGeckoProfilerEntry {
  public:
   explicit MOZ_ALWAYS_INLINE AutoGeckoProfilerEntry(
       JSContext* cx, const char* label,
-      JS::ProfilingCategoryPair categoryPair = JS::ProfilingCategoryPair::JS,
-      uint32_t flags = 0 MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+      ProfileEntry::Category category =
+          ProfileEntry::Category::JS MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
   MOZ_ALWAYS_INLINE ~AutoGeckoProfilerEntry();
 
  private:
@@ -191,7 +193,7 @@ class MOZ_NONHEAP_CLASS AutoGeckoProfilerEntry {
 
 /*
  * This class is used in the interpreter to bound regions where the baseline JIT
- * being entered via OSR.  It marks the current top profiling stack frame as
+ * being entered via OSR.  It marks the current top pseudostack entry as
  * OSR-ed
  */
 class MOZ_RAII GeckoProfilerBaselineOSRMarker {

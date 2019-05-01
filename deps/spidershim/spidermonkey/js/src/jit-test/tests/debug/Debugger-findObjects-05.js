@@ -1,6 +1,6 @@
 // findObjects' result doesn't include any duplicates.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger();
 dbg.addDebuggee(g);
 

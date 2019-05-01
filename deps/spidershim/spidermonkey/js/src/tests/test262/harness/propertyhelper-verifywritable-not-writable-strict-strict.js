@@ -7,7 +7,7 @@ description: >
     Objects whose specified property is not writable do not satisfy the
     assertion in strict mode.
 
-includes: [propertyHelper.js]
+includes: [propertyHelper.js,sta.js]
 flags: [onlyStrict]
 ---*/
 var threw = false;

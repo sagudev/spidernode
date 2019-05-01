@@ -13,7 +13,6 @@ import os
 from .. import base
 
 from collections import defaultdict
-import six
 
 html = None
 raw = None
@@ -76,8 +75,8 @@ class HTMLFormatter(base.BaseFormatter):
                 if version_info.get("application_repository"):
                     self.env["Gecko revision"] = html.a(
                         version_info.get("application_changeset"),
-                        href="/rev/".join([version_info.get("application_repository"),
-                                           version_info.get("application_changeset")]),
+                        href="/".join([version_info.get("application_repository"),
+                                       version_info.get("application_changeset")]),
                         target="_blank")
 
             if version_info.get("gaia_changeset"):
@@ -161,11 +160,8 @@ class HTMLFormatter(base.BaseFormatter):
                     # Encode base64 to avoid that some browsers (such as Firefox, Opera)
                     # treats '#' as the start of another link if it is contained in the data URL.
                     # Use 'charset=utf-8' to show special characters like Chinese.
-                    utf8_encoded_bytes = six.text_type(content).encode('utf-8',
-                                                                       'xmlcharrefreplace')
-                    b64_encoded_bytes = base64.b64encode(utf8_encoded_bytes)
-                    b64_encoded_str = b64_encoded_bytes.decode()
-                    href = "data:text/html;charset=utf-8;base64,{0}".format(b64_encoded_str)
+                    utf_encoded = unicode(content).encode('utf-8', 'xmlcharrefreplace')
+                    href = 'data:text/html;charset=utf-8;base64,%s' % base64.b64encode(utf_encoded)
 
                 links_html.append(html.a(
                     name.title(),
@@ -214,7 +210,7 @@ class HTMLFormatter(base.BaseFormatter):
                         id='environment'),
 
                     html.h2('Summary'),
-                    html.p('%i tests ran in %.1f seconds.' % (sum(six.itervalues(self.test_count)),
+                    html.p('%i tests ran in %.1f seconds.' % (sum(self.test_count.itervalues()),
                                                               (self.suite_times["end"] -
                                                                self.suite_times["start"]) / 1000.),
                            html.br(),

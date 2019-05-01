@@ -3,36 +3,47 @@
 
 #include "unicode/utypes.h"
 
-#if !UCONFIG_NO_FORMATTING
+#if !UCONFIG_NO_FORMATTING && !UPRV_INCOMPLETE_CPP11_SUPPORT
 
-#include <cstdlib>
-#include <cmath>
-#include <limits>
-#include <stdlib.h>
-
-#include "unicode/plurrule.h"
-#include "cmemory.h"
-#include "number_decnum.h"
-#include "putilimp.h"
-#include "number_decimalquantity.h"
-#include "number_roundingutils.h"
-#include "double-conversion.h"
-#include "charstr.h"
-#include "number_utils.h"
 #include "uassert.h"
+#include <cmath>
+#include "cmemory.h"
+#include "decNumber.h"
+#include <limits>
+#include "number_decimalquantity.h"
+#include "decContext.h"
+#include "decNumber.h"
+#include "number_roundingutils.h"
+#include "unicode/plurrule.h"
 
 using namespace icu;
 using namespace icu::number;
 using namespace icu::number::impl;
-
-using icu::double_conversion::DoubleToStringConverter;
-using icu::double_conversion::StringToDoubleConverter;
 
 namespace {
 
 int8_t NEGATIVE_FLAG = 1;
 int8_t INFINITY_FLAG = 2;
 int8_t NAN_FLAG = 4;
+
+static constexpr int32_t DEFAULT_DIGITS = 34;
+typedef MaybeStackHeaderAndArray<decNumber, char, DEFAULT_DIGITS> DecNumberWithStorage;
+
+/** Helper function to convert a decNumber-compatible string into a decNumber. */
+void stringToDecNumber(StringPiece n, DecNumberWithStorage &dn) {
+    decContext set;
+    uprv_decContextDefault(&set, DEC_INIT_BASE);
+    uprv_decContextSetRounding(&set, DEC_ROUND_HALF_EVEN);
+    set.traps = 0; // no traps, thank you
+    if (n.length() > DEFAULT_DIGITS) {
+        dn.resize(n.length(), 0);
+        set.digits = n.length();
+    } else {
+        set.digits = DEFAULT_DIGITS;
+    }
+    uprv_decNumberFromString(dn.getAlias(), n.data(), &set);
+    U_ASSERT(DECDPUN == 1);
+}
 
 /** Helper function for safe subtraction (no overflow). */
 inline int32_t safeSubtract(int32_t a, int32_t b) {
@@ -69,7 +80,6 @@ static double DOUBLE_MULTIPLIERS[] = {
 
 }  // namespace
 
-icu::IFixedDecimal::~IFixedDecimal() = default;
 
 DecimalQuantity::DecimalQuantity() {
     setBcdToZero();
@@ -88,150 +98,88 @@ DecimalQuantity::DecimalQuantity(const DecimalQuantity &other) {
     *this = other;
 }
 
-DecimalQuantity::DecimalQuantity(DecimalQuantity&& src) U_NOEXCEPT {
-    *this = std::move(src);
-}
-
 DecimalQuantity &DecimalQuantity::operator=(const DecimalQuantity &other) {
     if (this == &other) {
         return *this;
     }
     copyBcdFrom(other);
-    copyFieldsFrom(other);
-    return *this;
-}
-
-DecimalQuantity& DecimalQuantity::operator=(DecimalQuantity&& src) U_NOEXCEPT {
-    if (this == &src) {
-        return *this;
-    }
-    moveBcdFrom(src);
-    copyFieldsFrom(src);
-    return *this;
-}
-
-void DecimalQuantity::copyFieldsFrom(const DecimalQuantity& other) {
-    bogus = other.bogus;
+    lOptPos = other.lOptPos;
     lReqPos = other.lReqPos;
     rReqPos = other.rReqPos;
+    rOptPos = other.rOptPos;
     scale = other.scale;
     precision = other.precision;
     flags = other.flags;
     origDouble = other.origDouble;
     origDelta = other.origDelta;
     isApproximate = other.isApproximate;
+    return *this;
 }
 
 void DecimalQuantity::clear() {
+    lOptPos = INT32_MAX;
     lReqPos = 0;
     rReqPos = 0;
+    rOptPos = INT32_MIN;
     flags = 0;
     setBcdToZero(); // sets scale, precision, hasDouble, origDouble, origDelta, and BCD data
 }
 
-void DecimalQuantity::setMinInteger(int32_t minInt) {
-    // Validation should happen outside of DecimalQuantity, e.g., in the Precision class.
+void DecimalQuantity::setIntegerLength(int32_t minInt, int32_t maxInt) {
+    // Validation should happen outside of DecimalQuantity, e.g., in the Rounder class.
     U_ASSERT(minInt >= 0);
-
-    // Special behavior: do not set minInt to be less than what is already set.
-    // This is so significant digits rounding can set the integer length.
-    if (minInt < lReqPos) {
-        minInt = lReqPos;
-    }
+    U_ASSERT(maxInt >= minInt);
 
     // Save values into internal state
+    // Negation is safe for minFrac/maxFrac because -Integer.MAX_VALUE > Integer.MIN_VALUE
+    lOptPos = maxInt;
     lReqPos = minInt;
 }
 
-void DecimalQuantity::setMinFraction(int32_t minFrac) {
-    // Validation should happen outside of DecimalQuantity, e.g., in the Precision class.
+void DecimalQuantity::setFractionLength(int32_t minFrac, int32_t maxFrac) {
+    // Validation should happen outside of DecimalQuantity, e.g., in the Rounder class.
     U_ASSERT(minFrac >= 0);
+    U_ASSERT(maxFrac >= minFrac);
 
     // Save values into internal state
     // Negation is safe for minFrac/maxFrac because -Integer.MAX_VALUE > Integer.MIN_VALUE
     rReqPos = -minFrac;
-}
-
-void DecimalQuantity::applyMaxInteger(int32_t maxInt) {
-    // Validation should happen outside of DecimalQuantity, e.g., in the Precision class.
-    U_ASSERT(maxInt >= 0);
-
-    if (precision == 0) {
-        return;
-    }
-
-    if (maxInt <= scale) {
-        setBcdToZero();
-        return;
-    }
-
-    int32_t magnitude = getMagnitude();
-    if (maxInt <= magnitude) {
-        popFromLeft(magnitude - maxInt + 1);
-        compact();
-    }
+    rOptPos = -maxFrac;
 }
 
 uint64_t DecimalQuantity::getPositionFingerprint() const {
     uint64_t fingerprint = 0;
+    fingerprint ^= lOptPos;
     fingerprint ^= (lReqPos << 16);
     fingerprint ^= (static_cast<uint64_t>(rReqPos) << 32);
+    fingerprint ^= (static_cast<uint64_t>(rOptPos) << 48);
     return fingerprint;
 }
 
 void DecimalQuantity::roundToIncrement(double roundingIncrement, RoundingMode roundingMode,
-                                       UErrorCode& status) {
-    // Do not call this method with an increment having only a 1 or a 5 digit!
-    // Use a more efficient call to either roundToMagnitude() or roundToNickel().
-    // Check a few popular rounding increments; a more thorough check is in Java.
-    U_ASSERT(roundingIncrement != 0.01);
-    U_ASSERT(roundingIncrement != 0.05);
-    U_ASSERT(roundingIncrement != 0.1);
-    U_ASSERT(roundingIncrement != 0.5);
-    U_ASSERT(roundingIncrement != 1);
-    U_ASSERT(roundingIncrement != 5);
-
-    DecNum incrementDN;
-    incrementDN.setTo(roundingIncrement, status);
-    if (U_FAILURE(status)) { return; }
-
-    // Divide this DecimalQuantity by the increment, round, then multiply back.
-    divideBy(incrementDN, status);
-    if (U_FAILURE(status)) { return; }
+                                       int32_t minMaxFrac, UErrorCode& status) {
+    // TODO: This is innefficient.  Improve?
+    // TODO: Should we convert to decNumber instead?
+    double temp = toDouble();
+    temp /= roundingIncrement;
+    setToDouble(temp);
     roundToMagnitude(0, roundingMode, status);
-    if (U_FAILURE(status)) { return; }
-    multiplyBy(incrementDN, status);
-    if (U_FAILURE(status)) { return; }
+    temp = toDouble();
+    temp *= roundingIncrement;
+    setToDouble(temp);
+    // Since we reset the value to a double, we need to specify the rounding boundary
+    // in order to get the DecimalQuantity out of approximation mode.
+    roundToMagnitude(-minMaxFrac, roundingMode, status);
 }
 
-void DecimalQuantity::multiplyBy(const DecNum& multiplicand, UErrorCode& status) {
+void DecimalQuantity::multiplyBy(int32_t multiplicand) {
     if (isInfinite() || isZero() || isNaN()) {
         return;
     }
-    // Convert to DecNum, multiply, and convert back.
-    DecNum decnum;
-    toDecNum(decnum, status);
-    if (U_FAILURE(status)) { return; }
-    decnum.multiplyBy(multiplicand, status);
-    if (U_FAILURE(status)) { return; }
-    setToDecNum(decnum, status);
-}
-
-void DecimalQuantity::divideBy(const DecNum& divisor, UErrorCode& status) {
-    if (isInfinite() || isZero() || isNaN()) {
-        return;
-    }
-    // Convert to DecNum, multiply, and convert back.
-    DecNum decnum;
-    toDecNum(decnum, status);
-    if (U_FAILURE(status)) { return; }
-    decnum.divideBy(divisor, status);
-    if (U_FAILURE(status)) { return; }
-    setToDecNum(decnum, status);
-}
-
-void DecimalQuantity::negate() {
-    flags ^= NEGATIVE_FLAG;
+    // TODO: Should we convert to decNumber instead?
+    double temp = toDouble();
+    temp *= multiplicand;
+    setToDouble(temp);
 }
 
 int32_t DecimalQuantity::getMagnitude() const {
@@ -239,17 +187,21 @@ int32_t DecimalQuantity::getMagnitude() const {
     return scale + precision - 1;
 }
 
-bool DecimalQuantity::adjustMagnitude(int32_t delta) {
+void DecimalQuantity::adjustMagnitude(int32_t delta) {
     if (precision != 0) {
-        // i.e., scale += delta; origDelta += delta
-        bool overflow = uprv_add32_overflow(scale, delta, &scale);
-        overflow = uprv_add32_overflow(origDelta, delta, &origDelta) || overflow;
-        // Make sure that precision + scale won't overflow, either
-        int32_t dummy;
-        overflow = overflow || uprv_add32_overflow(scale, precision, &dummy);
-        return overflow;
+        scale += delta;
+        origDelta += delta;
     }
-    return false;
+}
+
+StandardPlural::Form DecimalQuantity::getStandardPlural(const PluralRules *rules) const {
+    if (rules == nullptr) {
+        // Fail gracefully if the user didn't provide a PluralRules
+        return StandardPlural::Form::OTHER;
+    } else {
+        UnicodeString ruleString = rules->select(*this);
+        return StandardPlural::orOtherFromString(ruleString);
+    }
 }
 
 double DecimalQuantity::getPluralOperand(PluralOperand operand) const {
@@ -259,8 +211,7 @@ double DecimalQuantity::getPluralOperand(PluralOperand operand) const {
 
     switch (operand) {
         case PLURAL_OPERAND_I:
-            // Invert the negative sign if necessary
-            return static_cast<double>(isNegative() ? -toLong(true) : toLong(true));
+            return static_cast<double>(toLong());
         case PLURAL_OPERAND_F:
             return static_cast<double>(toFractionLong(true));
         case PLURAL_OPERAND_T:
@@ -274,17 +225,13 @@ double DecimalQuantity::getPluralOperand(PluralOperand operand) const {
     }
 }
 
-bool DecimalQuantity::hasIntegerValue() const {
-    return scale >= 0;
-}
-
 int32_t DecimalQuantity::getUpperDisplayMagnitude() const {
     // If this assertion fails, you need to call roundToInfinity() or some other rounding method.
     // See the comment in the header file explaining the "isApproximate" field.
     U_ASSERT(!isApproximate);
 
     int32_t magnitude = scale + precision;
-    int32_t result = (lReqPos > magnitude) ? lReqPos : magnitude;
+    int32_t result = (lReqPos > magnitude) ? lReqPos : (lOptPos < magnitude) ? lOptPos : magnitude;
     return result - 1;
 }
 
@@ -294,7 +241,7 @@ int32_t DecimalQuantity::getLowerDisplayMagnitude() const {
     U_ASSERT(!isApproximate);
 
     int32_t magnitude = scale;
-    int32_t result = (rReqPos < magnitude) ? rReqPos : magnitude;
+    int32_t result = (rReqPos < magnitude) ? rReqPos : (rOptPos > magnitude) ? rOptPos : magnitude;
     return result;
 }
 
@@ -318,10 +265,6 @@ bool DecimalQuantity::isNegative() const {
     return (flags & NEGATIVE_FLAG) != 0;
 }
 
-int8_t DecimalQuantity::signum() const {
-    return isNegative() ? -1 : isZero() ? 0 : 1;
-}
-
 bool DecimalQuantity::isInfinite() const {
     return (flags & INFINITY_FLAG) != 0;
 }
@@ -337,10 +280,7 @@ bool DecimalQuantity::isZero() const {
 DecimalQuantity &DecimalQuantity::setToInt(int32_t n) {
     setBcdToZero();
     flags = 0;
-    if (n == INT32_MIN) {
-        flags |= NEGATIVE_FLAG;
-        // leave as INT32_MIN; handled below in _setToInt()
-    } else if (n < 0) {
+    if (n < 0) {
         flags |= NEGATIVE_FLAG;
         n = -n;
     }
@@ -362,7 +302,7 @@ void DecimalQuantity::_setToInt(int32_t n) {
 DecimalQuantity &DecimalQuantity::setToLong(int64_t n) {
     setBcdToZero();
     flags = 0;
-    if (n < 0 && n > INT64_MIN) {
+    if (n < 0) {
         flags |= NEGATIVE_FLAG;
         n = -n;
     }
@@ -375,12 +315,10 @@ DecimalQuantity &DecimalQuantity::setToLong(int64_t n) {
 
 void DecimalQuantity::_setToLong(int64_t n) {
     if (n == INT64_MIN) {
-        DecNum decnum;
-        UErrorCode localStatus = U_ZERO_ERROR;
-        decnum.setTo("9.223372036854775808E+18", localStatus);
-        if (U_FAILURE(localStatus)) { return; } // unexpected
-        flags |= NEGATIVE_FLAG;
-        readDecNumberToBcd(decnum);
+        static const char *int64minStr = "9.223372036854775808E+18";
+        DecNumberWithStorage dn;
+        stringToDecNumber(int64minStr, dn);
+        readDecNumberToBcd(dn.getAlias());
     } else if (n <= INT32_MAX) {
         readIntToBcd(static_cast<int32_t>(n));
     } else {
@@ -392,7 +330,7 @@ DecimalQuantity &DecimalQuantity::setToDouble(double n) {
     setBcdToZero();
     flags = 0;
     // signbit() from <math.h> handles +0.0 vs -0.0
-    if (std::signbit(n)) {
+    if (std::signbit(n) != 0) {
         flags |= NEGATIVE_FLAG;
         n = -n;
     }
@@ -454,132 +392,80 @@ void DecimalQuantity::_setToDoubleFast(double n) {
 }
 
 void DecimalQuantity::convertToAccurateDouble() {
-    U_ASSERT(origDouble != 0);
+    double n = origDouble;
+    U_ASSERT(n != 0);
     int32_t delta = origDelta;
-
-    // Call the slow oracle function (Double.toString in Java, DoubleToAscii in C++).
-    char buffer[DoubleToStringConverter::kBase10MaximalLength + 1];
-    bool sign; // unused; always positive
-    int32_t length;
-    int32_t point;
-    DoubleToStringConverter::DoubleToAscii(
-        origDouble,
-        DoubleToStringConverter::DtoaMode::SHORTEST,
-        0,
-        buffer,
-        sizeof(buffer),
-        &sign,
-        &length,
-        &point
-    );
-
     setBcdToZero();
-    readDoubleConversionToBcd(buffer, length, point);
+
+    // Call the slow oracle function (Double.toString in Java, sprintf in C++).
+    // The <float.h> constant DBL_DIG defines a platform-specific number of digits in a double.
+    // However, this tends to be too low (see #11318). Instead, we always use 14 decimal places.
+    static constexpr size_t CAP = 1 + 14 + 8; // Extra space for '+', '.', e+NNN, and '\0'
+    char dstr[CAP];
+    snprintf(dstr, CAP, "%+1.14e", n);
+
+    // uprv_decNumberFromString() will parse the string expecting '.' as a
+    // decimal separator, however sprintf() can use ',' in certain locales.
+    // Overwrite a ',' with '.' here before proceeding.
+    char *decimalSeparator = strchr(dstr, ',');
+    if (decimalSeparator != nullptr) {
+        *decimalSeparator = '.';
+    }
+
+    StringPiece sp(dstr);
+    DecNumberWithStorage dn;
+    stringToDecNumber(dstr, dn);
+    _setToDecNumber(dn.getAlias());
+
     scale += delta;
     explicitExactDouble = true;
 }
 
-DecimalQuantity &DecimalQuantity::setToDecNumber(StringPiece n, UErrorCode& status) {
+DecimalQuantity &DecimalQuantity::setToDecNumber(StringPiece n) {
     setBcdToZero();
     flags = 0;
 
-    // Compute the decNumber representation
-    DecNum decnum;
-    decnum.setTo(n, status);
+    DecNumberWithStorage dn;
+    stringToDecNumber(n, dn);
 
-    _setToDecNum(decnum, status);
-    return *this;
-}
-
-DecimalQuantity& DecimalQuantity::setToDecNum(const DecNum& decnum, UErrorCode& status) {
-    setBcdToZero();
-    flags = 0;
-
-    _setToDecNum(decnum, status);
-    return *this;
-}
-
-void DecimalQuantity::_setToDecNum(const DecNum& decnum, UErrorCode& status) {
-    if (U_FAILURE(status)) { return; }
-    if (decnum.isNegative()) {
+    // The code path for decNumber is modeled after BigDecimal in Java.
+    if (decNumberIsNegative(dn.getAlias())) {
         flags |= NEGATIVE_FLAG;
     }
-    if (!decnum.isZero()) {
-        readDecNumberToBcd(decnum);
-        compact();
+    if (!decNumberIsZero(dn.getAlias())) {
+        _setToDecNumber(dn.getAlias());
     }
+    return *this;
 }
 
-int64_t DecimalQuantity::toLong(bool truncateIfOverflow) const {
-    // NOTE: Call sites should be guarded by fitsInLong(), like this:
-    // if (dq.fitsInLong()) { /* use dq.toLong() */ } else { /* use some fallback */ }
-    // Fallback behavior upon truncateIfOverflow is to truncate at 17 digits.
-    uint64_t result = 0L;
-    int32_t upperMagnitude = scale + precision - 1;
-    if (truncateIfOverflow) {
-        upperMagnitude = std::min(upperMagnitude, 17);
-    }
-    for (int32_t magnitude = upperMagnitude; magnitude >= 0; magnitude--) {
-        result = result * 10 + getDigitPos(magnitude - scale);
-    }
-    if (isNegative()) {
-        return static_cast<int64_t>(0LL - result); // i.e., -result
-    }
-    return static_cast<int64_t>(result);
+void DecimalQuantity::_setToDecNumber(decNumber *n) {
+    // Java fastpaths for ints here. In C++, just always read directly from the decNumber.
+    readDecNumberToBcd(n);
+    compact();
 }
 
-uint64_t DecimalQuantity::toFractionLong(bool includeTrailingZeros) const {
-    uint64_t result = 0L;
-    int32_t magnitude = -1;
-    int32_t lowerMagnitude = scale;
-    if (includeTrailingZeros) {
-        lowerMagnitude = std::min(lowerMagnitude, rReqPos);
-    }
-    for (; magnitude >= lowerMagnitude && result <= 1e18L; magnitude--) {
+int64_t DecimalQuantity::toLong() const {
+    int64_t result = 0L;
+    for (int32_t magnitude = scale + precision - 1; magnitude >= 0; magnitude--) {
         result = result * 10 + getDigitPos(magnitude - scale);
-    }
-    // Remove trailing zeros; this can happen during integer overflow cases.
-    if (!includeTrailingZeros) {
-        while (result > 0 && (result % 10) == 0) {
-            result /= 10;
-        }
     }
     return result;
 }
 
-bool DecimalQuantity::fitsInLong(bool ignoreFraction) const {
-    if (isZero()) {
-        return true;
+int64_t DecimalQuantity::toFractionLong(bool includeTrailingZeros) const {
+    int64_t result = 0L;
+    int32_t magnitude = -1;
+    for (; (magnitude >= scale || (includeTrailingZeros && magnitude >= rReqPos)) &&
+           magnitude >= rOptPos; magnitude--) {
+        result = result * 10 + getDigitPos(magnitude - scale);
     }
-    if (scale < 0 && !ignoreFraction) {
-        return false;
-    }
-    int magnitude = getMagnitude();
-    if (magnitude < 18) {
-        return true;
-    }
-    if (magnitude > 18) {
-        return false;
-    }
-    // Hard case: the magnitude is 10^18.
-    // The largest int64 is: 9,223,372,036,854,775,807
-    for (int p = 0; p < precision; p++) {
-        int8_t digit = getDigit(18 - p);
-        static int8_t INT64_BCD[] = { 9, 2, 2, 3, 3, 7, 2, 0, 3, 6, 8, 5, 4, 7, 7, 5, 8, 0, 8 };
-        if (digit < INT64_BCD[p]) {
-            return true;
-        } else if (digit > INT64_BCD[p]) {
-            return false;
-        }
-    }
-    // Exactly equal to max long plus one.
-    return isNegative();
+    return result;
 }
 
 double DecimalQuantity::toDouble() const {
-    // If this assertion fails, you need to call roundToInfinity() or some other rounding method.
-    // See the comment in the header file explaining the "isApproximate" field.
-    U_ASSERT(!isApproximate);
+    if (isApproximate) {
+        return toDoubleFromOriginal();
+    }
 
     if (isNaN()) {
         return NAN;
@@ -587,95 +473,74 @@ double DecimalQuantity::toDouble() const {
         return isNegative() ? -INFINITY : INFINITY;
     }
 
-    // We are processing well-formed input, so we don't need any special options to StringToDoubleConverter.
-    StringToDoubleConverter converter(0, 0, 0, "", "");
-    UnicodeString numberString = this->toScientificString();
-    int32_t count;
-    return converter.StringToDouble(
-            reinterpret_cast<const uint16_t*>(numberString.getBuffer()),
-            numberString.length(),
-            &count);
+    int64_t tempLong = 0L;
+    int32_t lostDigits = precision - (precision < 17 ? precision : 17);
+    for (int shift = precision - 1; shift >= lostDigits; shift--) {
+        tempLong = tempLong * 10 + getDigitPos(shift);
+    }
+    double result = static_cast<double>(tempLong);
+    int32_t _scale = scale + lostDigits;
+    if (_scale >= 0) {
+        // 1e22 is the largest exact double.
+        int32_t i = _scale;
+        for (; i >= 22; i -= 22) result *= 1e22;
+        result *= DOUBLE_MULTIPLIERS[i];
+    } else {
+        // 1e22 is the largest exact double.
+        int32_t i = _scale;
+        for (; i <= -22; i += 22) result /= 1e22;
+        result /= DOUBLE_MULTIPLIERS[-i];
+    }
+    if (isNegative()) { result = -result; }
+    return result;
 }
 
-void DecimalQuantity::toDecNum(DecNum& output, UErrorCode& status) const {
-    // Special handling for zero
-    if (precision == 0) {
-        output.setTo("0", status);
+double DecimalQuantity::toDoubleFromOriginal() const {
+    double result = origDouble;
+    int32_t delta = origDelta;
+    if (delta >= 0) {
+        // 1e22 is the largest exact double.
+        for (; delta >= 22; delta -= 22) result *= 1e22;
+        result *= DOUBLE_MULTIPLIERS[delta];
+    } else {
+        // 1e22 is the largest exact double.
+        for (; delta <= -22; delta += 22) result /= 1e22;
+        result /= DOUBLE_MULTIPLIERS[-delta];
     }
-
-    // Use the BCD constructor. We need to do a little bit of work to convert, though.
-    // The decNumber constructor expects most-significant first, but we store least-significant first.
-    MaybeStackArray<uint8_t, 20> ubcd(precision);
-    for (int32_t m = 0; m < precision; m++) {
-        ubcd[precision - m - 1] = static_cast<uint8_t>(getDigitPos(m));
-    }
-    output.setTo(ubcd.getAlias(), precision, scale, isNegative(), status);
-}
-
-void DecimalQuantity::truncate() {
-    if (scale < 0) {
-        shiftRight(-scale);
-        scale = 0;
-        compact();
-    }
-}
-
-void DecimalQuantity::roundToNickel(int32_t magnitude, RoundingMode roundingMode, UErrorCode& status) {
-    roundToMagnitude(magnitude, roundingMode, true, status);
+    if (isNegative()) { result *= -1; }
+    return result;
 }
 
 void DecimalQuantity::roundToMagnitude(int32_t magnitude, RoundingMode roundingMode, UErrorCode& status) {
-    roundToMagnitude(magnitude, roundingMode, false, status);
-}
-
-void DecimalQuantity::roundToMagnitude(int32_t magnitude, RoundingMode roundingMode, bool nickel, UErrorCode& status) {
     // The position in the BCD at which rounding will be performed; digits to the right of position
     // will be rounded away.
+    // TODO: Andy: There was a test failure because of integer overflow here. Should I do
+    // "safe subtraction" everywhere in the code?  What's the nicest way to do it?
     int position = safeSubtract(magnitude, scale);
 
-    // "trailing" = least significant digit to the left of rounding
-    int8_t trailingDigit = getDigitPos(position);
-
-    if (position <= 0 && !isApproximate && (!nickel || trailingDigit == 0 || trailingDigit == 5)) {
+    if (position <= 0 && !isApproximate) {
         // All digits are to the left of the rounding magnitude.
     } else if (precision == 0) {
         // No rounding for zero.
     } else {
         // Perform rounding logic.
         // "leading" = most significant digit to the right of rounding
+        // "trailing" = least significant digit to the left of rounding
         int8_t leadingDigit = getDigitPos(safeSubtract(position, 1));
+        int8_t trailingDigit = getDigitPos(position);
 
         // Compute which section of the number we are in.
         // EDGE means we are at the bottom or top edge, like 1.000 or 1.999 (used by doubles)
         // LOWER means we are between the bottom edge and the midpoint, like 1.391
         // MIDPOINT means we are exactly in the middle, like 1.500
         // UPPER means we are between the midpoint and the top edge, like 1.916
-        roundingutils::Section section;
+        roundingutils::Section section = roundingutils::SECTION_MIDPOINT;
         if (!isApproximate) {
-            if (nickel && trailingDigit != 2 && trailingDigit != 7) {
-                // Nickel rounding, and not at .02x or .07x
-                if (trailingDigit < 2) {
-                    // .00, .01 => down to .00
-                    section = roundingutils::SECTION_LOWER;
-                } else if (trailingDigit < 5) {
-                    // .03, .04 => up to .05
-                    section = roundingutils::SECTION_UPPER;
-                } else if (trailingDigit < 7) {
-                    // .05, .06 => down to .05
-                    section = roundingutils::SECTION_LOWER;
-                } else {
-                    // .08, .09 => up to .10
-                    section = roundingutils::SECTION_UPPER;
-                }
-            } else if (leadingDigit < 5) {
-                // Includes nickel rounding .020-.024 and .070-.074
+            if (leadingDigit < 5) {
                 section = roundingutils::SECTION_LOWER;
             } else if (leadingDigit > 5) {
-                // Includes nickel rounding .026-.029 and .076-.079
                 section = roundingutils::SECTION_UPPER;
             } else {
-                // Includes nickel rounding .025 and .075
-                section = roundingutils::SECTION_MIDPOINT;
                 for (int p = safeSubtract(position, 2); p >= 0; p--) {
                     if (getDigitPos(p) != 0) {
                         section = roundingutils::SECTION_UPPER;
@@ -686,7 +551,7 @@ void DecimalQuantity::roundToMagnitude(int32_t magnitude, RoundingMode roundingM
         } else {
             int32_t p = safeSubtract(position, 2);
             int32_t minP = uprv_max(0, precision - 14);
-            if (leadingDigit == 0 && (!nickel || trailingDigit == 0 || trailingDigit == 5)) {
+            if (leadingDigit == 0) {
                 section = roundingutils::SECTION_LOWER_EDGE;
                 for (; p >= minP; p--) {
                     if (getDigitPos(p) != 0) {
@@ -694,23 +559,21 @@ void DecimalQuantity::roundToMagnitude(int32_t magnitude, RoundingMode roundingM
                         break;
                     }
                 }
-            } else if (leadingDigit == 4 && (!nickel || trailingDigit == 2 || trailingDigit == 7)) {
-                section = roundingutils::SECTION_MIDPOINT;
+            } else if (leadingDigit == 4) {
                 for (; p >= minP; p--) {
                     if (getDigitPos(p) != 9) {
                         section = roundingutils::SECTION_LOWER;
                         break;
                     }
                 }
-            } else if (leadingDigit == 5 && (!nickel || trailingDigit == 2 || trailingDigit == 7)) {
-                section = roundingutils::SECTION_MIDPOINT;
+            } else if (leadingDigit == 5) {
                 for (; p >= minP; p--) {
                     if (getDigitPos(p) != 0) {
                         section = roundingutils::SECTION_UPPER;
                         break;
                     }
                 }
-            } else if (leadingDigit == 9 && (!nickel || trailingDigit == 4 || trailingDigit == 9)) {
+            } else if (leadingDigit == 9) {
                 section = roundingutils::SECTION_UPPER_EDGE;
                 for (; p >= minP; p--) {
                     if (getDigitPos(p) != 9) {
@@ -718,26 +581,9 @@ void DecimalQuantity::roundToMagnitude(int32_t magnitude, RoundingMode roundingM
                         break;
                     }
                 }
-            } else if (nickel && trailingDigit != 2 && trailingDigit != 7) {
-                // Nickel rounding, and not at .02x or .07x
-                if (trailingDigit < 2) {
-                    // .00, .01 => down to .00
-                    section = roundingutils::SECTION_LOWER;
-                } else if (trailingDigit < 5) {
-                    // .03, .04 => up to .05
-                    section = roundingutils::SECTION_UPPER;
-                } else if (trailingDigit < 7) {
-                    // .05, .06 => down to .05
-                    section = roundingutils::SECTION_LOWER;
-                } else {
-                    // .08, .09 => up to .10
-                    section = roundingutils::SECTION_UPPER;
-                }
             } else if (leadingDigit < 5) {
-                // Includes nickel rounding .020-.024 and .070-.074
                 section = roundingutils::SECTION_LOWER;
             } else {
-                // Includes nickel rounding .026-.029 and .076-.079
                 section = roundingutils::SECTION_UPPER;
             }
 
@@ -745,10 +591,10 @@ void DecimalQuantity::roundToMagnitude(int32_t magnitude, RoundingMode roundingM
             if (safeSubtract(position, 1) < precision - 14 ||
                 (roundsAtMidpoint && section == roundingutils::SECTION_MIDPOINT) ||
                 (!roundsAtMidpoint && section < 0 /* i.e. at upper or lower edge */)) {
-                // Oops! This means that we have to get the exact representation of the double,
-                // because the zone of uncertainty is along the rounding boundary.
+                // Oops! This means that we have to get the exact representation of the double, because
+                // the zone of uncertainty is along the rounding boundary.
                 convertToAccurateDouble();
-                roundToMagnitude(magnitude, roundingMode, nickel, status); // start over
+                roundToMagnitude(magnitude, roundingMode, status); // start over
                 return;
             }
 
@@ -757,7 +603,7 @@ void DecimalQuantity::roundToMagnitude(int32_t magnitude, RoundingMode roundingM
             origDouble = 0.0;
             origDelta = 0;
 
-            if (position <= 0 && (!nickel || trailingDigit == 0 || trailingDigit == 5)) {
+            if (position <= 0) {
                 // All digits are to the left of the rounding magnitude.
                 return;
             }
@@ -767,14 +613,7 @@ void DecimalQuantity::roundToMagnitude(int32_t magnitude, RoundingMode roundingM
             if (section == -2) { section = roundingutils::SECTION_UPPER; }
         }
 
-        // Nickel rounding "half even" goes to the nearest whole (away from the 5).
-        bool isEven = nickel
-                ? (trailingDigit < 2 || trailingDigit > 7
-                        || (trailingDigit == 2 && section != roundingutils::SECTION_UPPER)
-                        || (trailingDigit == 7 && section == roundingutils::SECTION_UPPER))
-                : (trailingDigit % 2) == 0;
-
-        bool roundDown = roundingutils::getRoundingDirection(isEven,
+        bool roundDown = roundingutils::getRoundingDirection((trailingDigit % 2) == 0,
                 isNegative(),
                 section,
                 roundingMode,
@@ -791,28 +630,12 @@ void DecimalQuantity::roundToMagnitude(int32_t magnitude, RoundingMode roundingM
             shiftRight(position);
         }
 
-        if (nickel) {
-            if (trailingDigit < 5 && roundDown) {
-                setDigitPos(0, 0);
-                compact();
-                return;
-            } else if (trailingDigit >= 5 && !roundDown) {
-                setDigitPos(0, 9);
-                trailingDigit = 9;
-                // do not return: use the bubbling logic below
-            } else {
-                setDigitPos(0, 5);
-                // compact not necessary: digit at position 0 is nonzero
-                return;
-            }
-        }
-
         // Bubble the result to the higher digits
         if (!roundDown) {
             if (trailingDigit == 9) {
                 int bubblePos = 0;
-                // Note: in the long implementation, the most digits BCD can have at this point is
-                // 15, so bubblePos <= 15 and getDigitPos(bubblePos) is safe.
+                // Note: in the long implementation, the most digits BCD can have at this point is 15,
+                // so bubblePos <= 15 and getDigitPos(bubblePos) is safe.
                 for (; getDigitPos(bubblePos) == 9; bubblePos++) {}
                 shiftRight(bubblePos); // shift off the trailing 9s
             }
@@ -863,62 +686,15 @@ void DecimalQuantity::appendDigit(int8_t value, int32_t leadingZeros, bool appen
 }
 
 UnicodeString DecimalQuantity::toPlainString() const {
-    U_ASSERT(!isApproximate);
     UnicodeString sb;
     if (isNegative()) {
         sb.append(u'-');
     }
-    if (precision == 0 || getMagnitude() < 0) {
-        sb.append(u'0');
-    }
     for (int m = getUpperDisplayMagnitude(); m >= getLowerDisplayMagnitude(); m--) {
-        if (m == -1) { sb.append(u'.'); }
         sb.append(getDigit(m) + u'0');
+        if (m == 0) { sb.append(u'.'); }
     }
     return sb;
-}
-
-UnicodeString DecimalQuantity::toScientificString() const {
-    U_ASSERT(!isApproximate);
-    UnicodeString result;
-    if (isNegative()) {
-        result.append(u'-');
-    }
-    if (precision == 0) {
-        result.append(u"0E+0", -1);
-        return result;
-    }
-    int32_t upperPos = precision - 1;
-    int32_t lowerPos = 0;
-    int32_t p = upperPos;
-    result.append(u'0' + getDigitPos(p));
-    if ((--p) >= lowerPos) {
-        result.append(u'.');
-        for (; p >= lowerPos; p--) {
-            result.append(u'0' + getDigitPos(p));
-        }
-    }
-    result.append(u'E');
-    int32_t _scale = upperPos + scale;
-    if (_scale == INT32_MIN) {
-        result.append({u"-2147483648", -1});
-        return result;
-    } else if (_scale < 0) {
-        _scale *= -1;
-        result.append(u'-');
-    } else {
-        result.append(u'+');
-    }
-    if (_scale == 0) {
-        result.append(u'0');
-    }
-    int32_t insertIndex = result.length();
-    while (_scale > 0) {
-        std::div_t res = std::div(_scale, 10);
-        result.insert(insertIndex, u'0' + res.rem);
-        _scale = res.quot;
-    }
-    return result;
 }
 
 ////////////////////////////////////////////////////
@@ -928,7 +704,7 @@ UnicodeString DecimalQuantity::toScientificString() const {
 
 int8_t DecimalQuantity::getDigitPos(int32_t position) const {
     if (usingBytes) {
-        if (position < 0 || position >= precision) { return 0; }
+        if (position < 0 || position > precision) { return 0; }
         return fBCD.bcdBytes.ptr[position];
     } else {
         if (position < 0 || position >= 16) { return 0; }
@@ -987,19 +763,6 @@ void DecimalQuantity::shiftRight(int32_t numDigits) {
     precision -= numDigits;
 }
 
-void DecimalQuantity::popFromLeft(int32_t numDigits) {
-    U_ASSERT(numDigits <= precision);
-    if (usingBytes) {
-        int i = precision - 1;
-        for (; i >= precision - numDigits; i--) {
-            fBCD.bcdBytes.ptr[i] = 0;
-        }
-    } else {
-        fBCD.bcdLong &= (static_cast<uint64_t>(1) << ((precision - numDigits) * 4)) - 1;
-    }
-    precision -= numDigits;
-}
-
 void DecimalQuantity::setBcdToZero() {
     if (usingBytes) {
         uprv_free(fBCD.bcdBytes.ptr);
@@ -1053,8 +816,7 @@ void DecimalQuantity::readLongToBcd(int64_t n) {
     }
 }
 
-void DecimalQuantity::readDecNumberToBcd(const DecNum& decnum) {
-    const decNumber* dn = decnum.getRawDecNumber();
+void DecimalQuantity::readDecNumberToBcd(decNumber *dn) {
     if (dn->digits > 16) {
         ensureCapacity(dn->digits);
         for (int32_t i = 0; i < dn->digits; i++) {
@@ -1069,26 +831,6 @@ void DecimalQuantity::readDecNumberToBcd(const DecNum& decnum) {
     }
     scale = dn->exponent;
     precision = dn->digits;
-}
-
-void DecimalQuantity::readDoubleConversionToBcd(
-        const char* buffer, int32_t length, int32_t point) {
-    // NOTE: Despite the fact that double-conversion's API is called
-    // "DoubleToAscii", they actually use '0' (as opposed to u8'0').
-    if (length > 16) {
-        ensureCapacity(length);
-        for (int32_t i = 0; i < length; i++) {
-            fBCD.bcdBytes.ptr[i] = buffer[length-i-1] - '0';
-        }
-    } else {
-        uint64_t result = 0L;
-        for (int32_t i = 0; i < length; i++) {
-            result |= static_cast<uint64_t>(buffer[length-i-1] - '0') << (4 * i);
-        }
-        fBCD.bcdLong = result;
-    }
-    scale = point - length;
-    precision = length;
 }
 
 void DecimalQuantity::compact() {
@@ -1154,7 +896,7 @@ void DecimalQuantity::ensureCapacity(int32_t capacity) {
         auto bcd1 = static_cast<int8_t*>(uprv_malloc(capacity * 2 * sizeof(int8_t)));
         uprv_memcpy(bcd1, fBCD.bcdBytes.ptr, oldCapacity * sizeof(int8_t));
         // Initialize the rest of the byte array to zeros (this is done automatically in Java)
-        uprv_memset(bcd1 + oldCapacity, 0, (capacity - oldCapacity) * sizeof(int8_t));
+        uprv_memset(fBCD.bcdBytes.ptr + oldCapacity, 0, (capacity - oldCapacity) * sizeof(int8_t));
         uprv_free(fBCD.bcdBytes.ptr);
         fBCD.bcdBytes.ptr = bcd1;
         fBCD.bcdBytes.len = capacity * 2;
@@ -1192,20 +934,6 @@ void DecimalQuantity::copyBcdFrom(const DecimalQuantity &other) {
     if (other.usingBytes) {
         ensureCapacity(other.precision);
         uprv_memcpy(fBCD.bcdBytes.ptr, other.fBCD.bcdBytes.ptr, other.precision * sizeof(int8_t));
-    } else {
-        fBCD.bcdLong = other.fBCD.bcdLong;
-    }
-}
-
-void DecimalQuantity::moveBcdFrom(DecimalQuantity &other) {
-    setBcdToZero();
-    if (other.usingBytes) {
-        usingBytes = true;
-        fBCD.bcdBytes.ptr = other.fBCD.bcdBytes.ptr;
-        fBCD.bcdBytes.len = other.fBCD.bcdBytes.len;
-        // Take ownership away from the old instance:
-        other.fBCD.bcdBytes.ptr = nullptr;
-        other.usingBytes = false;
     } else {
         fBCD.bcdLong = other.fBCD.bcdLong;
     }
@@ -1249,32 +977,6 @@ const char16_t* DecimalQuantity::checkHealth() const {
     return nullptr;
 }
 
-bool DecimalQuantity::operator==(const DecimalQuantity& other) const {
-    bool basicEquals =
-            scale == other.scale
-            && precision == other.precision
-            && flags == other.flags
-            && lReqPos == other.lReqPos
-            && rReqPos == other.rReqPos
-            && isApproximate == other.isApproximate;
-    if (!basicEquals) {
-        return false;
-    }
-
-    if (precision == 0) {
-        return true;
-    } else if (isApproximate) {
-        return origDouble == other.origDouble && origDelta == other.origDelta;
-    } else {
-        for (int m = getUpperDisplayMagnitude(); m >= getLowerDisplayMagnitude(); m--) {
-            if (getDigit(m) != other.getDigit(m)) {
-                return false;
-            }
-        }
-        return true;
-    }
-}
-
 UnicodeString DecimalQuantity::toString() const {
     MaybeStackArray<char, 30> digits(precision + 1);
     for (int32_t i = 0; i < precision; i++) {
@@ -1285,15 +987,25 @@ UnicodeString DecimalQuantity::toString() const {
     snprintf(
             buffer8,
             sizeof(buffer8),
-            "<DecimalQuantity %d:%d %s %s%s%s%d>",
+            "<DecimalQuantity %d:%d:%d:%d %s %s%s%d>",
+            (lOptPos > 999 ? 999 : lOptPos),
             lReqPos,
             rReqPos,
+            (rOptPos < -999 ? -999 : rOptPos),
             (usingBytes ? "bytes" : "long"),
-            (isNegative() ? "-" : ""),
             (precision == 0 ? "0" : digits.getAlias()),
             "E",
             scale);
     return UnicodeString(buffer8, -1, US_INV);
+}
+
+UnicodeString DecimalQuantity::toNumberString() const {
+    MaybeStackArray<char, 30> digits(precision + 11);
+    for (int32_t i = 0; i < precision; i++) {
+        digits[i] = getDigitPos(precision - i - 1) + '0';
+    }
+    snprintf(digits.getAlias() + precision, 11, "E%d", scale);
+    return UnicodeString(digits.getAlias(), -1, US_INV);
 }
 
 #endif /* #if !UCONFIG_NO_FORMATTING */

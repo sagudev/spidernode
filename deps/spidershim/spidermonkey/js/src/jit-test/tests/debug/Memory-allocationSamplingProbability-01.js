@@ -3,7 +3,7 @@
 
 load(libdir + "asserts.js");
 
-const root = newGlobal({newCompartment: true});
+const root = newGlobal();
 
 const dbg = new Debugger();
 const wrappedRoot = dbg.addDebuggee(root);

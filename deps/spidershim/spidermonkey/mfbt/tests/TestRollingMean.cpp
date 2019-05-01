@@ -9,30 +9,38 @@
 
 using mozilla::RollingMean;
 
-class MyClass {
- public:
+class MyClass
+{
+public:
   uint32_t mValue;
 
-  explicit MyClass(uint32_t aValue = 0) : mValue(aValue) {}
+  explicit MyClass(uint32_t aValue = 0) : mValue(aValue) { }
 
-  bool operator==(const MyClass& aOther) const {
+  bool operator==(const MyClass& aOther) const
+  {
     return mValue == aOther.mValue;
   }
 
-  MyClass operator+(const MyClass& aOther) const {
+  MyClass operator+(const MyClass& aOther) const
+  {
     return MyClass(mValue + aOther.mValue);
   }
 
-  MyClass operator-(const MyClass& aOther) const {
+  MyClass operator-(const MyClass& aOther) const
+  {
     return MyClass(mValue - aOther.mValue);
   }
 
-  MyClass operator/(uint32_t aDiv) const { return MyClass(mValue / aDiv); }
+  MyClass operator/(uint32_t aDiv) const
+  {
+    return MyClass(mValue / aDiv);
+  }
 };
 
-class RollingMeanSuite {
- public:
-  RollingMeanSuite() {}
+class RollingMeanSuite
+{
+public:
+  RollingMeanSuite() { }
 
   void runTests() {
     testZero();
@@ -42,13 +50,15 @@ class RollingMeanSuite {
     testMove();
   }
 
- private:
-  void testZero() {
+private:
+  void testZero()
+  {
     RollingMean<uint32_t, uint64_t> mean(3);
     MOZ_RELEASE_ASSERT(mean.empty());
   }
 
-  void testClear() {
+  void testClear()
+  {
     RollingMean<uint32_t, uint64_t> mean(3);
 
     mean.insert(4);
@@ -61,7 +71,8 @@ class RollingMeanSuite {
     MOZ_RELEASE_ASSERT(mean.mean() == 3);
   }
 
-  void testRolling() {
+  void testRolling()
+  {
     RollingMean<uint32_t, uint64_t> mean(3);
 
     mean.insert(10);
@@ -80,7 +91,8 @@ class RollingMeanSuite {
     MOZ_RELEASE_ASSERT(mean.mean() == 16);
   }
 
-  void testClass() {
+  void testClass()
+  {
     RollingMean<MyClass, MyClass> mean(3);
 
     mean.insert(MyClass(4));
@@ -90,7 +102,8 @@ class RollingMeanSuite {
     MOZ_RELEASE_ASSERT(mean.empty());
   }
 
-  void testMove() {
+  void testMove()
+  {
     RollingMean<uint32_t, uint64_t> mean(3);
     mean = RollingMean<uint32_t, uint64_t>(4);
     MOZ_RELEASE_ASSERT(mean.maxValues() == 4);
@@ -107,7 +120,9 @@ class RollingMeanSuite {
   }
 };
 
-int main() {
+int
+main()
+{
   RollingMeanSuite suite;
   suite.runTests();
   return 0;

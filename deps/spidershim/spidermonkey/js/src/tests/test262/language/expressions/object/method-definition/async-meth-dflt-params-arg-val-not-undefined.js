@@ -2,9 +2,9 @@
 // - src/function-forms/dflt-params-arg-val-not-undefined.case
 // - src/function-forms/default/async-meth.template
 /*---
-description: Use of initializer when argument value is not `undefined` (async method)
+description: Use of intializer when argument value is not `undefined` (async method)
 esid: sec-async-function-definitions
-features: [default-parameters, async-functions]
+features: [default-parameters]
 flags: [generated, async]
 info: |
     14.6 Async Function Definitions

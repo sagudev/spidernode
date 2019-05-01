@@ -1,3 +1,6 @@
+if (!this.hasOwnProperty("TypedObject"))
+  quit();
+
 var Color = new TypedObject.StructType({r: TypedObject.uint8,
                                         g: TypedObject.uint8,
                                         b: TypedObject.uint8});

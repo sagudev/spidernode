@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -193,15 +193,15 @@ class Range : public TempObject {
   // exponent computation have to be over-estimations of the actual result. On
   // the Int32 this over approximation is rectified.
 
-  MOZ_INIT_OUTSIDE_CTOR int32_t lower_;
-  MOZ_INIT_OUTSIDE_CTOR int32_t upper_;
+  int32_t lower_;
+  int32_t upper_;
 
-  MOZ_INIT_OUTSIDE_CTOR bool hasInt32LowerBound_;
-  MOZ_INIT_OUTSIDE_CTOR bool hasInt32UpperBound_;
+  bool hasInt32LowerBound_;
+  bool hasInt32UpperBound_;
 
-  MOZ_INIT_OUTSIDE_CTOR FractionalPartFlag canHaveFractionalPart_ : 1;
-  MOZ_INIT_OUTSIDE_CTOR NegativeZeroFlag canBeNegativeZero_ : 1;
-  MOZ_INIT_OUTSIDE_CTOR uint16_t max_exponent_;
+  FractionalPartFlag canHaveFractionalPart_ : 1;
+  NegativeZeroFlag canBeNegativeZero_ : 1;
+  uint16_t max_exponent_;
 
   // Any symbolic lower or upper bound computed for this term.
   const SymbolicBound* symbolicLower_;
@@ -413,9 +413,7 @@ class Range : public TempObject {
   // function treats negative zero as equal to zero, as >= and <= do. If the
   // range includes zero, it is assumed to include negative zero too.
   static Range* NewDoubleRange(TempAllocator& alloc, double l, double h) {
-    if (mozilla::IsNaN(l) && mozilla::IsNaN(h)) {
-      return nullptr;
-    }
+    if (mozilla::IsNaN(l) && mozilla::IsNaN(h)) return nullptr;
 
     Range* r = new (alloc) Range();
     r->setDouble(l, h);
@@ -427,9 +425,7 @@ class Range : public TempObject {
   // makes the strictest possible range containin zero a range which
   // contains one value rather than two.
   static Range* NewDoubleSingletonRange(TempAllocator& alloc, double d) {
-    if (mozilla::IsNaN(d)) {
-      return nullptr;
-    }
+    if (mozilla::IsNaN(d)) return nullptr;
 
     Range* r = new (alloc) Range();
     r->setDoubleSingleton(d);

@@ -1,6 +1,6 @@
 // Test an empty allocation log.
 
-const root = newGlobal({newCompartment: true});
+const root = newGlobal();
 const dbg = new Debugger();
 dbg.addDebuggee(root)
 

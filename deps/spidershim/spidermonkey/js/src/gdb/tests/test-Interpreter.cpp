@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +17,11 @@ void GDBTestInitInterpreterRegs(InterpreterRegs& regs,
   regs.fp_ = fp_;
   regs.sp = sp;
   regs.pc = pc;
+}
+
+void GDBTestInitAbstractFramePtr(AbstractFramePtr& frame, void* ptr) {
+  MOZ_ASSERT((uintptr_t(ptr) & AbstractFramePtr::TagMask) == 0);
+  frame.ptr_ = uintptr_t(ptr) | AbstractFramePtr::Tag_ScriptFrameIterData;
 }
 
 void GDBTestInitAbstractFramePtr(AbstractFramePtr& frame,
@@ -64,6 +69,10 @@ FRAGMENT(Interpreter, Regs) {
 }
 
 FRAGMENT(Interpreter, AbstractFramePtr) {
+  js::AbstractFramePtr sfidptr;
+  GDBTestInitAbstractFramePtr(sfidptr,
+                              (js::ScriptFrameIter::Data*)uintptr_t(0xdeeb0));
+
   js::AbstractFramePtr ifptr;
   GDBTestInitAbstractFramePtr(ifptr,
                               (js::InterpreterFrame*)uintptr_t(0x8badf00));
@@ -82,8 +91,8 @@ FRAGMENT(Interpreter, AbstractFramePtr) {
 
   breakpoint();
 
+  use(sfidptr);
   use(ifptr);
   use(bfptr);
   use(rfptr);
-  use(sfptr);
 }

@@ -6,14 +6,14 @@ description: >
     [[Set]] ( P, V, Receiver)
 
     11. If booleanTrapResult is false, return false.
-features: [Proxy, Reflect, Reflect.set]
+features: [Reflect]
 ---*/
 
 var target = {};
 var handler = {
-  set: function(t, prop, value, receiver) {
-    return null;
-  }
+    set: function(t, prop, value, receiver) {
+        return null;
+    }
 };
 var p = new Proxy(target, handler);
 

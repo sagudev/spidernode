@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,14 +15,15 @@
 
 #include "jspubtd.h"
 
-struct JSStructuredCloneReader;
-struct JSStructuredCloneWriter;
+#include "js/StructuredClone.h"
+
+namespace js {
+struct JS_PUBLIC_API PerformanceGroup;
+}  // namespace js
 
 struct JSPrincipals {
   /* Don't call "destroy"; use reference counting macros below. */
-  mozilla::Atomic<int32_t, mozilla::SequentiallyConsistent,
-                  mozilla::recordreplay::Behavior::DontPreserve>
-      refcount;
+  mozilla::Atomic<int32_t> refcount;
 
 #ifdef JS_DEBUG
   /* A helper to facilitate principals debugging. */
@@ -62,9 +63,9 @@ typedef bool (*JSSubsumesOp)(JSPrincipals* first, JSPrincipals* second);
 
 /*
  * Used to check if a CSP instance wants to disable eval() and friends.
- * See GlobalObject::isRuntimeCodeGenEnabled() in vm/GlobalObject.cpp.
+ * See js_CheckCSPPermitsJSAction() in jsobj.
  */
-typedef bool (*JSCSPEvalChecker)(JSContext* cx, JS::HandleValue value);
+typedef bool (*JSCSPEvalChecker)(JSContext* cx);
 
 struct JSSecurityCallbacks {
   JSCSPEvalChecker contentSecurityPolicyAllows;

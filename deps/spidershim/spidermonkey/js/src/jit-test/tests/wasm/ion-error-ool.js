@@ -1,16 +1,17 @@
-// |jit-test| skip-if: !getJitCompilerOptions()['baseline.enable']
+const options = getJitCompilerOptions();
+
 // These tests need at least baseline to make sense.
+if (!options['baseline.enable'])
+    quit();
 
 const { assertStackTrace, startProfiling, endProfiling, assertEqPreciseStacks } = WasmHelpers;
 
-const options = getJitCompilerOptions();
 const TRIGGER = options['baseline.warmup.trigger'] + 10;
 const ITER = 2 * TRIGGER;
 const EXCEPTION_ITER = TRIGGER + 5;
 
 const SLOW_ENTRY_STACK = ['', '!>', '0,!>', '!>', ''];
 const FAST_ENTRY_STACK = ['', '>', '0,>', '>', ''];
-const INLINED_CALL_STACK = ['', '0', ''];
 const FAST_OOL_ENTRY_STACK = ['', '>', '<,>', 'ool>,>', '<,>', '>', '0,>', '>', ''];
 const EXCEPTION_ENTRY_STACK = ['', '>', '<,>', 'ool>,>', '<,>', '>', ''];
 
@@ -19,8 +20,8 @@ enableGeckoProfiling();
 for (let type of ['i32', 'f32', 'f64']) {
     var instance = wasmEvalText(`(module
         (func $add (export "add") (result ${type}) (param ${type}) (param ${type})
-         local.get 0
-         local.get 1
+         get_local 0
+         get_local 1
          ${type}.add
         )
     )`).exports;
@@ -43,7 +44,7 @@ for (let type of ['i32', 'f32', 'f64']) {
         for (var i = 0; i < ITER; i++) {
             startProfiling();
             loopBody(i + 1, i + EXCEPTION_ITER + 1);
-            assertEqPreciseStacks(endProfiling(), [INLINED_CALL_STACK, FAST_ENTRY_STACK, SLOW_ENTRY_STACK]);
+            assertEqPreciseStacks(endProfiling(), [FAST_ENTRY_STACK, SLOW_ENTRY_STACK]);
 
             if (i === EXCEPTION_ITER) {
                 x = { valueOf: function innerValueOf() { throw new Error("ph34r"); }};

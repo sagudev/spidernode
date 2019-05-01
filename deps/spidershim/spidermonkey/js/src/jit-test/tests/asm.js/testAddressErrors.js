@@ -1,6 +1,7 @@
 load(libdir + "asm.js");
 
 setIonCheckGraphCoherency(false);
+setCachingEnabled(false);
 
 // constants
 var buf = new ArrayBuffer(BUF_MIN);

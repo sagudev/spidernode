@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -13,9 +13,7 @@ using namespace js;
 using namespace js::jit;
 
 static bool CoPrime(size_t a, size_t b) {
-  if (b <= 1) {
-    return a == 1 || b == 1;
-  }
+  if (b <= 1) return a == 1 || b == 1;
   return CoPrime(b, a % b);
 }
 
@@ -163,9 +161,7 @@ void pullAllFpus(AllocatableFloatRegisterSet& set, uint32_t& max_bits,
     pullAllFpus(set, max_bits, bits + 128);
     set.add(tmp);
   }
-  if (bits >= max_bits) {
-    max_bits = bits;
-  }
+  if (bits >= max_bits) max_bits = bits;
 }
 
 BEGIN_TEST(testJitRegisterSet_FPU_Aliases) {
@@ -176,20 +172,15 @@ BEGIN_TEST(testJitRegisterSet_FPU_Aliases) {
 
     uint32_t alias_bits = 0;
     for (uint32_t i = 0; i < reg.numAlignedAliased(); i++) {
-      FloatRegister alias = reg.alignedAliased(i);
+      FloatRegister alias;
+      reg.alignedAliased(i, &alias);
 
       if (alias.isSingle()) {
-        if (alias_bits <= 32) {
-          alias_bits = 32;
-        }
+        if (alias_bits <= 32) alias_bits = 32;
       } else if (alias.isDouble()) {
-        if (alias_bits <= 64) {
-          alias_bits = 64;
-        }
+        if (alias_bits <= 64) alias_bits = 64;
       } else if (alias.isSimd128()) {
-        if (alias_bits <= 128) {
-          alias_bits = 128;
-        }
+        if (alias_bits <= 128) alias_bits = 128;
       }
     }
 

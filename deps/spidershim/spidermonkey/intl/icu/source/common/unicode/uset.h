@@ -33,14 +33,10 @@
 #include "unicode/uchar.h"
 #include "unicode/localpointer.h"
 
-#ifndef USET_DEFINED
-
-#ifndef U_IN_DOXYGEN
-#define USET_DEFINED
-#endif
+#ifndef UCNV_H
+struct USet;
 /**
- * USet is the C API type corresponding to C++ class UnicodeSet.
- * Use the uset_* API to manipulate.  Create with
+ * A UnicodeSet.  Use the uset_* API to manipulate.  Create with
  * uset_open*, and destroy with uset_close.
  * @stable ICU 2.4
  */

@@ -122,6 +122,10 @@ fil{
             "CLP",
             "Piso ng Chile",
         }
+        CNH{
+            "CNH",
+            "CNH",
+        }
         CNY{
             "CN¥",
             "Chinese Yuan",
@@ -388,11 +392,7 @@ fil{
         }
         MRO{
             "MRO",
-            "Mauritanian Ouguiya (1973–2017)",
-        }
-        MRU{
-            "MRU",
-            "Ouguiya ng Mauritania",
+            "Mauritanian Ouguiya",
         }
         MUR{
             "MUR",
@@ -548,11 +548,7 @@ fil{
         }
         STD{
             "STD",
-            "São Tomé & Príncipe Dobra (1977–2017)",
-        }
-        STN{
-            "STN",
-            "São Tomé & Príncipe Dobra (2018)",
+            "São Tomé & Príncipe Dobra",
         }
         SYP{
             "SYP",
@@ -624,10 +620,6 @@ fil{
         }
         VEF{
             "VEF",
-            "Bolívar ng Venezuela (2008–2018)",
-        }
-        VES{
-            "VES",
             "Bolívar ng Venezuela",
         }
         VND{
@@ -659,7 +651,7 @@ fil{
             "CFP Franc",
         }
         XXX{
-            "¤",
+            "XXX",
             "Hindi Kilalang Pera",
         }
         YER{
@@ -692,6 +684,7 @@ fil{
         BRL{"R$"}
         BSD{"$"}
         BWP{"P"}
+        BYN{"р."}
         BZD{"$"}
         CAD{"$"}
         CLP{"$"}
@@ -708,6 +701,7 @@ fil{
         FJD{"$"}
         FKP{"£"}
         GBP{"£"}
+        GEL{"₾"}
         GIP{"£"}
         GNF{"FG"}
         GTQ{"Q"}
@@ -748,6 +742,7 @@ fil{
         PKR{"Rs"}
         PLN{"zł"}
         PYG{"₲"}
+        RON{"lei"}
         RUB{"₽"}
         RWF{"RF"}
         SBD{"$"}
@@ -756,6 +751,7 @@ fil{
         SHP{"£"}
         SRD{"$"}
         SSP{"£"}
+        STD{"Db"}
         SYP{"£"}
         THB{"฿"}
         TOP{"T$"}
@@ -895,6 +891,10 @@ fil{
         CLP{
             one{"piso ng Chile"}
             other{"piso ng Chile"}
+        }
+        CNH{
+            one{"CNH"}
+            other{"CNH"}
         }
         CNY{
             one{"Chinese yuan"}
@@ -1145,10 +1145,6 @@ fil{
             other{"Macanese patacas"}
         }
         MRO{
-            one{"Mauritanian ouguiya (1973–2017)"}
-            other{"Mauritanian ouguiyas (1973–2017)"}
-        }
-        MRU{
             one{"Mauritanian ouguiya"}
             other{"Mauritanian ouguiyas"}
         }
@@ -1297,10 +1293,6 @@ fil{
             other{"pounds ng Timog Sudan"}
         }
         STD{
-            one{"São Tomé & Príncipe dobra (1977–2017)"}
-            other{"São Tomé & Príncipe dobras (1977–2017)"}
-        }
-        STN{
             one{"São Tomé & Príncipe dobra"}
             other{"São Tomé & Príncipe dobras"}
         }
@@ -1369,10 +1361,6 @@ fil{
             other{"Uzbekistan som"}
         }
         VEF{
-            one{"bolívar ng Venezuela (2008–2018)"}
-            other{"bolívars ng Venezuela (2008–2018)"}
-        }
-        VES{
             one{"bolívar ng Venezuela"}
             other{"bolívars ng Venezuela"}
         }
@@ -1425,5 +1413,5 @@ fil{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"2.1.48.20"}
+    Version{"2.1.37.1"}
 }

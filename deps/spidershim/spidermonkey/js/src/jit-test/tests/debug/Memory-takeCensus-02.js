@@ -16,7 +16,7 @@ var census0 = dbg.memory.takeCensus();
 Census.walkCensus(census0, "census0", Census.assertAllZeros);
 
 function newGlobalWithDefs() {
-  var g = newGlobal({newCompartment: true});
+  var g = newGlobal();
   g.eval(`
          function times(n, fn) {
            var a=[];

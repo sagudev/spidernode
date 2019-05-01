@@ -7,8 +7,6 @@ from __future__ import absolute_import, unicode_literals
 import os
 import sys
 
-import six
-
 
 class NullTerminal(object):
     """Replacement for `blessings.Terminal()` that does no formatting."""
@@ -23,10 +21,10 @@ class NullTerminal(object):
         except Exception:
             self.is_a_tty = False
 
-    class NullCallableString(six.text_type):
+    class NullCallableString(unicode):
         """A dummy callable Unicode stolen from blessings"""
         def __new__(cls):
-            new = six.text_type.__new__(cls, '')
+            new = unicode.__new__(cls, '')
             return new
 
         def __call__(self, *args):

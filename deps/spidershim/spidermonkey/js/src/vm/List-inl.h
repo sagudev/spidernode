@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef vm_List_inl_h
 #define vm_List_inl_h
-
-#include "vm/List.h"
 
 #include "gc/Rooting.h"
 #include "vm/JSContext.h"
@@ -16,40 +14,46 @@
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
 
-inline /* static */ js::ListObject* js::ListObject::create(JSContext* cx) {
-  return NewObjectWithNullTaggedProto<ListObject>(cx);
+namespace js {
+
+inline MOZ_MUST_USE NativeObject* NewList(JSContext* cx) {
+  return NewObjectWithNullTaggedProto<PlainObject>(cx);
 }
 
-inline bool js::ListObject::append(JSContext* cx, HandleValue value) {
-  uint32_t len = length();
+inline MOZ_MUST_USE bool AppendToList(JSContext* cx, HandleNativeObject list,
+                                      HandleValue value) {
+  uint32_t length = list->getDenseInitializedLength();
 
-  if (!ensureElements(cx, len + 1)) {
-    return false;
-  }
+  if (!list->ensureElements(cx, length + 1)) return false;
 
-  ensureDenseInitializedLength(cx, len, 1);
-  setDenseElementWithType(cx, len, value);
+  list->ensureDenseInitializedLength(cx, length, 1);
+  list->setDenseElementWithType(cx, length, value);
+
   return true;
 }
 
-inline JS::Value js::ListObject::popFirst(JSContext* cx) {
-  uint32_t len = length();
-  MOZ_ASSERT(len > 0);
-
-  Value entry = get(0);
-  if (!tryShiftDenseElements(1)) {
-    moveDenseElements(0, 1, len - 1);
-    setDenseInitializedLength(len - 1);
-    shrinkElements(cx, len - 1);
-  }
-
-  MOZ_ASSERT(length() == len - 1);
-  return entry;
+template <class T>
+inline MOZ_MUST_USE T* PeekList(NativeObject* list) {
+  MOZ_ASSERT(list->getDenseInitializedLength() > 0);
+  return &list->getDenseElement(0).toObject().as<T>();
 }
 
 template <class T>
-inline T& js::ListObject::popFirstAs(JSContext* cx) {
-  return popFirst(cx).toObject().as<T>();
+inline MOZ_MUST_USE T* ShiftFromList(JSContext* cx, HandleNativeObject list) {
+  uint32_t length = list->getDenseInitializedLength();
+  MOZ_ASSERT(length > 0);
+
+  Rooted<T*> entry(cx, &list->getDenseElement(0).toObject().as<T>());
+  if (!list->tryShiftDenseElements(1)) {
+    list->moveDenseElements(0, 1, length - 1);
+    list->setDenseInitializedLength(length - 1);
+    list->shrinkElements(cx, length - 1);
+  }
+
+  MOZ_ASSERT(list->getDenseInitializedLength() == length - 1);
+  return entry;
 }
 
-#endif  // vm_List_inl_h
+} /* namespace js */
+
+#endif /* vm_List_inl_h */

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,9 +23,7 @@ bool EdgeCaseAnalysis::analyzeLate() {
   for (ReversePostorderIterator block(graph.rpoBegin());
        block != graph.rpoEnd(); block++) {
     for (MDefinitionIterator iter(*block); iter; iter++) {
-      if (mir->shouldCancel("Analyze Late (first loop)")) {
-        return false;
-      }
+      if (mir->shouldCancel("Analyze Late (first loop)")) return false;
 
       iter->setId(nextId++);
       iter->analyzeEdgeCasesForward();
@@ -37,9 +35,7 @@ bool EdgeCaseAnalysis::analyzeLate() {
        block++) {
     for (MInstructionReverseIterator riter(block->rbegin());
          riter != block->rend(); riter++) {
-      if (mir->shouldCancel("Analyze Late (second loop)")) {
-        return false;
-      }
+      if (mir->shouldCancel("Analyze Late (second loop)")) return false;
 
       riter->analyzeEdgeCasesBackward();
     }

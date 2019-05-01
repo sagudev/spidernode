@@ -53,18 +53,19 @@
 #include "unicode/uenum.h"
 #include "unicode/localpointer.h"
 
-#if !defined(USET_DEFINED) && !defined(U_IN_DOXYGEN)
-
-#define USET_DEFINED
+#ifndef __USET_H__
 
 /**
- * USet is the C API type corresponding to C++ class UnicodeSet.
- * It is forward-declared here to avoid including unicode/uset.h file if related
+ * USet is the C API type for Unicode sets.
+ * It is forward-declared here to avoid including the header file if related
  * conversion APIs are not used.
+ * See unicode/uset.h
  *
  * @see ucnv_getUnicodeSet
- * @stable ICU 2.4
+ * @stable ICU 2.6
  */
+struct USet;
+/** @stable ICU 2.6 */
 typedef struct USet USet;
 
 #endif
@@ -206,7 +207,7 @@ typedef void (U_EXPORT2 *UConverterToUCallback) (
 
 /**
  * Function pointer for error callback in the unicode to codepage direction.
- * Called when an error has occurred in conversion from unicode, or on open/close of the callback (see reason).
+ * Called when an error has occured in conversion from unicode, or on open/close of the callback (see reason).
  * @param context Pointer to the callback's private data
  * @param args Information about the conversion in progress
  * @param codeUnits Points to 'length' UChars of the concerned Unicode sequence
@@ -352,7 +353,7 @@ ucnv_compareNames(const char *name1, const char *name2);
  *          ucnv_getAlias for a complete list that is available.
  *          If this parameter is NULL, the default converter will be used.
  * @param err outgoing error status <TT>U_MEMORY_ALLOCATION_ERROR, U_FILE_ACCESS_ERROR</TT>
- * @return the created Unicode converter object, or <TT>NULL</TT> if an error occurred
+ * @return the created Unicode converter object, or <TT>NULL</TT> if an error occured
  * @see ucnv_openU
  * @see ucnv_openCCSID
  * @see ucnv_getAvailableName
@@ -385,7 +386,7 @@ ucnv_open(const char *converterName, UErrorCode *err);
  * @param err outgoing error status <TT>U_MEMORY_ALLOCATION_ERROR,
  *        U_FILE_ACCESS_ERROR</TT>
  * @return the created Unicode converter object, or <TT>NULL</TT> if an
- *        error occurred
+ *        error occured
  * @see ucnv_open
  * @see ucnv_openCCSID
  * @see ucnv_close
@@ -488,7 +489,7 @@ ucnv_openCCSID(int32_t codepage,
  * @param packageName name of the package (equivalent to 'path' in udata_open() call)
  * @param converterName name of the data item to be used, without suffix.
  * @param err outgoing error status <TT>U_MEMORY_ALLOCATION_ERROR, U_FILE_ACCESS_ERROR</TT>
- * @return the created Unicode converter object, or <TT>NULL</TT> if an error occurred
+ * @return the created Unicode converter object, or <TT>NULL</TT> if an error occured
  * @see udata_open
  * @see ucnv_open
  * @see ucnv_safeClone

@@ -26,7 +26,6 @@
 #include "putilimp.h"
 #include "uset_imp.h"
 #include "udataswp.h"
-#include "utrie2.h"
 
 #ifdef __cplusplus
 U_NAMESPACE_BEGIN
@@ -148,33 +147,6 @@ private:
     int32_t currentRow;
     int32_t rowCpIndex;
 };
-
-/**
- * Fast case mapping data for ASCII/Latin.
- * Linear arrays of delta bytes: 0=no mapping; EXC=exception.
- * Deltas must not cross the ASCII boundary, or else they cannot be easily used
- * in simple UTF-8 code.
- */
-namespace LatinCase {
-
-/** Case mapping/folding data for code points up to U+017F. */
-constexpr UChar LIMIT = 0x180;
-/** U+017F case-folds and uppercases crossing the ASCII boundary. */
-constexpr UChar LONG_S = 0x17f;
-/** Exception: Complex mapping, or too-large delta. */
-constexpr int8_t EXC = -0x80;
-
-/** Deltas for lowercasing for most locales, and default case folding. */
-extern const int8_t TO_LOWER_NORMAL[LIMIT];
-/** Deltas for lowercasing for tr/az/lt, and Turkic case folding. */
-extern const int8_t TO_LOWER_TR_LT[LIMIT];
-
-/** Deltas for uppercasing for most locales. */
-extern const int8_t TO_UPPER_NORMAL[LIMIT];
-/** Deltas for uppercasing for tr/az. */
-extern const int8_t TO_UPPER_TR[LIMIT];
-
-}  // namespace LatinCase
 
 U_NAMESPACE_END
 #endif
@@ -336,9 +308,6 @@ enum {
 
 /* definitions for 16-bit case properties word ------------------------------ */
 
-U_CFUNC const UTrie2 * U_EXPORT2
-ucase_getTrie();
-
 /* 2-bit constants for types of cased characters */
 #define UCASE_TYPE_MASK     3
 enum {
@@ -351,13 +320,9 @@ enum {
 #define UCASE_GET_TYPE(props) ((props)&UCASE_TYPE_MASK)
 #define UCASE_GET_TYPE_AND_IGNORABLE(props) ((props)&7)
 
-#define UCASE_IS_UPPER_OR_TITLE(props) ((props)&2)
-
 #define UCASE_IGNORABLE         4
-#define UCASE_EXCEPTION         8
-#define UCASE_SENSITIVE         0x10
-
-#define UCASE_HAS_EXCEPTION(props) ((props)&UCASE_EXCEPTION)
+#define UCASE_SENSITIVE         8
+#define UCASE_EXCEPTION         0x10
 
 #define UCASE_DOT_MASK      0x60
 enum {
@@ -379,9 +344,9 @@ enum {
 #   define UCASE_GET_DELTA(props) (int16_t)(((props)&0x8000) ? (((props)>>UCASE_DELTA_SHIFT)|0xfe00) : ((uint16_t)(props)>>UCASE_DELTA_SHIFT))
 #endif
 
-/* exception: bits 15..4 are an unsigned 12-bit index into the exceptions array */
-#define UCASE_EXC_SHIFT     4
-#define UCASE_EXC_MASK      0xfff0
+/* exception: bits 15..5 are an unsigned 11-bit index into the exceptions array */
+#define UCASE_EXC_SHIFT     5
+#define UCASE_EXC_MASK      0xffe0
 #define UCASE_MAX_EXCEPTIONS ((UCASE_EXC_MASK>>UCASE_EXC_SHIFT)+1)
 
 /* definitions for 16-bit main exceptions word ------------------------------ */
@@ -392,7 +357,7 @@ enum {
     UCASE_EXC_FOLD,
     UCASE_EXC_UPPER,
     UCASE_EXC_TITLE,
-    UCASE_EXC_DELTA,
+    UCASE_EXC_4,            /* reserved */
     UCASE_EXC_5,            /* reserved */
     UCASE_EXC_CLOSURE,
     UCASE_EXC_FULL_MAPPINGS,
@@ -402,11 +367,7 @@ enum {
 /* each slot is 2 uint16_t instead of 1 */
 #define UCASE_EXC_DOUBLE_SLOTS      0x100
 
-enum {
-    UCASE_EXC_NO_SIMPLE_CASE_FOLDING=0x200,
-    UCASE_EXC_DELTA_IS_NEGATIVE=0x400,
-    UCASE_EXC_SENSITIVE=0x800
-};
+/* reserved: exception bits 11..9 */
 
 /* UCASE_EXC_DOT_MASK=UCASE_DOT_MASK<<UCASE_EXC_DOT_SHIFT */
 #define UCASE_EXC_DOT_SHIFT     7

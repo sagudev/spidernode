@@ -23,9 +23,7 @@ var arg = {
     return 1;
   }
 };
-var args = (function() {
-  return arguments;
-}());
+var args = (function() { return arguments; }());
 
 assert.sameValue(typeof setTime, 'function');
 
@@ -41,6 +39,6 @@ assert.throws(TypeError, function() {
   setTime.call(args, arg);
 }, 'arguments exotic object');
 
-assert.sameValue(callCount, 0, 'validation precedes input coercion');
+assert.sameValue(callCount, 0, 'validation preceeds input coercion');
 
 reportCompare(0, 0);

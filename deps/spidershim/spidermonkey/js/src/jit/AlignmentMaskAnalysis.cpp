@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,33 +38,21 @@ static void AnalyzeAsmHeapAddress(MDefinition* ptr, MIRGraph& graph) {
 
   MOZ_ASSERT(IsCompilingWasm());
 
-  if (!ptr->isBitAnd()) {
-    return;
-  }
+  if (!ptr->isBitAnd()) return;
 
   MDefinition* lhs = ptr->toBitAnd()->getOperand(0);
   MDefinition* rhs = ptr->toBitAnd()->getOperand(1);
-  if (lhs->isConstant()) {
-    mozilla::Swap(lhs, rhs);
-  }
-  if (!lhs->isAdd() || !rhs->isConstant()) {
-    return;
-  }
+  if (lhs->isConstant()) mozilla::Swap(lhs, rhs);
+  if (!lhs->isAdd() || !rhs->isConstant()) return;
 
   MDefinition* op0 = lhs->toAdd()->getOperand(0);
   MDefinition* op1 = lhs->toAdd()->getOperand(1);
-  if (op0->isConstant()) {
-    mozilla::Swap(op0, op1);
-  }
-  if (!op1->isConstant()) {
-    return;
-  }
+  if (op0->isConstant()) mozilla::Swap(op0, op1);
+  if (!op1->isConstant()) return;
 
   uint32_t i = op1->toConstant()->toInt32();
   uint32_t m = rhs->toConstant()->toInt32();
-  if (!IsAlignmentMask(m) || (i & m) != i) {
-    return;
-  }
+  if (!IsAlignmentMask(m) || (i & m) != i) return;
 
   // The pattern was matched! Produce the replacement expression.
   MInstruction* and_ = MBitAnd::New(graph.alloc(), op0, rhs, MIRType::Int32);
@@ -79,18 +67,15 @@ bool AlignmentMaskAnalysis::analyze() {
   for (ReversePostorderIterator block(graph_.rpoBegin());
        block != graph_.rpoEnd(); block++) {
     for (MInstructionIterator i = block->begin(); i != block->end(); i++) {
-      if (!graph_.alloc().ensureBallast()) {
-        return false;
-      }
+      if (!graph_.alloc().ensureBallast()) return false;
 
       // Note that we don't check for MWasmCompareExchangeHeap
       // or MWasmAtomicBinopHeap, because the backend and the OOB
       // mechanism don't support non-zero offsets for them yet.
-      if (i->isAsmJSLoadHeap()) {
+      if (i->isAsmJSLoadHeap())
         AnalyzeAsmHeapAddress(i->toAsmJSLoadHeap()->base(), graph_);
-      } else if (i->isAsmJSStoreHeap()) {
+      else if (i->isAsmJSStoreHeap())
         AnalyzeAsmHeapAddress(i->toAsmJSStoreHeap()->base(), graph_);
-      }
     }
   }
   return true;

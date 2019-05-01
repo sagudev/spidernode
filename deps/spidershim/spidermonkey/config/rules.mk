@@ -31,12 +31,12 @@ ifdef REBUILD_CHECK
 REPORT_BUILD = $(info $(shell $(PYTHON) $(MOZILLA_DIR)/config/rebuild_check.py $@ $^))
 REPORT_BUILD_VERBOSE = $(REPORT_BUILD)
 else
-REPORT_BUILD = $(info $(relativesrcdir)/$(notdir $@))
+REPORT_BUILD = $(info $(notdir $@))
 
 ifdef BUILD_VERBOSE_LOG
 REPORT_BUILD_VERBOSE = $(REPORT_BUILD)
 else
-REPORT_BUILD_VERBOSE = $(call BUILDSTATUS,BUILD_VERBOSE $(relativesrcdir))
+REPORT_BUILD_VERBOSE =
 endif
 
 endif
@@ -47,7 +47,7 @@ EXEC			= exec
 # prints out failed commands anyway, so ELOG just makes things worse by
 # forcing shell invocations.
 ifneq (,$(findstring -s, $(filter-out --%, $(MAKEFLAGS))))
-  ELOG := $(EXEC) sh $(MOZILLA_DIR)/build/unix/print-failed-commands.sh
+  ELOG := $(EXEC) sh $(BUILD_TOOLS)/print-failed-commands.sh
 else
   ELOG :=
 endif # -s
@@ -100,10 +100,32 @@ endif # ENABLE_TESTS
 
 ifndef LIBRARY
 ifdef REAL_LIBRARY
+# Don't build actual static library if a shared library is also built
+ifdef FORCE_SHARED_LIB
+# ... except when we really want one
 ifdef NO_EXPAND_LIBS
-# Only build actual library if it is requested.
 LIBRARY			:= $(REAL_LIBRARY)
+else
+LIBRARY			:= $(REAL_LIBRARY).$(LIBS_DESC_SUFFIX)
 endif
+else
+# Only build actual library if it is installed in DIST/lib
+ifeq (,$(DIST_INSTALL)$(NO_EXPAND_LIBS))
+LIBRARY			:= $(REAL_LIBRARY).$(LIBS_DESC_SUFFIX)
+else
+ifdef NO_EXPAND_LIBS
+LIBRARY			:= $(REAL_LIBRARY)
+else
+LIBRARY			:= $(REAL_LIBRARY) $(REAL_LIBRARY).$(LIBS_DESC_SUFFIX)
+endif
+endif
+endif
+endif # REAL_LIBRARY
+endif # LIBRARY
+
+ifndef HOST_LIBRARY
+ifdef HOST_LIBRARY_NAME
+HOST_LIBRARY		:= $(LIB_PREFIX)$(HOST_LIBRARY_NAME).$(LIB_SUFFIX)
 endif
 endif
 
@@ -125,17 +147,33 @@ LINK_PDBFILE ?= $(basename $(@F)).pdb
 
 ifndef GNU_CC
 
+#
+# Unless we're building SIMPLE_PROGRAMS, all C++ files share a PDB file per
+# directory. For parallel builds, this PDB file is shared and locked by
+# MSPDBSRV.EXE, starting with MSVC8 SP1. If you're using MSVC 7.1 or MSVC8
+# without SP1, don't do parallel builds.
+#
+# The final PDB for libraries and programs is created by the linker and uses
+# a different name from the single PDB file created by the compiler. See
+# bug 462740.
+#
+
 ifdef SIMPLE_PROGRAMS
 COMPILE_PDB_FLAG ?= -Fd$(basename $(@F)).pdb
+else
+COMPILE_PDB_FLAG ?= -Fdgenerated.pdb -FS
+endif
 COMPILE_CFLAGS += $(COMPILE_PDB_FLAG)
 COMPILE_CXXFLAGS += $(COMPILE_PDB_FLAG)
-endif
 
 ifdef MOZ_DEBUG
 CODFILE=$(basename $(@F)).cod
 endif
 
 endif # !GNU_CC
+
+EXTRA_DEPS += $(DEFFILE)
+
 endif # WINNT
 
 ifeq (arm-Darwin,$(CPU_ARCH)-$(OS_TARGET))
@@ -153,6 +191,8 @@ endif
 ifeq ($(HOST_OS_ARCH),WINNT)
 HOST_PDBFILE=$(basename $(@F)).pdb
 HOST_PDB_FLAG ?= -Fd$(HOST_PDBFILE)
+HOST_CFLAGS += $(HOST_PDB_FLAG)
+HOST_CXXFLAGS += $(HOST_PDB_FLAG)
 HOST_C_LDFLAGS += $(HOST_PDB_FLAG)
 HOST_CXX_LDFLAGS += $(HOST_PDB_FLAG)
 endif
@@ -167,11 +207,7 @@ endif
 
 ifdef COMPILE_ENVIRONMENT
 ifndef TARGETS
-TARGETS			= $(LIBRARY) $(SHARED_LIBRARY) $(PROGRAM) $(SIMPLE_PROGRAMS) $(HOST_PROGRAM) $(HOST_SIMPLE_PROGRAMS) $(HOST_SHARED_LIBRARY)
-endif
-
-ifdef MOZ_PROFILE_GENERATE
-CPPSRCS := $(CPPSRCS) $(PGO_GEN_ONLY_CPPSRCS)
+TARGETS			= $(LIBRARY) $(SHARED_LIBRARY) $(PROGRAM) $(SIMPLE_PROGRAMS) $(HOST_LIBRARY) $(HOST_PROGRAM) $(HOST_SIMPLE_PROGRAMS)
 endif
 
 COBJS = $(notdir $(CSRCS:.c=.$(OBJ_SUFFIX)))
@@ -188,11 +224,11 @@ _OBJS = $(COBJS) $(SOBJS) $(CPPOBJS) $(CMOBJS) $(CMMOBJS) $(ASOBJS)
 OBJS = $(strip $(_OBJS))
 endif
 
-HOST_COBJS = $(addprefix host_,$(notdir $(HOST_CSRCS:.c=.$(_OBJ_SUFFIX))))
+HOST_COBJS = $(addprefix host_,$(notdir $(HOST_CSRCS:.c=.$(OBJ_SUFFIX))))
 # HOST_CPPOBJS can have different extensions (eg: .cpp, .cc)
-HOST_CPPOBJS = $(addprefix host_,$(notdir $(addsuffix .$(_OBJ_SUFFIX),$(basename $(HOST_CPPSRCS)))))
-HOST_CMOBJS = $(addprefix host_,$(notdir $(HOST_CMSRCS:.m=.$(_OBJ_SUFFIX))))
-HOST_CMMOBJS = $(addprefix host_,$(notdir $(HOST_CMMSRCS:.mm=.$(_OBJ_SUFFIX))))
+HOST_CPPOBJS = $(addprefix host_,$(notdir $(addsuffix .$(OBJ_SUFFIX),$(basename $(HOST_CPPSRCS)))))
+HOST_CMOBJS = $(addprefix host_,$(notdir $(HOST_CMSRCS:.m=.$(OBJ_SUFFIX))))
+HOST_CMMOBJS = $(addprefix host_,$(notdir $(HOST_CMMSRCS:.mm=.$(OBJ_SUFFIX))))
 ifndef HOST_OBJS
 _HOST_OBJS = $(HOST_COBJS) $(HOST_CPPOBJS) $(HOST_CMOBJS) $(HOST_CMMOBJS)
 HOST_OBJS = $(strip $(_HOST_OBJS))
@@ -204,7 +240,7 @@ IMPORT_LIBRARY :=
 REAL_LIBRARY :=
 PROGRAM :=
 SIMPLE_PROGRAMS :=
-HOST_SHARED_LIBRARY :=
+HOST_LIBRARY :=
 HOST_PROGRAM :=
 HOST_SIMPLE_PROGRAMS :=
 endif
@@ -233,7 +269,7 @@ GARBAGE			+= $(SIMPLE_PROGRAMS:%=%.$(OBJ_SUFFIX))
 endif
 
 ifdef HOST_SIMPLE_PROGRAMS
-GARBAGE			+= $(HOST_SIMPLE_PROGRAMS:%=%.$(_OBJ_SUFFIX))
+GARBAGE			+= $(HOST_SIMPLE_PROGRAMS:%=%.$(OBJ_SUFFIX))
 endif
 
 ifdef MACH
@@ -304,6 +340,15 @@ EXTRA_DSO_LDOPTS	+= -dynamiclib -install_name $(_LOADER_PATH)/$(SHARED_LIBRARY) 
 endif
 endif
 
+ifeq ($(OS_ARCH),NetBSD)
+ifneq (,$(filter arc cobalt hpcmips mipsco newsmips pmax sgimips,$(OS_TEST)))
+ifneq (,$(filter layout/%,$(relativesrcdir)))
+OS_CFLAGS += -Wa,-xgot
+OS_CXXFLAGS += -Wa,-xgot
+endif
+endif
+endif
+
 ifdef SYMBOLS_FILE
 ifeq ($(OS_TARGET),WINNT)
 ifndef GNU_CC
@@ -353,19 +398,16 @@ else
 OUTOPTION = -o # eol
 endif # WINNT && !GNU_CC
 
+ifneq (,$(filter ml%,$(AS)))
+ASOUTOPTION = -Fo# eol
+else
+ASOUTOPTION = -o # eol
+endif
+
 ifeq (,$(CROSS_COMPILE))
 HOST_OUTOPTION = $(OUTOPTION)
 else
-# Windows-to-Windows cross compiles should always use MSVC-style options for
-# host compiles.
-ifeq (WINNT_WINNT,$(HOST_OS_ARCH)_$(OS_ARCH))
-ifneq (,$(filter-out clang-cl,$(HOST_CC_TYPE)))
-$(error MSVC-style compilers should be used for host compilations!)
-endif
-HOST_OUTOPTION = -Fo# eol
-else
 HOST_OUTOPTION = -o # eol
-endif
 endif
 ################################################################################
 
@@ -412,6 +454,9 @@ everything::
 	$(MAKE) clean
 	$(MAKE) all
 
+STATIC_LIB_DEP = $(if $(wildcard $(1).$(LIBS_DESC_SUFFIX)),$(1).$(LIBS_DESC_SUFFIX),$(1))
+STATIC_LIBS_DEPS := $(foreach l,$(STATIC_LIBS),$(call STATIC_LIB_DEP,$(l)))
+
 # Dependencies which, if modified, should cause everything to rebuild
 GLOBAL_DEPS += Makefile $(addprefix $(DEPTH)/config/,$(INCLUDED_AUTOCONF_MK)) $(MOZILLA_DIR)/config/config.mk
 
@@ -421,15 +466,9 @@ OBJ_TARGETS = $(OBJS) $(PROGOBJS) $(HOST_OBJS) $(HOST_PROGOBJS)
 
 compile:: host target
 
-host:: $(HOST_OBJS) $(HOST_PROGRAM) $(HOST_SIMPLE_PROGRAMS) $(HOST_RUST_PROGRAMS) $(HOST_RUST_LIBRARY_FILE) $(HOST_SHARED_LIBRARY)
+host:: $(HOST_LIBRARY) $(HOST_PROGRAM) $(HOST_SIMPLE_PROGRAMS) $(HOST_RUST_PROGRAMS) $(HOST_RUST_LIBRARY_FILE)
 
-target:: $(filter-out $(MOZBUILD_NON_DEFAULT_TARGETS),$(LIBRARY) $(SHARED_LIBRARY) $(PROGRAM) $(SIMPLE_PROGRAMS) $(RUST_LIBRARY_FILE) $(RUST_PROGRAMS))
-
-ifndef LIBRARY
-ifdef OBJS
-target:: $(OBJS)
-endif
-endif
+target:: $(LIBRARY) $(SHARED_LIBRARY) $(PROGRAM) $(SIMPLE_PROGRAMS) $(RUST_LIBRARY_FILE) $(RUST_PROGRAMS)
 
 syms::
 
@@ -514,30 +553,30 @@ alltags:
 	find $(topsrcdir) -name dist -prune -o \( -name '*.[hc]' -o -name '*.cp' -o -name '*.cpp' -o -name '*.idl' \) -print | $(TAG_PROGRAM)
 
 define EXPAND_CC_OR_CXX
-$(if $(PROG_IS_C_ONLY_$(1)),$(CC),$(CCC))
+$(if $(PROG_IS_C_ONLY_$(1)),$(EXPAND_CC),$(EXPAND_CCC))
 endef
 
 #
 # PROGRAM = Foo
 # creates OBJS, links with LIBS to create Foo
 #
-$(PROGRAM): $(PROGOBJS) $(STATIC_LIBS) $(RUST_STATIC_LIB) $(EXTRA_DEPS) $(RESFILE) $(GLOBAL_DEPS) $(call mkdir_deps,$(FINAL_TARGET))
+$(PROGRAM): $(PROGOBJS) $(STATIC_LIBS_DEPS) $(EXTRA_DEPS) $(RESFILE) $(GLOBAL_DEPS)
 	$(REPORT_BUILD)
 	@$(RM) $@.manifest
 ifeq (_WINNT,$(GNU_CC)_$(OS_ARCH))
-	$(LINKER) -NOLOGO -OUT:$@ -PDB:$(LINK_PDBFILE) -IMPLIB:$(basename $(@F)).lib $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(MOZ_PROGRAM_LDFLAGS) $($(notdir $@)_$(OBJS_VAR_SUFFIX)) $(RESFILE) $(STATIC_LIBS) $(RUST_STATIC_LIB) $(SHARED_LIBS) $(OS_LIBS)
+	$(EXPAND_LINK) -NOLOGO -OUT:$@ -PDB:$(LINK_PDBFILE) $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(MOZ_PROGRAM_LDFLAGS) $(PROGOBJS) $(RESFILE) $(STATIC_LIBS) $(SHARED_LIBS) $(OS_LIBS)
 ifdef MSMANIFEST_TOOL
 	@if test -f $@.manifest; then \
-		if test -f '$(srcdir)/$(notdir $@).manifest'; then \
-			echo 'Embedding manifest from $(srcdir_rel)/$(notdir $@).manifest and $@.manifest'; \
-			$(MT) -NOLOGO -MANIFEST '$(srcdir_rel)/$(notdir $@).manifest' $@.manifest -OUTPUTRESOURCE:$@\;1; \
+		if test -f '$(srcdir)/$@.manifest'; then \
+			echo 'Embedding manifest from $(srcdir)/$@.manifest and $@.manifest'; \
+			$(MT) -NOLOGO -MANIFEST '$(win_srcdir)/$@.manifest' $@.manifest -OUTPUTRESOURCE:$@\;1; \
 		else \
 			echo 'Embedding manifest from $@.manifest'; \
 			$(MT) -NOLOGO -MANIFEST $@.manifest -OUTPUTRESOURCE:$@\;1; \
 		fi; \
-	elif test -f '$(srcdir)/$(notdir $@).manifest'; then \
-		echo 'Embedding manifest from $(srcdir_rel)/$(notdir $@).manifest'; \
-		$(MT) -NOLOGO -MANIFEST '$(srcdir_rel)/$(notdir $@).manifest' -OUTPUTRESOURCE:$@\;1; \
+	elif test -f '$(srcdir)/$@.manifest'; then \
+		echo 'Embedding manifest from $(srcdir)/$@.manifest'; \
+		$(MT) -NOLOGO -MANIFEST '$(win_srcdir)/$@.manifest' -OUTPUTRESOURCE:$@\;1; \
 	fi
 endif	# MSVC with manifest tool
 ifdef MOZ_PROFILE_GENERATE
@@ -546,7 +585,7 @@ ifdef MOZ_PROFILE_GENERATE
 	touch -t `date +%Y%m%d%H%M.%S -d 'now+5seconds'` pgo.relink
 endif
 else # !WINNT || GNU_CC
-	$(call EXPAND_CC_OR_CXX,$@) -o $@ $(COMPUTED_CXX_LDFLAGS) $(PGO_CFLAGS) $($(notdir $@)_$(OBJS_VAR_SUFFIX)) $(RESFILE) $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(STATIC_LIBS) $(RUST_STATIC_LIB) $(MOZ_PROGRAM_LDFLAGS) $(SHARED_LIBS) $(OS_LIBS)
+	$(call EXPAND_CC_OR_CXX,$@) -o $@ $(COMPUTED_CXX_LDFLAGS) $(PGO_CFLAGS) $(PROGOBJS) $(RESFILE) $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(STATIC_LIBS) $(MOZ_PROGRAM_LDFLAGS) $(SHARED_LIBS) $(OS_LIBS)
 	$(call py_action,check_binary,--target $@)
 endif # WINNT && !GNU_CC
 
@@ -557,29 +596,29 @@ ifdef MOZ_POST_PROGRAM_COMMAND
 	$(MOZ_POST_PROGRAM_COMMAND) $@
 endif
 
-$(HOST_PROGRAM): $(HOST_PROGOBJS) $(HOST_LIBS) $(HOST_EXTRA_DEPS) $(GLOBAL_DEPS) $(call mkdir_deps,$(DEPTH)/dist/host/bin)
+$(HOST_PROGRAM): $(HOST_PROGOBJS) $(HOST_LIBS) $(HOST_EXTRA_DEPS) $(GLOBAL_DEPS)
 	$(REPORT_BUILD)
 ifeq (_WINNT,$(GNU_CC)_$(HOST_OS_ARCH))
-	$(HOST_LINKER) -NOLOGO -OUT:$@ -PDB:$(HOST_PDBFILE) $($(notdir $@)_OBJS) $(WIN32_EXE_LDFLAGS) $(HOST_LDFLAGS) $(HOST_LINKER_LIBPATHS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
+	$(EXPAND_LIBS_EXEC) -- $(LINKER) -NOLOGO -OUT:$@ -PDB:$(HOST_PDBFILE) $(HOST_OBJS) $(WIN32_EXE_LDFLAGS) $(HOST_LDFLAGS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
 ifdef MSMANIFEST_TOOL
 	@if test -f $@.manifest; then \
-		if test -f '$(srcdir)/$(notdir $@).manifest'; then \
-			echo 'Embedding manifest from $(srcdir_rel)/$(notdir $@).manifest and $@.manifest'; \
-			$(MT) -NOLOGO -MANIFEST '$(srcdir_rel)/$(notdir $@).manifest' $@.manifest -OUTPUTRESOURCE:$@\;1; \
+		if test -f '$(srcdir)/$@.manifest'; then \
+			echo 'Embedding manifest from $(srcdir)/$@.manifest and $@.manifest'; \
+			$(MT) -NOLOGO -MANIFEST '$(win_srcdir)/$@.manifest' $@.manifest -OUTPUTRESOURCE:$@\;1; \
 		else \
 			echo 'Embedding manifest from $@.manifest'; \
 			$(MT) -NOLOGO -MANIFEST $@.manifest -OUTPUTRESOURCE:$@\;1; \
 		fi; \
-	elif test -f '$(srcdir)/$(notdir $@).manifest'; then \
-		echo 'Embedding manifest from $(srcdir_rel)/$(notdir $@).manifest'; \
-		$(MT) -NOLOGO -MANIFEST '$(srcdir_rel)/$(notdir $@).manifest' -OUTPUTRESOURCE:$@\;1; \
+	elif test -f '$(srcdir)/$@.manifest'; then \
+		echo 'Embedding manifest from $(srcdir)/$@.manifest'; \
+		$(MT) -NOLOGO -MANIFEST '$(win_srcdir)/$@.manifest' -OUTPUTRESOURCE:$@\;1; \
 	fi
 endif	# MSVC with manifest tool
 else
 ifeq ($(HOST_CPP_PROG_LINK),1)
-	$(HOST_CXX) -o $@ $(HOST_CXX_LDFLAGS) $(HOST_LDFLAGS) $($(notdir $@)_OBJS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
+	$(EXPAND_LIBS_EXEC) -- $(HOST_CXX) -o $@ $(HOST_CXX_LDFLAGS) $(HOST_LDFLAGS) $(HOST_PROGOBJS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
 else
-	$(HOST_CC) -o $@ $(HOST_C_LDFLAGS) $(HOST_LDFLAGS) $($(notdir $@)_OBJS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
+	$(EXPAND_LIBS_EXEC) -- $(HOST_CC) -o $@ $(HOST_C_LDFLAGS) $(HOST_LDFLAGS) $(HOST_PROGOBJS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
 endif # HOST_CPP_PROG_LINK
 endif
 ifndef CROSS_COMPILE
@@ -594,20 +633,18 @@ endif
 # SIMPLE_PROGRAMS = Foo Bar
 # creates Foo.o Bar.o, links with LIBS to create Foo, Bar.
 #
-$(SIMPLE_PROGRAMS): %$(BIN_SUFFIX): %.$(OBJ_SUFFIX) $(STATIC_LIBS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
+$(SIMPLE_PROGRAMS): %$(BIN_SUFFIX): %.$(OBJ_SUFFIX) $(STATIC_LIBS_DEPS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
 	$(REPORT_BUILD)
 ifeq (_WINNT,$(GNU_CC)_$(OS_ARCH))
-	$(LINKER) -nologo -out:$@ -pdb:$(LINK_PDBFILE) $($@_$(OBJS_VAR_SUFFIX)) $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(MOZ_PROGRAM_LDFLAGS) $(STATIC_LIBS) $(SHARED_LIBS) $(OS_LIBS)
+	$(EXPAND_LINK) -nologo -out:$@ -pdb:$(LINK_PDBFILE) $< $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(MOZ_PROGRAM_LDFLAGS) $(STATIC_LIBS) $(SHARED_LIBS) $(OS_LIBS)
 ifdef MSMANIFEST_TOOL
 	@if test -f $@.manifest; then \
 		$(MT) -NOLOGO -MANIFEST $@.manifest -OUTPUTRESOURCE:$@\;1; \
 		rm -f $@.manifest; \
-	elif test -f '$(srcdir)/$(notdir $@).manifest'; then \
-		$(MT) -NOLOGO -MANIFEST '$(srcdir_rel)/$(notdir $@).manifest' -OUTPUTRESOURCE:$@\;1; \
 	fi
 endif	# MSVC with manifest tool
 else
-	$(call EXPAND_CC_OR_CXX,$@) $(COMPUTED_CXX_LDFLAGS) $(PGO_CFLAGS) -o $@ $($@_$(OBJS_VAR_SUFFIX)) $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(STATIC_LIBS) $(MOZ_PROGRAM_LDFLAGS) $(SHARED_LIBS) $(OS_LIBS)
+	$(call EXPAND_CC_OR_CXX,$@) $(COMPUTED_CXX_LDFLAGS) $(PGO_CFLAGS) -o $@ $< $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(STATIC_LIBS) $(MOZ_PROGRAM_LDFLAGS) $(SHARED_LIBS) $(OS_LIBS)
 	$(call py_action,check_binary,--target $@)
 endif # WINNT && !GNU_CC
 
@@ -618,25 +655,32 @@ ifdef MOZ_POST_PROGRAM_COMMAND
 	$(MOZ_POST_PROGRAM_COMMAND) $@
 endif
 
-$(HOST_SIMPLE_PROGRAMS): host_%$(HOST_BIN_SUFFIX): $(HOST_LIBS) $(HOST_EXTRA_DEPS) $(GLOBAL_DEPS)
+$(HOST_SIMPLE_PROGRAMS): host_%$(HOST_BIN_SUFFIX): host_%.$(OBJ_SUFFIX) $(HOST_LIBS) $(HOST_EXTRA_DEPS) $(GLOBAL_DEPS)
 	$(REPORT_BUILD)
 ifeq (WINNT_,$(HOST_OS_ARCH)_$(GNU_CC))
-	$(HOST_LINKER) -NOLOGO -OUT:$@ -PDB:$(HOST_PDBFILE) $($(notdir $@)_OBJS) $(WIN32_EXE_LDFLAGS) $(HOST_LDFLAGS) $(HOST_LINKER_LIBPATHS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
+	$(EXPAND_LIBS_EXEC) -- $(LINKER) -NOLOGO -OUT:$@ -PDB:$(HOST_PDBFILE) $< $(WIN32_EXE_LDFLAGS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
 else
 ifneq (,$(HOST_CPPSRCS)$(USE_HOST_CXX))
-	$(HOST_CXX) $(HOST_OUTOPTION)$@ $(HOST_CXX_LDFLAGS) $($(notdir $@)_OBJS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
+	$(EXPAND_LIBS_EXEC) -- $(HOST_CXX) $(HOST_OUTOPTION)$@ $(HOST_CXX_LDFLAGS) $< $(HOST_LIBS) $(HOST_EXTRA_LIBS)
 else
-	$(HOST_CC) $(HOST_OUTOPTION)$@ $(HOST_C_LDFLAGS) $($(notdir $@)_OBJS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
+	$(EXPAND_LIBS_EXEC) -- $(HOST_CC) $(HOST_OUTOPTION)$@ $(HOST_C_LDFLAGS) $< $(HOST_LIBS) $(HOST_EXTRA_LIBS)
 endif
 endif
 ifndef CROSS_COMPILE
 	$(call py_action,check_binary,--host $@)
 endif
 
-$(LIBRARY): $(OBJS) $(STATIC_LIBS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
+$(filter %.$(LIB_SUFFIX),$(LIBRARY)): $(OBJS) $(STATIC_LIBS_DEPS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
 	$(REPORT_BUILD)
-	$(RM) $(REAL_LIBRARY)
-	$(AR) $(AR_FLAGS) $($@_$(OBJS_VAR_SUFFIX))
+# Always remove both library and library descriptor
+	$(RM) $(REAL_LIBRARY) $(REAL_LIBRARY).$(LIBS_DESC_SUFFIX)
+	$(EXPAND_AR) $(AR_FLAGS) $(OBJS) $(STATIC_LIBS)
+
+$(filter-out %.$(LIB_SUFFIX),$(LIBRARY)): $(filter %.$(LIB_SUFFIX),$(LIBRARY)) $(OBJS) $(STATIC_LIBS_DEPS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
+# When we only build a library descriptor, blow out any existing library
+	$(REPORT_BUILD)
+	$(if $(filter %.$(LIB_SUFFIX),$(LIBRARY)),,$(RM) $(REAL_LIBRARY))
+	$(EXPAND_LIBS_GEN) -o $@ $(OBJS) $(STATIC_LIBS)
 
 ifeq ($(OS_ARCH),WINNT)
 # Import libraries are created by the rules creating shared libraries.
@@ -649,26 +693,22 @@ ifeq ($(OS_ARCH),WINNT)
 $(IMPORT_LIBRARY): $(SHARED_LIBRARY) ;
 endif
 
-$(HOST_SHARED_LIBRARY): Makefile
+$(HOST_LIBRARY): $(HOST_OBJS) Makefile
 	$(REPORT_BUILD)
 	$(RM) $@
-ifneq (,$(filter clang-cl,$(HOST_CC_TYPE)))
-	$(HOST_LINKER) -NOLOGO -DLL -OUT:$@ $($(notdir $@)_OBJS) $(HOST_CXX_LDFLAGS) $(HOST_LDFLAGS) $(HOST_LINKER_LIBPATHS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
-else
-	$(HOST_CXX) $(HOST_OUTOPTION)$@ $($(notdir $@)_OBJS) $(HOST_CXX_LDFLAGS) $(HOST_LDFLAGS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
-endif
+	$(EXPAND_LIBS_EXEC) --extract -- $(HOST_AR) $(HOST_AR_FLAGS) $(HOST_OBJS)
 
 # On Darwin (Mac OS X), dwarf2 debugging uses debug info left in .o files,
 # so instead of deleting .o files after repacking them into a dylib, we make
 # symlinks back to the originals. The symlinks are a no-op for stabs debugging,
 # so no need to conditionalize on OS version or debugging format.
 
-$(SHARED_LIBRARY): $(OBJS) $(RESFILE) $(RUST_STATIC_LIB) $(STATIC_LIBS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
+$(SHARED_LIBRARY): $(OBJS) $(RESFILE) $(RUST_STATIC_LIB_FOR_SHARED_LIB) $(STATIC_LIBS_DEPS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
 	$(REPORT_BUILD)
 ifndef INCREMENTAL_LINKER
 	$(RM) $@
 endif
-	$(MKSHLIB) $($@_$(OBJS_VAR_SUFFIX)) $(RESFILE) $(LDFLAGS) $(STATIC_LIBS) $(RUST_STATIC_LIB) $(SHARED_LIBS) $(EXTRA_DSO_LDOPTS) $(MOZ_GLUE_LDFLAGS) $(OS_LIBS)
+	$(EXPAND_MKSHLIB) $(OBJS) $(RESFILE) $(LDFLAGS) $(STATIC_LIBS) $(RUST_STATIC_LIB_FOR_SHARED_LIB) $(SHARED_LIBS) $(EXTRA_DSO_LDOPTS) $(MOZ_GLUE_LDFLAGS) $(OS_LIBS)
 	$(call py_action,check_binary,--target $@)
 
 ifeq (_WINNT,$(GNU_CC)_$(OS_ARCH))
@@ -676,15 +716,15 @@ ifdef MSMANIFEST_TOOL
 ifdef EMBED_MANIFEST_AT
 	@if test -f $@.manifest; then \
 		if test -f '$(srcdir)/$@.manifest'; then \
-			echo 'Embedding manifest from $(srcdir_rel)/$@.manifest and $@.manifest'; \
-			$(MT) -NOLOGO -MANIFEST '$(srcdir_rel)/$@.manifest' $@.manifest -OUTPUTRESOURCE:$@\;$(EMBED_MANIFEST_AT); \
+			echo 'Embedding manifest from $(srcdir)/$@.manifest and $@.manifest'; \
+			$(MT) -NOLOGO -MANIFEST '$(win_srcdir)/$@.manifest' $@.manifest -OUTPUTRESOURCE:$@\;$(EMBED_MANIFEST_AT); \
 		else \
 			echo 'Embedding manifest from $@.manifest'; \
 			$(MT) -NOLOGO -MANIFEST $@.manifest -OUTPUTRESOURCE:$@\;$(EMBED_MANIFEST_AT); \
 		fi; \
 	elif test -f '$(srcdir)/$@.manifest'; then \
-		echo 'Embedding manifest from $(srcdir_rel)/$@.manifest'; \
-		$(MT) -NOLOGO -MANIFEST '$(srcdir_rel)/$@.manifest' -OUTPUTRESOURCE:$@\;$(EMBED_MANIFEST_AT); \
+		echo 'Embedding manifest from $(srcdir)/$@.manifest'; \
+		$(MT) -NOLOGO -MANIFEST '$(win_srcdir)/$@.manifest' -OUTPUTRESOURCE:$@\;$(EMBED_MANIFEST_AT); \
 	fi
 endif   # EMBED_MANIFEST_AT
 endif	# MSVC with manifest tool
@@ -703,10 +743,10 @@ endif
 # rules that have commands for these targets must not list any other
 # prerequisites, or they will override the $< variable.
 define src_objdep
-$(basename $3$(notdir $1)).$2: $1 $$(call mkdir_deps,$$(MDDEPDIR))
+$(basename $2$(notdir $1)).$(OBJ_SUFFIX): $1 $$(call mkdir_deps,$$(MDDEPDIR))
 endef
-$(foreach f,$(CSRCS) $(SSRCS) $(CPPSRCS) $(CMSRCS) $(CMMSRCS) $(ASFILES),$(eval $(call src_objdep,$(f),$(OBJ_SUFFIX))))
-$(foreach f,$(HOST_CSRCS) $(HOST_CPPSRCS) $(HOST_CMSRCS) $(HOST_CMMSRCS),$(eval $(call src_objdep,$(f),$(_OBJ_SUFFIX),host_)))
+$(foreach f,$(CSRCS) $(SSRCS) $(CPPSRCS) $(CMSRCS) $(CMMSRCS) $(ASFILES),$(eval $(call src_objdep,$(f))))
+$(foreach f,$(HOST_CSRCS) $(HOST_CPPSRCS) $(HOST_CMSRCS) $(HOST_CMMSRCS),$(eval $(call src_objdep,$(f),host_)))
 
 # The Rust compiler only outputs library objects, and so we need different
 # mangling to generate dependency rules for it.
@@ -768,7 +808,7 @@ define syms_template
 syms:: $(2)
 $(2): $(1)
 ifdef MOZ_CRASHREPORTER
-	$$(call py_action,dumpsymbols,$$(abspath $$<) $$(abspath $$@) $$(DUMP_SYMBOLS_FLAGS))
+	$$(call py_action,dumpsymbols,$$(abspath $$<) $$(abspath $$@))
 endif
 endef
 
@@ -793,13 +833,222 @@ else ifdef MOZ_CRASHREPORTER
 $(foreach file,$(DUMP_SYMS_TARGETS),$(eval $(call syms_template,$(file),$(notdir $(file))_syms.track)))
 endif
 
-ifneq (,$(RUST_TESTS)$(RUST_LIBRARY_FILE)$(HOST_RUST_LIBRARY_FILE)$(RUST_PROGRAMS)$(HOST_RUST_PROGRAMS))
-include $(MOZILLA_DIR)/config/makefiles/rust.mk
+cargo_host_flag := --target=$(RUST_HOST_TARGET)
+cargo_target_flag := --target=$(RUST_TARGET)
+
+# Permit users to pass flags to cargo from their mozconfigs (e.g. --color=always).
+cargo_build_flags = $(CARGOFLAGS)
+ifndef MOZ_DEBUG_RUST
+cargo_build_flags += --release
 endif
+cargo_build_flags += --frozen
+
+cargo_build_flags += --manifest-path $(CARGO_FILE)
+ifdef BUILD_VERBOSE_LOG
+cargo_build_flags += --verbose
+else
+ifdef MOZ_AUTOMATION
+cargo_build_flags += --verbose
+endif # MOZ_AUTOMATION
+endif # BUILD_VERBOSE_LOG
+
+# Enable color output if original stdout was a TTY and color settings
+# aren't already present. This essentially restores the default behavior
+# of cargo when running via `mach`.
+ifdef MACH_STDOUT_ISATTY
+ifeq (,$(findstring --color,$(cargo_build_flags)))
+cargo_build_flags += --color=always
+endif
+endif
+
+# These flags are passed via `cargo rustc` and only apply to the final rustc
+# invocation (i.e., only the top-level crate, not its dependencies).
+cargo_rustc_flags = $(CARGO_RUSTCFLAGS)
+ifndef DEVELOPER_OPTIONS
+ifndef MOZ_DEBUG_RUST
+# Enable link-time optimization for release builds.
+cargo_rustc_flags += -C lto
+endif
+endif
+
+# Disable incremental Rust compilation in automation builds, where
+# the lack of environmental continuity makes it unhelpful.
+ifdef MOZ_AUTOMATION
+cargo_incremental := CARGO_INCREMENTAL=0
+endif
+
+rustflags_override = RUSTFLAGS='$(MOZ_RUST_DEFAULT_FLAGS) $(RUSTFLAGS)'
+
+ifdef MOZ_MSVCBITS
+# If we are building a MozillaBuild shell, we want to clear out the
+# vcvars.bat environment variables for cargo builds. This is because
+# a 32-bit MozillaBuild shell on a 64-bit machine will try to use
+# the 32-bit compiler/linker for everything, while cargo/rustc wants
+# to use the 64-bit linker for build.rs scripts. This conflict results
+# in a build failure (see bug 1350001). So we clear out the environment
+# variables that are actually relevant to 32- vs 64-bit builds.
+environment_cleaner = -u VCINSTALLDIR PATH='' LIB='' LIBPATH=''
+# The servo build needs to know where python is, and we're removing the PATH
+# so we tell it explicitly via the PYTHON env var.
+environment_cleaner += PYTHON='$(shell which $(PYTHON))'
+else
+environment_cleaner =
+endif
+
+rust_unlock_unstable =
+ifdef MOZ_RUST_SIMD
+rust_unlock_unstable += RUSTC_BOOTSTRAP=1
+endif
+
+ifdef MOZ_USING_SCCACHE
+sccache_wrap := RUSTC_WRAPPER='$(CCACHE)'
+endif
+
+# We use the + prefix to pass down the jobserver fds to cargo, but we
+# don't use the prefix when make -n is used, so that cargo doesn't run
+# in that case)
+define RUN_CARGO
+$(if $(findstring n,$(filter-out --%, $(MAKEFLAGS))),,+)env $(environment_cleaner) $(rust_unlock_unstable) $(rustflags_override) $(sccache_wrap) \
+	CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) \
+	RUSTC=$(RUSTC) \
+	MOZ_SRC=$(topsrcdir) \
+	MOZ_DIST=$(ABS_DIST) \
+	LIBCLANG_PATH="$(MOZ_LIBCLANG_PATH)" \
+	CLANG_PATH="$(MOZ_CLANG_PATH)" \
+	PKG_CONFIG_ALLOW_CROSS=1 \
+	RUST_BACKTRACE=full \
+	MOZ_TOPOBJDIR=$(topobjdir) \
+	$(cargo_incremental) \
+	$(2) \
+	$(CARGO) $(1) $(cargo_build_flags)
+endef
+
+# This function is intended to be called by:
+#
+#   $(call CARGO_BUILD,EXTRA_ENV_VAR1=X EXTRA_ENV_VAR2=Y ...)
+#
+# but, given the idiosyncracies of make, can also be called without arguments:
+#
+#   $(call CARGO_BUILD)
+define CARGO_BUILD
+$(call RUN_CARGO,rustc,$(1))
+endef
+
+define CARGO_CHECK
+$(call RUN_CARGO,check,$(1))
+endef
+
+cargo_linker_env_var := CARGO_TARGET_$(RUST_TARGET_ENV_NAME)_LINKER
+
+# Don't define a custom linker on Windows, as it's difficult to have a
+# non-binary file that will get executed correctly by Cargo.  We don't
+# have to worry about a cross-compiling (besides x86-64 -> x86, which
+# already works with the current setup) setup on Windows, and we don't
+# have to pass in any special linker options on Windows.
+ifneq (WINNT,$(OS_ARCH))
+
+# Defining all of this for ASan/TSan builds results in crashes while running
+# some crates's build scripts (!), so disable it for now.
+ifndef MOZ_ASAN
+ifndef MOZ_TSAN
+# Cargo needs the same linker flags as the C/C++ compiler,
+# but not the final libraries. Filter those out because they
+# cause problems on macOS 10.7; see bug 1365993 for details.
+target_cargo_env_vars := \
+	MOZ_CARGO_WRAP_LDFLAGS="$(filter-out -framework Cocoa -lobjc AudioToolbox ExceptionHandling,$(LDFLAGS))" \
+	MOZ_CARGO_WRAP_LD="$(CC)" \
+	$(cargo_linker_env_var)=$(topsrcdir)/build/cargo-linker
+endif # MOZ_TSAN
+endif # MOZ_ASAN
+
+endif # ifneq WINNT
+
+ifdef RUST_LIBRARY_FILE
+
+ifdef RUST_LIBRARY_FEATURES
+rust_features_flag := --features "$(RUST_LIBRARY_FEATURES)"
+endif
+
+# Assume any system libraries rustc links against are already in the target's LIBS.
+#
+# We need to run cargo unconditionally, because cargo is the only thing that
+# has full visibility into how changes in Rust sources might affect the final
+# build.
+force-cargo-library-build:
+	$(REPORT_BUILD)
+	$(call CARGO_BUILD,$(target_cargo_env_vars)) --lib $(cargo_target_flag) $(rust_features_flag) -- $(cargo_rustc_flags)
+
+$(RUST_LIBRARY_FILE): force-cargo-library-build
+
+force-cargo-library-check:
+	$(call CARGO_CHECK,$(target_cargo_env_vars)) --lib $(cargo_target_flag) $(rust_features_flag)
+else
+force-cargo-library-check:
+	@true
+endif # RUST_LIBRARY_FILE
+
+ifdef RUST_TEST
+
+ifdef RUST_TEST_FEATURES
+rust_features_flag := --features "$(RUST_TEST_FEATURES)"
+endif
+
+force-cargo-test-run:
+	$(call RUN_CARGO,test $(cargo_target_flag) -p $(RUST_TEST) $(rust_features_flag),$(target_cargo_env_vars))
+
+check:: force-cargo-test-run
+endif
+
+ifdef HOST_RUST_LIBRARY_FILE
+
+ifdef HOST_RUST_LIBRARY_FEATURES
+host_rust_features_flag := --features "$(HOST_RUST_LIBRARY_FEATURES)"
+endif
+
+force-cargo-host-library-build:
+	$(REPORT_BUILD)
+	$(call CARGO_BUILD) --lib $(cargo_host_flag) $(host_rust_features_flag)
+
+$(HOST_RUST_LIBRARY_FILE): force-cargo-host-library-build
+
+force-cargo-host-library-check:
+	$(call CARGO_CHECK) --lib $(cargo_host_flag) $(host_rust_features_flag)
+else
+force-cargo-host-library-check:
+	@true
+endif # HOST_RUST_LIBRARY_FILE
+
+ifdef RUST_PROGRAMS
+force-cargo-program-build:
+	$(REPORT_BUILD)
+	$(call CARGO_BUILD,$(target_cargo_env_vars)) $(addprefix --bin ,$(RUST_CARGO_PROGRAMS)) $(cargo_target_flag)
+
+$(RUST_PROGRAMS): force-cargo-program-build
+
+force-cargo-program-check:
+	$(call CARGO_CHECK,$(target_cargo_env_vars)) $(addprefix --bin ,$(RUST_CARGO_PROGRAMS)) $(cargo_target_flag)
+else
+force-cargo-program-check:
+	@true
+endif # RUST_PROGRAMS
+ifdef HOST_RUST_PROGRAMS
+force-cargo-host-program-build:
+	$(REPORT_BUILD)
+	$(call CARGO_BUILD) $(addprefix --bin ,$(HOST_RUST_CARGO_PROGRAMS)) $(cargo_host_flag)
+
+$(HOST_RUST_PROGRAMS): force-cargo-host-program-build
+
+force-cargo-host-program-check:
+	$(REPORT_BUILD)
+	$(call CARGO_CHECK) $(addprefix --bin ,$(HOST_RUST_CARGO_PROGRAMS)) $(cargo_host_flag)
+else
+force-cargo-host-program-check:
+	@true
+endif # HOST_RUST_PROGRAMS
 
 $(SOBJS):
 	$(REPORT_BUILD)
-	$(AS) $(ASOUTOPTION)$@ $(SFLAGS) $($(notdir $<)_FLAGS) -c $<
+	$(AS) -o $@ $(SFLAGS) $($(notdir $<)_FLAGS) -c $<
 
 $(CPPOBJS):
 	$(REPORT_BUILD_VERBOSE)
@@ -951,6 +1200,13 @@ non-root-path = $(shell echo $(1) | sed -e 's|\(/[^/]*\)/\?\(.*\)|\2|')
 normalizepath = $(foreach p,$(1),$(if $(filter /%,$(1)),$(patsubst %/,%,$(shell cd $(call root-path,$(1)) && pwd -W))/$(call non-root-path,$(1)),$(1)))
 else
 normalizepath = $(1)
+endif
+
+###############################################################################
+# Java rules
+###############################################################################
+ifneq (,$(JAVA_JAR_TARGETS))
+  include $(MOZILLA_DIR)/config/makefiles/java-build.mk
 endif
 
 ###############################################################################

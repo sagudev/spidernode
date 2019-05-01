@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,6 +12,7 @@
 #include "vm/ProxyObject.h"
 
 using namespace js;
+using namespace js::gc;
 
 const DeadObjectProxy DeadObjectProxy::singleton;
 const char DeadObjectProxy::family = 0;
@@ -36,7 +37,7 @@ bool DeadObjectProxy::defineProperty(JSContext* cx, HandleObject wrapper,
 }
 
 bool DeadObjectProxy::ownPropertyKeys(JSContext* cx, HandleObject wrapper,
-                                      MutableHandleIdVector props) const {
+                                      AutoIdVector& props) const {
   ReportDead(cx);
   return false;
 }
@@ -135,15 +136,10 @@ Value js::DeadProxyTargetValue(ProxyObject* obj) {
   // When nuking scripted proxies, isCallable and isConstructor values for
   // the proxy needs to be preserved.  So does background-finalization status.
   int32_t flags = 0;
-  if (obj->handler()->isCallable(obj)) {
-    flags |= DeadObjectProxyIsCallable;
-  }
-  if (obj->handler()->isConstructor(obj)) {
-    flags |= DeadObjectProxyIsConstructor;
-  }
-  if (obj->handler()->finalizeInBackground(obj->private_())) {
+  if (obj->handler()->isCallable(obj)) flags |= DeadObjectProxyIsCallable;
+  if (obj->handler()->isConstructor(obj)) flags |= DeadObjectProxyIsConstructor;
+  if (obj->handler()->finalizeInBackground(obj->private_()))
     flags |= DeadObjectProxyIsBackgroundFinalized;
-  }
   return Int32Value(flags);
 }
 
@@ -151,27 +147,11 @@ JSObject* js::NewDeadProxyObject(JSContext* cx, JSObject* origObj) {
   MOZ_ASSERT_IF(origObj, origObj->is<ProxyObject>());
 
   RootedValue target(cx);
-  if (origObj && origObj->is<ProxyObject>()) {
+  if (origObj && origObj->is<ProxyObject>())
     target = DeadProxyTargetValue(&origObj->as<ProxyObject>());
-  } else {
+  else
     target = Int32Value(DeadObjectProxyIsBackgroundFinalized);
-  }
 
-  return NewProxyObject(cx, &DeadObjectProxy::singleton, target, nullptr,
-                        ProxyOptions());
-}
-
-JSObject* js::NewDeadProxyObject(JSContext* cx, IsCallableFlag isCallable,
-                                 IsConstructorFlag isConstructor) {
-  int32_t flags = 0;
-  if (isCallable == IsCallableFlag::True) {
-    flags |= DeadObjectProxyIsCallable;
-  }
-  if (isConstructor == IsConstructorFlag::True) {
-    flags |= DeadObjectProxyIsConstructor;
-  }
-
-  RootedValue target(cx, Int32Value(flags));
   return NewProxyObject(cx, &DeadObjectProxy::singleton, target, nullptr,
                         ProxyOptions());
 }

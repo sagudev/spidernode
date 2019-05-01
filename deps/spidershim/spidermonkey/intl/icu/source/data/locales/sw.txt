@@ -11,21 +11,20 @@ sw{
         word-medial{"{0} … {1}"}
     }
     ExemplarCharacters{"[a b {ch} d e f g h i j k l m n o p r s t u v w y z]"}
-    ExemplarCharactersIndex{"[A B C D E F G H I J K L M N O P R S T U V W Y Z]"}
     ExemplarCharactersNumbers{"[\\- , . % ‰ + 0 1 2 3 4 5 6 7 8 9]"}
     ExemplarCharactersPunctuation{"[\\- , ; \\: ! ? . ' \u0022 ( ) \\[ \\] \\{ \\}]"}
     MoreInformation{"?"}
     NumberElements{
+        default{"latn"}
         latn{
             miscPatterns{
-                approximately{"~{0}"}
-                atLeast{"{0}+"}
-                atMost{"≤{0}"}
+                atLeast{"⩾{0}"}
                 range{"{0}–{1}"}
             }
             patterns{
-                accountingFormat{"¤ #,##0.00"}
-                currencyFormat{"¤ #,##0.00"}
+                accountingFormat{"¤#,##0.00;(¤#,##0.00)"}
+                currencyFormat{"¤#,##0.00"}
+                decimalFormat{"#,##0.###"}
                 percentFormat{"#,##0%"}
                 scientificFormat{"#E0"}
             }
@@ -84,52 +83,52 @@ sw{
             patternsShort{
                 currencyFormat{
                     1000{
-                        one{"¤ elfu0"}
-                        other{"¤ elfu0"}
+                        one{"¤elfu 0;¤elfu -0"}
+                        other{"¤elfu 0;¤elfu -0"}
                     }
                     10000{
-                        one{"¤ elfu00;¤elfu -00"}
-                        other{"¤ elfu00;¤elfu -00"}
+                        one{"¤elfu 00;¤elfu -00"}
+                        other{"¤elfu 00;¤elfu -00"}
                     }
                     100000{
-                        one{"¤ laki000;¤laki -000"}
-                        other{"¤ laki000;¤laki -000"}
+                        one{"¤laki 000;¤laki -000"}
+                        other{"¤laki 000;¤laki -000"}
                     }
                     1000000{
-                        one{"¤ 0M;¤-0M"}
-                        other{"¤ 0M"}
+                        one{"¤M0;¤M-0"}
+                        other{"¤M0;¤M-0"}
                     }
                     10000000{
-                        one{"¤ 00M;¤M-00M"}
-                        other{"¤ 00M;¤-00M"}
+                        one{"¤M00;¤M-00"}
+                        other{"¤M00;¤M-00"}
                     }
                     100000000{
-                        one{"¤ 000M;¤Milioni-000"}
-                        other{"¤ 000M"}
+                        one{"¤M000;¤M-000"}
+                        other{"¤M000;¤M-000"}
                     }
                     1000000000{
-                        one{"¤ 0B;¤-0B"}
-                        other{"¤ 0B;¤-0B"}
+                        one{"¤B0;¤B-0"}
+                        other{"¤B0;¤B-0"}
                     }
                     10000000000{
-                        one{"¤ 00B;¤-00B"}
-                        other{"¤ 00B;¤-00B"}
+                        one{"¤B00;¤B-00"}
+                        other{"¤B00;¤B-00"}
                     }
                     100000000000{
-                        one{"¤ 000B;¤-000B"}
-                        other{"¤ 000B;¤-000B"}
+                        one{"¤B000;¤B-000"}
+                        other{"¤B000;¤B-000"}
                     }
                     1000000000000{
-                        one{"¤ 0T;¤-0T"}
-                        other{"¤ 0T"}
+                        one{"¤T0;¤T-0"}
+                        other{"¤T0;¤T-0"}
                     }
                     10000000000000{
-                        one{"¤ 00T;¤-00T"}
-                        other{"¤ 00T"}
+                        one{"¤T00;¤T-00"}
+                        other{"¤T00;¤T-00"}
                     }
                     100000000000000{
-                        one{"¤ 000T;¤-000T"}
-                        other{"¤ 000T;¤-000T"}
+                        one{"¤T000;¤T-000"}
+                        other{"¤T000;¤T-000"}
                     }
                 }
                 decimalFormat{
@@ -146,51 +145,56 @@ sw{
                         other{"elfu 000;elfu -000"}
                     }
                     1000000{
-                        one{"0M;-0M"}
-                        other{"0M"}
+                        one{"M0;M-0"}
+                        other{"M0;M-0"}
                     }
                     10000000{
-                        one{"00M;-00M"}
-                        other{"00M"}
+                        one{"M00;M-00"}
+                        other{"M00;M-00"}
                     }
                     100000000{
-                        one{"000M;-000M"}
-                        other{"000M"}
+                        one{"M000;M-000"}
+                        other{"M000;M-000"}
                     }
                     1000000000{
-                        one{"0B;-0B"}
-                        other{"0B;-0B"}
+                        one{"B0;B-0"}
+                        other{"B0;B-0"}
                     }
                     10000000000{
-                        one{"00B;-00B"}
-                        other{"00B;-00B"}
+                        one{"B00;B-00"}
+                        other{"B00;B-00"}
                     }
                     100000000000{
-                        one{"000B;-000B"}
-                        other{"000B;-000B"}
+                        one{"B000;B-000"}
+                        other{"B000;B-000"}
                     }
                     1000000000000{
-                        one{"0T;-0T"}
-                        other{"0T"}
+                        one{"T0;T-0"}
+                        other{"T0;T-0"}
                     }
                     10000000000000{
-                        one{"00T;-00T"}
-                        other{"00T"}
+                        one{"T00;T-00"}
+                        other{"T00;T-00"}
                     }
                     100000000000000{
-                        one{"000T;-000T"}
-                        other{"000T"}
+                        one{"T000;T-000"}
+                        other{"T000;T-000"}
                     }
                 }
             }
             symbols{
+                decimal{"."}
                 exponential{"E"}
+                group{","}
                 infinity{"∞"}
                 list{";"}
+                minusSign{"-"}
                 nan{"NaN"}
                 perMille{"‰"}
                 percentSign{"%"}
+                plusSign{"+"}
                 superscriptingExponent{"×"}
+                timeSeparator{":"}
             }
         }
         minimalPairs{
@@ -202,8 +206,10 @@ sw{
                 other{"siku {0} zilizopita"}
             }
         }
+        minimumGroupingDigits{"1"}
+        native{"latn"}
     }
-    Version{"2.1.48.17"}
+    Version{"2.1.37.34"}
     calendar{
         generic{
             DateTimePatterns{
@@ -266,53 +272,6 @@ sw{
                 yyyyQQQQ{"QQQQ y G"}
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h–h B"}
-                }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm–h:mm B"}
-                    m{"h:mm–h:mm B"}
-                }
-                Gy{
-                    G{"y G – y G"}
-                    y{"y – y G"}
-                }
-                GyM{
-                    G{"M/y GGGGG – M/y GGGGG"}
-                    M{"M/y – M/y GGGGG"}
-                    y{"M/y – M/y GGGGG"}
-                }
-                GyMEd{
-                    G{"E, d/M/y GGGGG – E, d/M/y GGGGG"}
-                    M{"E, d/M/y – E, d/M/y GGGGG"}
-                    d{"E, d/M/y – E, d/M/y GGGGG"}
-                    y{"E, d/M/y – E, d/M/y GGGGG"}
-                }
-                GyMMM{
-                    G{"MMM y G – MMM y G"}
-                    M{"MMM – MMM y G"}
-                    y{"MMM y – MMM y G"}
-                }
-                GyMMMEd{
-                    G{"E, d MMM, y G – E, d MMM, y G"}
-                    M{"E, d MMM – E, d MMM, y G"}
-                    d{"E, d MMM – E, d MMM, y G"}
-                    y{"E, d MMM, y – E, d MMM, y G"}
-                }
-                GyMMMd{
-                    G{"d MMM, y G – d MMM, y G"}
-                    M{"d MMM – d MMM, y G"}
-                    d{"d – d MMM, y G"}
-                    y{"d MMM, y – d MMM, y G"}
-                }
-                GyMd{
-                    G{"d/M/y GGGGG – d/M/y GGGGG"}
-                    M{"d/M/y – d/M/y GGGGG"}
-                    d{"d/M/y – d/M/y GGGGG"}
-                    y{"d/M/y – d/M/y GGGGG"}
-                }
                 H{
                     H{"HH – HH"}
                 }
@@ -466,8 +425,8 @@ sw{
                 MMMEd{"E, d MMM"}
                 MMMMEd{"E, d MMMM"}
                 MMMMW{
-                    one{"'wiki' W 'ya' MMMM"}
-                    other{"'wiki' W 'ya' MMMM"}
+                    one{"'wiki' W 'ya' MMM"}
+                    other{"'wiki' W 'ya' MMM"}
                 }
                 MMMMd{"d MMMM"}
                 MMMd{"d MMM"}
@@ -657,53 +616,6 @@ sw{
                 }
             }
             intervalFormats{
-                Bh{
-                    B{"h B – h B"}
-                    h{"h–h B"}
-                }
-                Bhm{
-                    B{"h:mm B – h:mm B"}
-                    h{"h:mm–h:mm B"}
-                    m{"h:mm–h:mm B"}
-                }
-                Gy{
-                    G{"y G – y G"}
-                    y{"y – y G"}
-                }
-                GyM{
-                    G{"M/y GGGGG – M/y GGGGG"}
-                    M{"M/y – M/y GGGGG"}
-                    y{"M/y – M/y GGGGG"}
-                }
-                GyMEd{
-                    G{"E, d/M/y GGGGG – E, d/M/y GGGGG"}
-                    M{"E, d/M/y – E, d/M/y GGGGG"}
-                    d{"E, d/M/y – E, d/M/y GGGGG"}
-                    y{"E, d/M/y – E, d/M/y GGGGG"}
-                }
-                GyMMM{
-                    G{"MMM y G – MMM y G"}
-                    M{"MMM – MMM y G"}
-                    y{"MMM y – MMM y G"}
-                }
-                GyMMMEd{
-                    G{"E, MMM d, y G – E, MMM d, y G"}
-                    M{"E, MMM d – E, MMM d, y G"}
-                    d{"E, MMM d – E, MMM d, y G"}
-                    y{"E, MMM d, y – E, MMM d, y G"}
-                }
-                GyMMMd{
-                    G{"MMM d, y G – MMM d, y G"}
-                    M{"MMM d – MMM d, y G"}
-                    d{"MMM d – d, y G"}
-                    y{"MMM d, y – MMM d, y G"}
-                }
-                GyMd{
-                    G{"d/M/y GGGGG – d/M/y GGGGG"}
-                    M{"d/M/y – d/M/y GGGGG"}
-                    d{"d/M/y – d/M/y GGGGG"}
-                    y{"d/M/y – d/M/y GGGGG"}
-                }
                 H{
                     H{"HH – HH"}
                 }
@@ -952,14 +864,14 @@ sw{
         divination_symbols{"alama za kugawa"}
         downwards_arrows{"mishale inayoelekea chini"}
         downwards_upwards_arrows{"mishale ya kuwili"}
-        east_asian_scripts{"hati za mashariki ya Asia"}
+        east_asian_scripts{"hati za mashariki wa Asia"}
         emoji{"emoji"}
         european_scripts{"hati za Ulaya"}
         female{"mwanamke"}
         flag{"bendera"}
         flags{"bendera"}
         food_drink{"vyakula na vinywaji"}
-        format{"muundo"}
+        format{"miundo"}
         format_whitespace{"miundo na sehemu wazi"}
         full_width_form_variant{"sehemu za fomu ya upana kamili"}
         geometric_shapes{"maumbo ya jiometri"}
@@ -972,14 +884,14 @@ sw{
         heart{"moyo"}
         historic_scripts{"hati za kihistoria"}
         ideographic_desc_characters{"herufi za maelezo ya idiografia"}
-        japanese_kana{"herufi za kijapani (kana)"}
+        japanese_kana{"herufi za kijapani"}
         kanbun{"herufi za kanbun"}
-        kanji{"herufi za kijapani (kanji)"}
+        kanji{"kanji"}
         keycap{"kitufe"}
         leftwards_arrows{"mishale inayoelekea kushoto"}
         leftwards_rightwards_arrows{"mishale inayoelekea kulia na kushoto"}
-        letterlike_symbols{"alama zinazofanana na herufi"}
-        limited_use{"matumizi finyu"}
+        letterlike_symbols{"alama Zinazofanana na Herufi"}
+        limited_use{"matumizi machache"}
         male{"mwanamume"}
         math_symbols{"alama za hesabu"}
         middle_eastern_scripts{"hati za mashariki ya kati"}
@@ -1017,7 +929,7 @@ sw{
         variant_forms{"maumbo mbalimbali"}
         vocalic_jamo{"vibambo vya jamo vya sauti"}
         weather{"hali ya hewa"}
-        western_asian_scripts{"hati za magharibi mwa Asia"}
+        western_asian_scripts{"hati za magharibi wa Asia"}
         whitespace{"sehemu wazi"}
     }
     delimiters{
@@ -1049,13 +961,6 @@ sw{
         }
         day-narrow{
             dn{"siku"}
-            relative{
-                "-1"{"jana"}
-                "-2"{"juzi"}
-                "0"{"leo"}
-                "1"{"kesho"}
-                "2"{"kesho kutwa"}
-            }
             relativeTime{
                 future{
                     one{"baada ya siku {0}"}
@@ -1069,13 +974,6 @@ sw{
         }
         day-short{
             dn{"siku"}
-            relative{
-                "-1"{"jana"}
-                "-2"{"juzi"}
-                "0"{"leo"}
-                "1"{"kesho"}
-                "2"{"kesho kutwa"}
-            }
             relativeTime{
                 future{
                     one{"baada ya siku {0}"}
@@ -1807,10 +1705,10 @@ sw{
             dn{"saa za eneo"}
         }
         zone-narrow{
-            dn{"eneo"}
+            dn{"saa za eneo"}
         }
         zone-short{
-            dn{"eneo"}
+            dn{"saa za eneo"}
         }
     }
     listPattern{
@@ -1822,12 +1720,6 @@ sw{
         }
         standard{
             2{"{0} na {1}"}
-            end{"{0} na {1}"}
-            middle{"{0}, {1}"}
-            start{"{0}, {1}"}
-        }
-        standard-narrow{
-            2{"{0}, {1}"}
             end{"{0} na {1}"}
             middle{"{0}, {1}"}
             start{"{0}, {1}"}
@@ -1872,13 +1764,8 @@ sw{
         general{
             lenient{
                 "[.․。︒﹒．｡]",
-                "['ʼ՚᾽᾿’＇]",
-                "[%٪﹪％]",
-                "[؉‰]",
                 "[\$﹩＄$]",
                 "[£₤]",
-                "[¥￥]",
-                "[₩￦]",
                 "[₨₹{Rp}{Rs}]",
             }
         }
@@ -1887,6 +1774,10 @@ sw{
                 "[\\-‒⁻₋−➖﹣－]",
                 "[,،٫、︐︑﹐﹑，､]",
                 "[+⁺₊➕﬩﹢＋]",
+            }
+            stricter{
+                "[,٫︐﹐，]",
+                "[.․﹒．｡]",
             }
         }
     }

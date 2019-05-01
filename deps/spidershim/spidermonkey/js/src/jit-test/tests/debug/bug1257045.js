@@ -1,7 +1,8 @@
-// |jit-test| skip-if: !wasmDebuggingIsSupported()
+if (!wasmDebuggingIsSupported())
+  quit();
 
 fullcompartmentchecks(true);
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 dbg.onNewScript = (function(script) {
     s = script;

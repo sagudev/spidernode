@@ -1,6 +1,6 @@
 // Adding a debuggee allowed with scripts on stack.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.dbg = new Debugger;
 
 g.eval("" + function f(d) {

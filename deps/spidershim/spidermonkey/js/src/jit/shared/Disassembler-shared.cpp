@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -102,37 +102,25 @@ DisassemblerSpew::LabelDoc DisassemblerSpew::refLabel(const Label* l) {
 }
 
 void DisassemblerSpew::spewRef(const LabelDoc& target) {
-  if (isDisabled()) {
-    return;
-  }
-  if (!target.valid) {
-    return;
-  }
+  if (isDisabled()) return;
+  if (!target.valid) return;
   spew("%s-> %d%s", targetIndent_, target.doc, !target.bound ? "f" : "");
 }
 
 void DisassemblerSpew::spewBind(const Label* label) {
-  if (isDisabled()) {
-    return;
-  }
+  if (isDisabled()) return;
   uint32_t v = internalResolve(label);
   Node* probe = lookup(label);
-  if (probe) {
-    probe->bound = true;
-  }
+  if (probe) probe->bound = true;
   spew("%s%d:", labelIndent_, v);
 }
 
 void DisassemblerSpew::spewRetarget(const Label* label, const Label* target) {
-  if (isDisabled()) {
-    return;
-  }
+  if (isDisabled()) return;
   LabelDoc labelDoc = LabelDoc(internalResolve(label), label->bound());
   LabelDoc targetDoc = LabelDoc(internalResolve(target), target->bound());
   Node* probe = lookup(label);
-  if (probe) {
-    probe->bound = true;
-  }
+  if (probe) probe->bound = true;
   spew("%s%d: .retarget -> %d%s", labelIndent_, labelDoc.doc, targetDoc.doc,
        !targetDoc.bound ? "f" : "");
 }
@@ -168,9 +156,7 @@ void DisassemblerSpew::formatLiteral(const LiteralDoc& doc, char* buffer,
 
 void DisassemblerSpew::spewOrphans() {
   for (Node* p = nodes_; p; p = p->next) {
-    if (!p->bound) {
-      spew("%s%d:    ; .orphan", labelIndent_, p->value);
-    }
+    if (!p->bound) spew("%s%d:    ; .orphan", labelIndent_, p->value);
   }
 }
 
@@ -191,24 +177,21 @@ uint32_t DisassemblerSpew::probe(const Label* l) {
 uint32_t DisassemblerSpew::define(const Label* l) {
   remove(l);
   uint32_t value = spewNext_++;
-  if (!add(l, value)) {
-    return 0;
-  }
+  if (!add(l, value)) return 0;
   return value;
 }
 
 DisassemblerSpew::Node* DisassemblerSpew::lookup(const Label* key) {
   Node* p;
-  for (p = nodes_; p && p->key != key; p = p->next) {
+  for (p = nodes_; p && p->key != key; p = p->next)
     ;
-  }
   return p;
 }
 
 DisassemblerSpew::Node* DisassemblerSpew::add(const Label* key,
                                               uint32_t value) {
   MOZ_ASSERT(!lookup(key));
-  Node* node = js_new<Node>();
+  Node* node = (Node*)js_malloc(sizeof(Node));
   if (node) {
     node->key = key;
     node->value = value;
@@ -223,11 +206,10 @@ bool DisassemblerSpew::remove(const Label* key) {
   // We do not require that there is a node matching the key.
   for (Node *p = nodes_, *pp = nullptr; p; pp = p, p = p->next) {
     if (p->key == key) {
-      if (pp) {
+      if (pp)
         pp->next = p->next;
-      } else {
+      else
         nodes_ = p->next;
-      }
       js_free(p);
       return true;
     }

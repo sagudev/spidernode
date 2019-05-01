@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  *
  * Copyright 2016 Mozilla Foundation
  *
@@ -19,8 +19,8 @@
 #ifndef wasm_instance_h
 #define wasm_instance_h
 
-#include "builtin/TypedObject.h"
 #include "gc/Barrier.h"
+#include "jit/shared/Assembler-shared.h"
 #include "vm/SharedMem.h"
 #include "wasm/WasmCode.h"
 #include "wasm/WasmDebug.h"
@@ -42,24 +42,19 @@ namespace wasm {
 // their code.
 
 class Instance {
-  JS::Realm* const realm_;
+  JSCompartment* const compartment_;
   ReadBarrieredWasmInstanceObject object_;
-  void* jsJitArgsRectifier_;
-  void* jsJitExceptionHandler_;
-  void* preBarrierCode_;
+  jit::TrampolinePtr jsJitArgsRectifier_;
+  jit::TrampolinePtr jsJitExceptionHandler_;
   const SharedCode code_;
+  const UniqueDebugState debug_;
   const UniqueTlsData tlsData_;
   GCPtrWasmMemoryObject memory_;
-  const SharedTableVector tables_;
-  DataSegmentVector passiveDataSegments_;
-  ElemSegmentVector passiveElemSegments_;
-  const UniqueDebugState maybeDebug_;
-  StructTypeDescrVector structTypeDescrs_;
-
-  friend void Zone::sweepBreakpoints(js::FreeOp*);
+  SharedTableVector tables_;
+  bool enterFrameTrapsEnabled_;
 
   // Internal helpers:
-  const void** addressOfFuncTypeId(const FuncTypeIdDesc& funcTypeId) const;
+  const void** addressOfSigId(const SigIdDesc& sigId) const;
   FuncImportTls& funcImportTls(const FuncImport& fi);
   TableTls& tableTls(const TableDesc& td) const;
 
@@ -72,33 +67,18 @@ class Instance {
 
  public:
   Instance(JSContext* cx, HandleWasmInstanceObject object, SharedCode code,
-           UniqueTlsData tlsData, HandleWasmMemoryObject memory,
-           SharedTableVector&& tables, StructTypeDescrVector&& structTypeDescrs,
-           const JSFunctionVector& funcImports,
-           const ValVector& globalImportValues,
-           const WasmGlobalObjectVector& globalObjs,
-           UniqueDebugState maybeDebug);
+           UniqueDebugState debug, UniqueTlsData tlsData,
+           HandleWasmMemoryObject memory, SharedTableVector&& tables,
+           Handle<FunctionVector> funcImports, const ValVector& globalImports);
   ~Instance();
-  bool init(JSContext* cx, const DataSegmentVector& dataSegments,
-            const ElemSegmentVector& elemSegments);
+  bool init(JSContext* cx);
   void trace(JSTracer* trc);
 
-  // Trace any GC roots on the stack, for the frame associated with |wfi|,
-  // whose next instruction to execute is |nextPC|.
-  //
-  // For consistency checking of StackMap sizes in debug builds, this also
-  // takes |highestByteVisitedInPrevFrame|, which is the address of the
-  // highest byte scanned in the frame below this one on the stack, and in
-  // turn it returns the address of the highest byte scanned in this frame.
-  uintptr_t traceFrame(JSTracer* trc, const wasm::WasmFrameIter& wfi,
-                       uint8_t* nextPC,
-                       uintptr_t highestByteVisitedInPrevFrame);
-
-  JS::Realm* realm() const { return realm_; }
+  JSCompartment* compartment() const { return compartment_; }
   const Code& code() const { return *code_; }
   const CodeTier& code(Tier t) const { return code_->codeTier(t); }
-  bool debugEnabled() const { return !!maybeDebug_; }
-  DebugState& debug() { return *maybeDebug_; }
+  DebugState& debug() { return *debug_; }
+  const DebugState& debug() const { return *debug_; }
   const ModuleSegment& moduleSegment(Tier t) const { return code_->segment(t); }
   TlsData* tlsData() const { return tlsData_.get(); }
   uint8_t* globalData() const { return (uint8_t*)&tlsData_->globalArea; }
@@ -111,9 +91,9 @@ class Instance {
   WasmMemoryObject* memory() const;
   size_t memoryMappedSize() const;
   SharedArrayRawBuffer* sharedMemoryBuffer() const;  // never null
+#ifdef JS_SIMULATOR
   bool memoryAccessInGuardRegion(uint8_t* addr, unsigned numBytes) const;
-  bool memoryAccessInBounds(uint8_t* addr, unsigned numBytes) const;
-  const StructTypeVector& structTypes() const { return code_->structTypes(); }
+#endif
 
   static constexpr size_t offsetOfJSJitArgsRectifier() {
     return offsetof(Instance, jsJitArgsRectifier_);
@@ -121,12 +101,9 @@ class Instance {
   static constexpr size_t offsetOfJSJitExceptionHandler() {
     return offsetof(Instance, jsJitExceptionHandler_);
   }
-  static constexpr size_t offsetOfPreBarrierCode() {
-    return offsetof(Instance, preBarrierCode_);
-  }
 
   // This method returns a pointer to the GC object that owns this Instance.
-  // Instances may be reached via weak edges (e.g., Realm::instances_)
+  // Instances may be reached via weak edges (e.g., Compartment::instances_)
   // so this perform a read-barrier on the returned object unless the barrier
   // is explicitly waived.
 
@@ -142,7 +119,8 @@ class Instance {
   // Return the name associated with a given function index, or generate one
   // if none was given by the module.
 
-  JSAtom* getFuncDisplayAtom(JSContext* cx, uint32_t funcIndex) const;
+  bool getFuncName(uint32_t funcIndex, UTF8Bytes* name) const;
+  JSAtom* getFuncAtom(JSContext* cx, uint32_t funcIndex) const;
   void ensureProfilingLabels(bool profilingEnabled) const;
 
   // Initially, calls to imports in wasm code call out through the generic
@@ -156,17 +134,13 @@ class Instance {
   // Called by Wasm(Memory|Table)Object when a moving resize occurs:
 
   void onMovingGrowMemory(uint8_t* prevMemoryBase);
-  void onMovingGrowTable(const Table* theTable);
+  void onMovingGrowTable();
 
-  // Called to apply a single ElemSegment at a given offset, assuming
-  // that all bounds validation has already been performed.
+  // Debug support:
 
-  void initElems(uint32_t tableIndex, const ElemSegment& seg,
-                 uint32_t dstOffset, uint32_t srcOffset, uint32_t len);
-
-  // Debugger support:
-
-  JSString* createDisplayURL(JSContext* cx);
+  bool debugEnabled() const { return metadata().debugEnabled; }
+  bool enterFrameTrapsEnabled() const { return enterFrameTrapsEnabled_; }
+  void ensureEnterFrameTrapsState(JSContext* cx, bool enabled);
 
   // about:memory reporting:
 
@@ -181,45 +155,19 @@ class Instance {
   static int32_t callImport_i32(Instance*, int32_t, int32_t, uint64_t*);
   static int32_t callImport_i64(Instance*, int32_t, int32_t, uint64_t*);
   static int32_t callImport_f64(Instance*, int32_t, int32_t, uint64_t*);
-  static int32_t callImport_anyref(Instance*, int32_t, int32_t, uint64_t*);
-  static uint32_t memoryGrow_i32(Instance* instance, uint32_t delta);
-  static uint32_t memorySize_i32(Instance* instance);
+  static uint32_t growMemory_i32(Instance* instance, uint32_t delta);
+  static uint32_t currentMemory_i32(Instance* instance);
   static int32_t wait_i32(Instance* instance, uint32_t byteOffset,
                           int32_t value, int64_t timeout);
   static int32_t wait_i64(Instance* instance, uint32_t byteOffset,
                           int64_t value, int64_t timeout);
   static int32_t wake(Instance* instance, uint32_t byteOffset, int32_t count);
-  static int32_t memCopy(Instance* instance, uint32_t destByteOffset,
-                         uint32_t srcByteOffset, uint32_t len);
-  static int32_t dataDrop(Instance* instance, uint32_t segIndex);
-  static int32_t memFill(Instance* instance, uint32_t byteOffset,
-                         uint32_t value, uint32_t len);
-  static int32_t memInit(Instance* instance, uint32_t dstOffset,
-                         uint32_t srcOffset, uint32_t len, uint32_t segIndex);
-  static int32_t tableCopy(Instance* instance, uint32_t dstOffset,
-                           uint32_t srcOffset, uint32_t len,
-                           uint32_t dstTableIndex, uint32_t srcTableIndex);
-  static int32_t elemDrop(Instance* instance, uint32_t segIndex);
-  static int32_t tableFill(Instance* instance, uint32_t start, void* value,
-                           uint32_t len, uint32_t tableIndex);
-  static void* tableGet(Instance* instance, uint32_t index,
-                        uint32_t tableIndex);
-  static uint32_t tableGrow(Instance* instance, void* initValue, uint32_t delta,
-                            uint32_t tableIndex);
-  static int32_t tableSet(Instance* instance, uint32_t index, void* value,
-                          uint32_t tableIndex);
-  static uint32_t tableSize(Instance* instance, uint32_t tableIndex);
-  static int32_t tableInit(Instance* instance, uint32_t dstOffset,
-                           uint32_t srcOffset, uint32_t len, uint32_t segIndex,
-                           uint32_t tableIndex);
-  static void postBarrier(Instance* instance, gc::Cell** location);
-  static void postBarrierFiltering(Instance* instance, gc::Cell** location);
-  static void* structNew(Instance* instance, uint32_t typeIndex);
-  static void* structNarrow(Instance* instance, uint32_t mustUnboxAnyref,
-                            uint32_t outputTypeIndex, void* maybeNullPtr);
 };
 
 typedef UniquePtr<Instance> UniqueInstance;
+
+bool InitInstanceStaticData();
+void ShutDownInstanceStaticData();
 
 }  // namespace wasm
 }  // namespace js

@@ -1,9 +1,13 @@
-// |jit-test| exitstatus: 6; skip-if: !wasmIsSupported() || !getBuildConfiguration()['arm-simulator']
-
-// Single-step profiling currently only works in the ARM simulator
+// |jit-test| exitstatus: 6;
 
 // Don't include wasm.js in timeout tests: when wasm isn't supported, it will
 // quit(0) which will cause the test to fail.
+if (!wasmIsSupported())
+    quit(6);
+
+// Single-step profiling currently only works in the ARM simulator
+if (!getBuildConfiguration()["arm-simulator"])
+    quit(6);
 
 var code = wasmTextToBinary(`(module
     (func (export "iloop")

@@ -8,20 +8,23 @@ description: >
     enforced when using Greater-than operator: toString > valueOf
 ---*/
 
-var accessed = false;
-var obj1 = {
-  toString: function () {
-    accessed = true;
-    return 3;
-  }
-};
-var obj2 = {
-  valueOf: function () {
-    return 4;
-  }
-};
+        var accessed = false;
+        var obj1 = {
+            toString: function () {
+                accessed = true;
+                return 3;
+            }
+        };
+        var obj2 = {
+            valueOf: function () {
+                if (accessed === true) {
+                    return 4;
+                } else {
+                    return 2;
+                }
+            }
+        };
 
-assert.sameValue(obj1 > obj2, false, 'The result of (obj1 > obj2) is false');
-assert.sameValue(accessed, true, 'The value of accessed is true');
+assert(!(obj1 > obj2), '!(obj1 > obj2) !== true');
 
 reportCompare(0, 0);

@@ -557,10 +557,7 @@ UTS46::processUnicode(const UnicodeString &src,
             destArray=dest.getBuffer();
             destLength+=newLength-labelLength;
             labelLimit=labelStart+=newLength+1;
-            continue;
-        } else if(c<0xdf) {
-            // pass
-        } else if(c<=0x200d && (c==0xdf || c==0x3c2 || c>=0x200c)) {
+        } else if(0xdf<=c && c<=0x200d && (c==0xdf || c==0x3c2 || c>=0x200c)) {
             info.isTransDiff=TRUE;
             if(doMapDevChars) {
                 destLength=mapDevChars(dest, labelStart, labelLimit, errorCode);
@@ -568,23 +565,15 @@ UTS46::processUnicode(const UnicodeString &src,
                     return dest;
                 }
                 destArray=dest.getBuffer();
+                // Do not increment labelLimit in case c was removed.
                 // All deviation characters have been mapped, no need to check for them again.
                 doMapDevChars=FALSE;
-                // Do not increment labelLimit in case c was removed.
-                continue;
+            } else {
+                ++labelLimit;
             }
-        } else if(U16_IS_SURROGATE(c)) {
-            if(U16_IS_SURROGATE_LEAD(c) ?
-                    (labelLimit+1)==destLength || !U16_IS_TRAIL(destArray[labelLimit+1]) :
-                    labelLimit==labelStart || !U16_IS_LEAD(destArray[labelLimit-1])) {
-                // Map an unpaired surrogate to U+FFFD before normalization so that when
-                // that removes characters we do not turn two unpaired ones into a pair.
-                info.labelErrors|=UIDNA_ERROR_DISALLOWED;
-                dest.setCharAt(labelLimit, 0xfffd);
-                destArray=dest.getBuffer();
-            }
+        } else {
+            ++labelLimit;
         }
-        ++labelLimit;
     }
     // Permit an empty label at the end (0<labelStart==labelLimit==destLength is ok)
     // but not an empty label elsewhere nor a completely empty domain name.
@@ -1137,6 +1126,7 @@ isASCIIOkBiDi(const char *s, int32_t length) {
 
 UBool
 UTS46::isLabelOkContextJ(const UChar *label, int32_t labelLength) const {
+    const UBiDiProps *bdp=ubidi_getSingleton();
     // [IDNA2008-Tables]
     // 200C..200D  ; CONTEXTJ    # ZERO WIDTH NON-JOINER..ZERO WIDTH JOINER
     for(int32_t i=0; i<labelLength; ++i) {
@@ -1158,7 +1148,7 @@ UTS46::isLabelOkContextJ(const UChar *label, int32_t labelLength) const {
             }
             // check precontext (Joining_Type:{L,D})(Joining_Type:T)*
             for(;;) {
-                UJoiningType type=ubidi_getJoiningType(c);
+                UJoiningType type=ubidi_getJoiningType(bdp, c);
                 if(type==U_JT_TRANSPARENT) {
                     if(j==0) {
                         return FALSE;
@@ -1176,7 +1166,7 @@ UTS46::isLabelOkContextJ(const UChar *label, int32_t labelLength) const {
                     return FALSE;
                 }
                 U16_NEXT_UNSAFE(label, j, c);
-                UJoiningType type=ubidi_getJoiningType(c);
+                UJoiningType type=ubidi_getJoiningType(bdp, c);
                 if(type==U_JT_TRANSPARENT) {
                     // just skip this character
                 } else if(type==U_JT_RIGHT_JOINING || type==U_JT_DUAL_JOINING) {

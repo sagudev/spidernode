@@ -15,10 +15,6 @@ EXPORTS.mozilla += [
     'TimeStamp.h',
 ]
 
-EXPORTS.mozilla.glue += [
-    'Debug.h',
-]
-
 if CONFIG['OS_ARCH'] == 'WINNT':
     EXPORTS.mozilla += [
         'StackWalk_windows.h',
@@ -37,23 +33,8 @@ OS_LIBS += CONFIG['REALTIME_LIBS']
 DEFINES['IMPL_MFBT'] = True
 
 if CONFIG['OS_ARCH'] == 'WINNT':
-    DIRS += [
-        'interceptor',
-    ]
-    EXPORTS += [
-        'nsWindowsDllInterceptor.h',
-    ]
-    EXPORTS.mozilla += [
-        'DynamicallyLinkedFunctionPtr.h',
-        'ImportDir.h',
-        'NativeNt.h',
-        'WindowsMapRemoteView.h',
-        'WindowsProcessMitigations.h',
-    ]
     SOURCES += [
         'TimeStamp_windows.cpp',
-        'WindowsMapRemoteView.cpp',
-        'WindowsProcessMitigations.cpp',
     ]
     OS_LIBS += ['dbghelp']
 elif CONFIG['HAVE_CLOCK_MONOTONIC']:

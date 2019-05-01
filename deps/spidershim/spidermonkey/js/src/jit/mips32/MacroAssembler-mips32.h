@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -90,9 +90,10 @@ class MacroAssemblerMIPS : public MacroAssemblerMIPSShared {
 
   // arithmetic based ops
   // add
-  void ma_addTestOverflow(Register rd, Register rs, Register rt,
-                          Label* overflow);
-  void ma_addTestOverflow(Register rd, Register rs, Imm32 imm, Label* overflow);
+  template <typename L>
+  void ma_addTestOverflow(Register rd, Register rs, Register rt, L overflow);
+  template <typename L>
+  void ma_addTestOverflow(Register rd, Register rs, Imm32 imm, L overflow);
 
   // subtract
   void ma_subTestOverflow(Register rd, Register rs, Register rt,
@@ -152,11 +153,8 @@ class MacroAssemblerMIPS : public MacroAssemblerMIPSShared {
   void ma_pop(FloatRegister f);
   void ma_push(FloatRegister f);
 
-  void ma_cmp_set(Register dst, Register lhs, ImmWord imm, Condition c) {
-    ma_cmp_set(dst, lhs, Imm32(uint32_t(imm.value)), c);
-  }
   void ma_cmp_set(Register dst, Register lhs, ImmPtr imm, Condition c) {
-    ma_cmp_set(dst, lhs, ImmWord(uintptr_t(imm.value)), c);
+    ma_cmp_set(dst, lhs, Imm32(uint32_t(imm.value)), c);
   }
   void ma_cmp_set(Register dst, Register lhs, Address addr, Condition c) {
     MOZ_ASSERT(lhs != ScratchRegister);
@@ -230,7 +228,7 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
 
   void branch(JitCode* c) {
     BufferOffset bo = m_buffer.nextOffset();
-    addPendingJump(bo, ImmPtr(c->raw()), RelocationKind::JITCODE);
+    addPendingJump(bo, ImmPtr(c->raw()), Relocation::JITCODE);
     ma_liPatchable(ScratchRegister, ImmPtr(c->raw()));
     as_jr(ScratchRegister);
     as_nop();
@@ -315,10 +313,12 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
 
   void jump(JitCode* code) { branch(code); }
 
+  void jump(wasm::OldTrapDesc target) { ma_b(target); }
+
   void jump(TrampolinePtr code) {
     auto target = ImmPtr(code.value);
     BufferOffset bo = m_buffer.nextOffset();
-    addPendingJump(bo, target, RelocationKind::HARDCODED);
+    addPendingJump(bo, target, Relocation::HARDCODED);
     ma_jump(target);
   }
 
@@ -363,31 +363,25 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
   // Extended unboxing API. If the payload is already in a register, returns
   // that register. Otherwise, provides a move to the given scratch register,
   // and returns that.
-  MOZ_MUST_USE Register extractObject(const Address& address, Register scratch);
-  MOZ_MUST_USE Register extractObject(const ValueOperand& value,
-                                      Register scratch) {
+  Register extractObject(const Address& address, Register scratch);
+  Register extractObject(const ValueOperand& value, Register scratch) {
     return value.payloadReg();
   }
-  MOZ_MUST_USE Register extractString(const ValueOperand& value,
-                                      Register scratch) {
+  Register extractString(const ValueOperand& value, Register scratch) {
     return value.payloadReg();
   }
-  MOZ_MUST_USE Register extractSymbol(const ValueOperand& value,
-                                      Register scratch) {
+  Register extractSymbol(const ValueOperand& value, Register scratch) {
     return value.payloadReg();
   }
-  MOZ_MUST_USE Register extractInt32(const ValueOperand& value,
-                                     Register scratch) {
+  Register extractInt32(const ValueOperand& value, Register scratch) {
     return value.payloadReg();
   }
-  MOZ_MUST_USE Register extractBoolean(const ValueOperand& value,
-                                       Register scratch) {
+  Register extractBoolean(const ValueOperand& value, Register scratch) {
     return value.payloadReg();
   }
-  MOZ_MUST_USE Register extractTag(const Address& address, Register scratch);
-  MOZ_MUST_USE Register extractTag(const BaseIndex& address, Register scratch);
-  MOZ_MUST_USE Register extractTag(const ValueOperand& value,
-                                   Register scratch) {
+  Register extractTag(const Address& address, Register scratch);
+  Register extractTag(const BaseIndex& address, Register scratch);
+  Register extractTag(const ValueOperand& value, Register scratch) {
     return value.typeReg();
   }
 
@@ -430,22 +424,23 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
  public:
   void moveValue(const Value& val, Register type, Register data);
 
-  CodeOffsetJump jumpWithPatch(RepatchLabel* label);
+  CodeOffsetJump backedgeJump(RepatchLabel* label,
+                              Label* documentation = nullptr);
+  CodeOffsetJump jumpWithPatch(RepatchLabel* label,
+                               Label* documentation = nullptr);
 
   void loadUnboxedValue(Address address, MIRType type, AnyRegister dest) {
-    if (dest.isFloat()) {
+    if (dest.isFloat())
       loadInt32OrDouble(address, dest.fpu());
-    } else {
+    else
       ma_lw(dest.gpr(), ToPayload(address));
-    }
   }
 
   void loadUnboxedValue(BaseIndex address, MIRType type, AnyRegister dest) {
-    if (dest.isFloat()) {
+    if (dest.isFloat())
       loadInt32OrDouble(address.base, address.index, dest.fpu(), address.scale);
-    } else {
+    else
       load32(ToPayload(address), dest.gpr());
-    }
   }
 
   template <typename T>
@@ -490,12 +485,8 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
       mozilla::Swap(d0, d1);
     }
 
-    if (s0 != d0) {
-      move32(s0, d0);
-    }
-    if (s1 != d1) {
-      move32(s1, d1);
-    }
+    if (s0 != d0) move32(s0, d0);
+    if (s1 != d1) move32(s1, d1);
   }
 
   void storeValue(ValueOperand val, Operand dst);
@@ -525,11 +516,10 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
 #if MOZ_LITTLE_ENDIAN
   void pushValue(const Value& val) {
     push(Imm32(val.toNunboxTag()));
-    if (val.isGCThing()) {
+    if (val.isGCThing())
       push(ImmGCPtr(val.toGCThing()));
-    } else {
+    else
       push(Imm32(val.toNunboxPayload()));
-    }
   }
   void pushValue(JSValueType type, Register reg) {
     push(ImmTag(JSVAL_TYPE_TO_TAG(type)));
@@ -537,11 +527,10 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
   }
 #else
   void pushValue(const Value& val) {
-    if (val.isGCThing()) {
+    if (val.isGCThing())
       push(ImmGCPtr(val.toGCThing()));
-    } else {
+    else
       push(Imm32(val.toNunboxPayload()));
-    }
     push(Imm32(val.toNunboxTag()));
   }
   void pushValue(JSValueType type, Register reg) {
@@ -561,8 +550,7 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
   void handleFailureWithHandlerTail(void* handler, Label* profilerExitTail);
 
   template <typename T>
-  void wasmAtomicStore64(const wasm::MemoryAccessDesc& access, const T& mem,
-                         Register temp, Register64 value);
+  void atomicStore64(const T& mem, Register temp, Register64 value);
 
   /////////////////////////////////////////////////////////////////
   // Common interface.
@@ -608,6 +596,95 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
   void loadPtr(wasm::SymbolicAddress address, Register dest);
 
   void loadPrivate(const Address& address, Register dest);
+
+  void loadInt32x1(const Address& addr, FloatRegister dest) {
+    MOZ_CRASH("NYI");
+  }
+  void loadInt32x1(const BaseIndex& addr, FloatRegister dest) {
+    MOZ_CRASH("NYI");
+  }
+  void loadInt32x2(const Address& addr, FloatRegister dest) {
+    MOZ_CRASH("NYI");
+  }
+  void loadInt32x2(const BaseIndex& addr, FloatRegister dest) {
+    MOZ_CRASH("NYI");
+  }
+  void loadInt32x3(const Address& src, FloatRegister dest) { MOZ_CRASH("NYI"); }
+  void loadInt32x3(const BaseIndex& src, FloatRegister dest) {
+    MOZ_CRASH("NYI");
+  }
+  void loadInt32x4(const Address& src, FloatRegister dest) { MOZ_CRASH("NYI"); }
+  void storeInt32x1(FloatRegister src, const Address& dest) {
+    MOZ_CRASH("NYI");
+  }
+  void storeInt32x1(FloatRegister src, const BaseIndex& dest) {
+    MOZ_CRASH("NYI");
+  }
+  void storeInt32x2(FloatRegister src, const Address& dest) {
+    MOZ_CRASH("NYI");
+  }
+  void storeInt32x2(FloatRegister src, const BaseIndex& dest) {
+    MOZ_CRASH("NYI");
+  }
+  void storeInt32x3(FloatRegister src, const Address& dest) {
+    MOZ_CRASH("NYI");
+  }
+  void storeInt32x3(FloatRegister src, const BaseIndex& dest) {
+    MOZ_CRASH("NYI");
+  }
+  void storeInt32x4(FloatRegister src, const Address& dest) {
+    MOZ_CRASH("NYI");
+  }
+  void loadAlignedSimd128Int(const Address& addr, FloatRegister dest) {
+    MOZ_CRASH("NYI");
+  }
+  void storeAlignedSimd128Int(FloatRegister src, Address addr) {
+    MOZ_CRASH("NYI");
+  }
+  void loadUnalignedSimd128Int(const Address& addr, FloatRegister dest) {
+    MOZ_CRASH("NYI");
+  }
+  void loadUnalignedSimd128Int(const BaseIndex& addr, FloatRegister dest) {
+    MOZ_CRASH("NYI");
+  }
+  void storeUnalignedSimd128Int(FloatRegister src, Address addr) {
+    MOZ_CRASH("NYI");
+  }
+  void storeUnalignedSimd128Int(FloatRegister src, BaseIndex addr) {
+    MOZ_CRASH("NYI");
+  }
+
+  void loadFloat32x3(const Address& src, FloatRegister dest) {
+    MOZ_CRASH("NYI");
+  }
+  void loadFloat32x3(const BaseIndex& src, FloatRegister dest) {
+    MOZ_CRASH("NYI");
+  }
+  void loadFloat32x4(const Address& src, FloatRegister dest) {
+    MOZ_CRASH("NYI");
+  }
+  void storeFloat32x4(FloatRegister src, const Address& addr) {
+    MOZ_CRASH("NYI");
+  }
+
+  void loadAlignedSimd128Float(const Address& addr, FloatRegister dest) {
+    MOZ_CRASH("NYI");
+  }
+  void storeAlignedSimd128Float(FloatRegister src, Address addr) {
+    MOZ_CRASH("NYI");
+  }
+  void loadUnalignedSimd128Float(const Address& addr, FloatRegister dest) {
+    MOZ_CRASH("NYI");
+  }
+  void loadUnalignedSimd128Float(const BaseIndex& addr, FloatRegister dest) {
+    MOZ_CRASH("NYI");
+  }
+  void storeUnalignedSimd128Float(FloatRegister src, Address addr) {
+    MOZ_CRASH("NYI");
+  }
+  void storeUnalignedSimd128Float(FloatRegister src, BaseIndex addr) {
+    MOZ_CRASH("NYI");
+  }
 
   void loadUnalignedDouble(const wasm::MemoryAccessDesc& access,
                            const BaseIndex& src, Register temp,

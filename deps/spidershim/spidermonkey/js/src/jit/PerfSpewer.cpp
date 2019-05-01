@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,17 +7,16 @@
 #include "jit/PerfSpewer.h"
 
 #include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/Printf.h"
 
 #ifdef XP_UNIX
-#  include <unistd.h>
+#include <unistd.h>
 #endif
 
 #ifdef JS_ION_PERF
-#  include "jit/JitSpewer.h"
-#  include "jit/LIR.h"
-#  include "jit/MIR.h"
-#  include "jit/MIRGraph.h"
+#include "jit/JitSpewer.h"
+#include "jit/LIR.h"
+#include "jit/MIR.h"
+#include "jit/MIRGraph.h"
 #endif
 
 #include "vm/MutexIDs.h"
@@ -29,12 +28,12 @@
 // /data/local/tmp/ so also try /sdcard/.
 
 #ifndef PERF_SPEW_DIR
-#  if defined(__ANDROID__)
-#    define PERF_SPEW_DIR "/data/local/tmp/"
-#    define PERF_SPEW_DIR_2 "/sdcard/"
-#  else
-#    define PERF_SPEW_DIR "/tmp/"
-#  endif
+#if defined(__ANDROID__)
+#define PERF_SPEW_DIR "/data/local/tmp/"
+#define PERF_SPEW_DIR_2 "/sdcard/"
+#else
+#define PERF_SPEW_DIR "/tmp/"
+#endif
 #endif
 
 using namespace js;
@@ -59,16 +58,13 @@ static bool openPerfMap(const char* dir) {
   char filenameBuffer[bufferSize];
 
   if (snprintf(filenameBuffer, bufferSize, "%sperf-%d.map", dir, getpid()) >=
-      bufferSize) {
+      bufferSize)
     return false;
-  }
 
   MOZ_ASSERT(!PerfFilePtr);
   PerfFilePtr = fopen(filenameBuffer, "a");
 
-  if (!PerfFilePtr) {
-    return false;
-  }
+  if (!PerfFilePtr) return false;
 
   return true;
 }
@@ -100,21 +96,19 @@ void js::jit::CheckPerf() {
 
     if (PerfMode != PERF_MODE_NONE) {
       PerfMutex = js_new<js::Mutex>(mutexid::PerfSpewer);
-      if (!PerfMutex) {
-        MOZ_CRASH("failed to allocate PerfMutex");
-      }
+      if (!PerfMutex) MOZ_CRASH("failed to allocate PerfMutex");
 
       if (openPerfMap(PERF_SPEW_DIR)) {
         PerfChecked = true;
         return;
       }
 
-#  if defined(__ANDROID__)
+#if defined(__ANDROID__)
       if (openPerfMap(PERF_SPEW_DIR_2)) {
         PerfChecked = true;
         return;
       }
-#  endif
+#endif
       fprintf(stderr, "Failed to open perf map file.  Disabling IONPERF.\n");
       PerfMode = PERF_MODE_NONE;
     }
@@ -135,9 +129,7 @@ bool js::jit::PerfFuncEnabled() {
 namespace {
 struct MOZ_RAII AutoLockPerfMap {
   AutoLockPerfMap() {
-    if (!PerfEnabled()) {
-      return;
-    }
+    if (!PerfEnabled()) return;
     PerfMutex->lock();
     MOZ_ASSERT(PerfFilePtr);
   }
@@ -152,9 +144,7 @@ struct MOZ_RAII AutoLockPerfMap {
 uint32_t PerfSpewer::nextFunctionIndex = 0;
 
 bool PerfSpewer::startBasicBlock(MBasicBlock* blk, MacroAssembler& masm) {
-  if (!PerfBlockEnabled()) {
-    return true;
-  }
+  if (!PerfBlockEnabled()) return true;
 
   const char* filename = blk->info().script()->filename();
   unsigned lineNumber, columnNumber;
@@ -170,16 +160,12 @@ bool PerfSpewer::startBasicBlock(MBasicBlock* blk, MacroAssembler& masm) {
 }
 
 void PerfSpewer::endBasicBlock(MacroAssembler& masm) {
-  if (!PerfBlockEnabled()) {
-    return;
-  }
+  if (!PerfBlockEnabled()) return;
   masm.bind(&basicBlocks_.back().end);
 }
 
 void PerfSpewer::noteEndInlineCode(MacroAssembler& masm) {
-  if (!PerfBlockEnabled()) {
-    return;
-  }
+  if (!PerfBlockEnabled()) return;
   masm.bind(&endInlineCode);
 }
 
@@ -203,7 +189,7 @@ void PerfSpewer::writeProfile(JSScript* script, JitCode* code,
     size_t size = code->instructionsSize();
     if (size > 0) {
       WriteEntry(lock, reinterpret_cast<uintptr_t>(code->raw()), size,
-                 "%s:%u: Func%02" PRIu32, script->filename(), script->lineno(),
+                 "%s:%zu: Func%02" PRIu32, script->filename(), script->lineno(),
                  thisFunctionIndex);
     }
     return;
@@ -221,7 +207,7 @@ void PerfSpewer::writeProfile(JSScript* script, JitCode* code,
 
     if (prologueSize > 0) {
       WriteEntry(lock, funcStart, prologueSize,
-                 "%s:%u: Func%02" PRIu32 "-Prologue", script->filename(),
+                 "%s:%zu: Func%02" PRIu32 "-Prologue", script->filename(),
                  script->lineno(), thisFunctionIndex);
     }
 
@@ -235,7 +221,7 @@ void PerfSpewer::writeProfile(JSScript* script, JitCode* code,
       MOZ_ASSERT(cur <= blockStart);
       if (cur < blockStart) {
         WriteEntry(lock, cur, blockStart - cur,
-                   "%s:%u: Func%02" PRIu32 "-Block?", script->filename(),
+                   "%s:%zu: Func%02" PRIu32 "-Block?", script->filename(),
                    script->lineno(), thisFunctionIndex);
       }
       cur = blockEnd;
@@ -252,37 +238,33 @@ void PerfSpewer::writeProfile(JSScript* script, JitCode* code,
     MOZ_ASSERT(cur <= funcEndInlineCode);
     if (cur < funcEndInlineCode) {
       WriteEntry(lock, cur, funcEndInlineCode - cur,
-                 "%s:%u: Func%02" PRIu32 "-Epilogue", script->filename(),
+                 "%s:%zu: Func%02" PRIu32 "-Epilogue", script->filename(),
                  script->lineno(), thisFunctionIndex);
     }
 
     MOZ_ASSERT(funcEndInlineCode <= funcEnd);
     if (funcEndInlineCode < funcEnd) {
       WriteEntry(lock, funcEndInlineCode, funcEnd - funcEndInlineCode,
-                 "%s:%u: Func%02" PRIu32 "-OOL", script->filename(),
+                 "%s:%zu: Func%02" PRIu32 "-OOL", script->filename(),
                  script->lineno(), thisFunctionIndex);
     }
   }
 }
 
 void js::jit::writePerfSpewerBaselineProfile(JSScript* script, JitCode* code) {
-  if (!PerfEnabled()) {
-    return;
-  }
+  if (!PerfEnabled()) return;
 
   size_t size = code->instructionsSize();
   if (size > 0) {
     AutoLockPerfMap lock;
     PerfSpewer::WriteEntry(lock, reinterpret_cast<uintptr_t>(code->raw()), size,
-                           "%s:%u: Baseline", script->filename(),
+                           "%s:%zu: Baseline", script->filename(),
                            script->lineno());
   }
 }
 
 void js::jit::writePerfSpewerJitCodeProfile(JitCode* code, const char* msg) {
-  if (!code || !PerfEnabled()) {
-    return;
-  }
+  if (!code || !PerfEnabled()) return;
 
   size_t size = code->instructionsSize();
   if (size > 0) {
@@ -295,9 +277,7 @@ void js::jit::writePerfSpewerJitCodeProfile(JitCode* code, const char* msg) {
 void js::jit::writePerfSpewerWasmMap(uintptr_t base, uintptr_t size,
                                      const char* filename,
                                      const char* annotation) {
-  if (!PerfFuncEnabled() || size == 0U) {
-    return;
-  }
+  if (!PerfFuncEnabled() || size == 0U) return;
 
   AutoLockPerfMap lock;
   PerfSpewer::WriteEntry(lock, base, size, "%s: Function %s", filename,
@@ -308,9 +288,7 @@ void js::jit::writePerfSpewerWasmFunctionMap(uintptr_t base, uintptr_t size,
                                              const char* filename,
                                              unsigned lineno,
                                              const char* funcName) {
-  if (!PerfFuncEnabled() || size == 0U) {
-    return;
-  }
+  if (!PerfFuncEnabled() || size == 0U) return;
 
   AutoLockPerfMap lock;
   PerfSpewer::WriteEntry(lock, base, size, "%s:%u: Function %s", filename,

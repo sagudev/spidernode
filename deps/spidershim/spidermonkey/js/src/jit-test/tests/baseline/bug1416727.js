@@ -1,5 +1,5 @@
 // |jit-test| allow-overrecursed
-g = newGlobal({newCompartment: true})
+g = newGlobal()
 g.parent = this
 g.eval("new Debugger(parent).onExceptionUnwind = function(){}");
 var depth = 0;

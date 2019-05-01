@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,17 +7,16 @@
 #ifndef builtin_TypedObject_h
 #define builtin_TypedObject_h
 
-#include "mozilla/CheckedInt.h"
-
 #include "builtin/TypedObjectConstants.h"
 #include "gc/WeakMap.h"
 #include "js/Conversions.h"
 #include "vm/ArrayBufferObject.h"
 #include "vm/JSObject.h"
+#include "vm/ShapedObject.h"
 
 /*
  * -------------
- * [SMDOC] Typed Objects
+ * Typed Objects
  * -------------
  *
  * Typed objects are a special kind of JS object where the data is
@@ -94,8 +93,6 @@
 
 namespace js {
 
-class GlobalObject;
-
 /*
  * Helper method for converting a double into other scalar
  * types in the same way that JavaScript would. In particular,
@@ -104,9 +101,7 @@ class GlobalObject;
  */
 template <typename T>
 static T ConvertScalar(double d) {
-  if (TypeIsFloatingPoint<T>()) {
-    return T(d);
-  }
+  if (TypeIsFloatingPoint<T>()) return T(d);
   if (TypeIsUnsigned<T>()) {
     uint32_t n = JS::ToUint32(d);
     return T(n);
@@ -120,6 +115,7 @@ namespace type {
 enum Kind {
   Scalar = JS_TYPEREPR_SCALAR_KIND,
   Reference = JS_TYPEREPR_REFERENCE_KIND,
+  Simd = JS_TYPEREPR_SIMD_KIND,
   Struct = JS_TYPEREPR_STRUCT_KIND,
   Array = JS_TYPEREPR_ARRAY_KIND
 };
@@ -131,6 +127,7 @@ enum Kind {
 
 class SimpleTypeDescr;
 class ComplexTypeDescr;
+class SimdTypeDescr;
 class StructTypeDescr;
 class TypedProto;
 
@@ -185,10 +182,8 @@ class TypeDescr : public NativeObject {
   // reference. Otherwise its value is undefined.
   //
   // The list is three consecutive arrays of int32_t offsets, with each array
-  // terminated by -1. The arrays store offsets of string, object/anyref, and
-  // value references in the descriptor, in that order.
-  // TODO/AnyRef-boxing: once anyref has a more complicated structure, we must
-  // revisit this.
+  // terminated by -1. The arrays store offsets of string, object, and value
+  // references in the descriptor, in that order.
   MOZ_MUST_USE bool hasTraceList() const {
     return !getFixedSlot(JS_DESCR_SLOT_TRACE_LIST).isUndefined();
   }
@@ -249,12 +244,6 @@ class ScalarTypeDescr : public SimpleTypeDescr {
         Scalar::Uint32 == JS_SCALARTYPEREPR_UINT32,
         "TypedObjectConstants.h must be consistent with Scalar::Type");
     static_assert(
-        Scalar::BigInt64 == JS_SCALARTYPEREPR_BIGINT64,
-        "TypedObjectConstants.h must be consistent with Scalar::Type");
-    static_assert(
-        Scalar::BigUint64 == JS_SCALARTYPEREPR_BIGUINT64,
-        "TypedObjectConstants.h must be consistent with Scalar::Type");
-    static_assert(
         Scalar::Float32 == JS_SCALARTYPEREPR_FLOAT32,
         "TypedObjectConstants.h must be consistent with Scalar::Type");
     static_assert(
@@ -262,6 +251,18 @@ class ScalarTypeDescr : public SimpleTypeDescr {
         "TypedObjectConstants.h must be consistent with Scalar::Type");
     static_assert(
         Scalar::Uint8Clamped == JS_SCALARTYPEREPR_UINT8_CLAMPED,
+        "TypedObjectConstants.h must be consistent with Scalar::Type");
+    static_assert(
+        Scalar::Float32x4 == JS_SCALARTYPEREPR_FLOAT32X4,
+        "TypedObjectConstants.h must be consistent with Scalar::Type");
+    static_assert(
+        Scalar::Int8x16 == JS_SCALARTYPEREPR_INT8X16,
+        "TypedObjectConstants.h must be consistent with Scalar::Type");
+    static_assert(
+        Scalar::Int16x8 == JS_SCALARTYPEREPR_INT16X8,
+        "TypedObjectConstants.h must be consistent with Scalar::Type");
+    static_assert(
+        Scalar::Int32x4 == JS_SCALARTYPEREPR_INT32X4,
         "TypedObjectConstants.h must be consistent with Scalar::Type");
 
     return Type(getReservedSlot(JS_DESCR_SLOT_TYPE).toInt32());
@@ -281,21 +282,12 @@ class ScalarTypeDescr : public SimpleTypeDescr {
   MACRO_(Scalar::Int32, int32_t, int32)                   \
   MACRO_(Scalar::Uint32, uint32_t, uint32)                \
   MACRO_(Scalar::Float32, float, float32)                 \
-  MACRO_(Scalar::Float64, double, float64)                \
-  MACRO_(Scalar::BigInt64, int64_t, bigint64)             \
-  MACRO_(Scalar::BigUint64, uint64_t, biguint64)
+  MACRO_(Scalar::Float64, double, float64)
 
 // Must be in same order as the enum ScalarTypeDescr::Type:
 #define JS_FOR_EACH_SCALAR_TYPE_REPR(MACRO_)        \
   JS_FOR_EACH_UNIQUE_SCALAR_TYPE_REPR_CTYPE(MACRO_) \
   MACRO_(Scalar::Uint8Clamped, uint8_t, uint8Clamped)
-
-enum class ReferenceType {
-  TYPE_ANY = JS_REFERENCETYPEREPR_ANY,
-  TYPE_OBJECT = JS_REFERENCETYPEREPR_OBJECT,
-  TYPE_WASM_ANYREF = JS_REFERENCETYPEREPR_WASM_ANYREF,
-  TYPE_STRING = JS_REFERENCETYPEREPR_STRING
-};
 
 // Type for reference type constructors like `Any`, `String`, and
 // `Object`. All such type constructors share a common js::Class and
@@ -303,10 +295,14 @@ enum class ReferenceType {
 class ReferenceTypeDescr : public SimpleTypeDescr {
  public:
   // Must match order of JS_FOR_EACH_REFERENCE_TYPE_REPR below
-  typedef ReferenceType Type;
+  enum Type {
+    TYPE_ANY = JS_REFERENCETYPEREPR_ANY,
+    TYPE_OBJECT = JS_REFERENCETYPEREPR_OBJECT,
+    TYPE_STRING = JS_REFERENCETYPEREPR_STRING,
+  };
+  static const int32_t TYPE_MAX = TYPE_STRING + 1;
   static const char* typeName(Type type);
 
-  static const int32_t TYPE_MAX = int32_t(ReferenceType::TYPE_STRING) + 1;
   static const type::Kind Kind = type::Reference;
   static const bool Opaque = true;
   static const Class class_;
@@ -314,8 +310,9 @@ class ReferenceTypeDescr : public SimpleTypeDescr {
   static uint32_t alignment(Type t);
   static const JSFunctionSpec typeObjectMethods[];
 
-  ReferenceType type() const {
-    return (ReferenceType)getReservedSlot(JS_DESCR_SLOT_TYPE).toInt32();
+  ReferenceTypeDescr::Type type() const {
+    return (ReferenceTypeDescr::Type)getReservedSlot(JS_DESCR_SLOT_TYPE)
+        .toInt32();
   }
 
   const char* typeName() const { return typeName(type()); }
@@ -323,13 +320,10 @@ class ReferenceTypeDescr : public SimpleTypeDescr {
   static MOZ_MUST_USE bool call(JSContext* cx, unsigned argc, Value* vp);
 };
 
-// TODO/AnyRef-boxing: With boxed immediates and strings, GCPtrObject may not be
-// appropriate.
-#define JS_FOR_EACH_REFERENCE_TYPE_REPR(MACRO_)                    \
-  MACRO_(ReferenceType::TYPE_ANY, GCPtrValue, Any)                 \
-  MACRO_(ReferenceType::TYPE_WASM_ANYREF, GCPtrObject, WasmAnyRef) \
-  MACRO_(ReferenceType::TYPE_OBJECT, GCPtrObject, Object)          \
-  MACRO_(ReferenceType::TYPE_STRING, GCPtrString, string)
+#define JS_FOR_EACH_REFERENCE_TYPE_REPR(MACRO_)                \
+  MACRO_(ReferenceTypeDescr::TYPE_ANY, GCPtrValue, Any)        \
+  MACRO_(ReferenceTypeDescr::TYPE_OBJECT, GCPtrObject, Object) \
+  MACRO_(ReferenceTypeDescr::TYPE_STRING, GCPtrString, string)
 
 // Type descriptors whose instances are objects and hence which have
 // an associated `prototype` property.
@@ -340,11 +334,24 @@ class ComplexTypeDescr : public TypeDescr {
   TypedProto& instancePrototype() const {
     return getReservedSlot(JS_DESCR_SLOT_TYPROTO).toObject().as<TypedProto>();
   }
+};
 
-  bool allowConstruct() const {
-    return getReservedSlot(JS_DESCR_SLOT_FLAGS).toInt32() &
-           JS_DESCR_FLAG_ALLOW_CONSTRUCT;
-  }
+enum class SimdType;
+
+/*
+ * SIMD Type descriptors.
+ */
+class SimdTypeDescr : public ComplexTypeDescr {
+ public:
+  static const type::Kind Kind = type::Simd;
+  static const bool Opaque = false;
+  static const Class class_;
+  static uint32_t size(SimdType t);
+  static uint32_t alignment(SimdType t);
+  static MOZ_MUST_USE bool call(JSContext* cx, unsigned argc, Value* vp);
+  static bool is(const Value& v);
+
+  SimdType type() const;
 };
 
 bool IsTypedObjectClass(const Class* clasp);  // Defined below
@@ -414,12 +421,6 @@ class ArrayTypeDescr : public ComplexTypeDescr {
   }
 };
 
-struct StructFieldProps {
-  StructFieldProps() : isMutable(0), alignAsInt64(0) {}
-  uint32_t isMutable : 1;
-  uint32_t alignAsInt64 : 1;
-};
-
 /*
  * Properties and methods of the `StructType` meta type object. There
  * is no `class_` field because `StructType` is just a native
@@ -431,14 +432,6 @@ class StructMetaTypeDescr : public NativeObject {
                           HandleObject fields);
 
  public:
-  // The prototype cannot be null.
-  // The names in `ids` must all be non-numeric.
-  // The type objects in `fieldTypeObjs` must all be TypeDescr objects.
-  static StructTypeDescr* createFromArrays(
-      JSContext* cx, HandleObject structTypePrototype, bool opaque,
-      bool allowConstruct, HandleIdVector ids, HandleValueVector fieldTypeObjs,
-      Vector<StructFieldProps>& fieldProps);
-
   // Properties and methods to be installed on StructType.prototype,
   // and hence inherited by all struct type objects:
   static const JSPropertySpec typeObjectProperties[];
@@ -452,26 +445,6 @@ class StructMetaTypeDescr : public NativeObject {
   // This is the function that gets called when the user
   // does `new StructType(...)`. It produces a struct type object.
   static MOZ_MUST_USE bool construct(JSContext* cx, unsigned argc, Value* vp);
-
-  class Layout {
-    // Can call addField() directly.
-    friend class StructMetaTypeDescr;
-
-    mozilla::CheckedInt32 sizeSoFar = 0;
-    int32_t structAlignment = 1;
-
-    mozilla::CheckedInt32 addField(int32_t fieldAlignment, int32_t fieldSize);
-
-   public:
-    // The field adders return the offset of the the field.
-    mozilla::CheckedInt32 addScalar(Scalar::Type type);
-    mozilla::CheckedInt32 addReference(ReferenceType type);
-
-    // The close method rounds up the structure size to the appropriate
-    // alignment and returns that size.  If `alignment` is not NULL then
-    // return the structure alignment through that pointer.
-    mozilla::CheckedInt32 close(int32_t* alignment = nullptr);
-  };
 };
 
 class StructTypeDescr : public ComplexTypeDescr {
@@ -494,11 +467,6 @@ class StructTypeDescr : public ComplexTypeDescr {
   // Return the offset of the field at index `index`.
   size_t fieldOffset(size_t index) const;
 
-  // Return the mutability of the field at index `index`.
-  bool fieldIsMutable(size_t index) const;
-
-  static bool call(JSContext* cx, unsigned argc, Value* vp);
-
  private:
   ArrayObject& fieldInfoObject(size_t slot) const {
     return getReservedSlot(slot).toObject().as<ArrayObject>();
@@ -514,23 +482,13 @@ typedef Handle<StructTypeDescr*> HandleStructTypeDescr;
  */
 class TypedObjectModuleObject : public NativeObject {
  public:
-  enum Slot {
-    ArrayTypePrototype,
-    StructTypePrototype,
-    Int32Desc,
-    Int64Desc,
-    Float32Desc,
-    Float64Desc,
-    ObjectDesc,
-    WasmAnyRefDesc,
-    SlotCount
-  };
+  enum Slot { ArrayTypePrototype, StructTypePrototype, SlotCount };
 
   static const Class class_;
 };
 
 /* Base type for transparent and opaque typed objects. */
-class TypedObject : public JSObject {
+class TypedObject : public ShapedObject {
   static const bool IsTypedObjectClass = true;
 
   static MOZ_MUST_USE bool obj_getArrayElement(JSContext* cx,
@@ -580,7 +538,7 @@ class TypedObject : public JSObject {
 
  public:
   static MOZ_MUST_USE bool obj_newEnumerate(JSContext* cx, HandleObject obj,
-                                            MutableHandleIdVector properties,
+                                            AutoIdVector& properties,
                                             bool enumerableOnly);
 
   TypedProto& typedProto() const {
@@ -619,6 +577,7 @@ class TypedObject : public JSObject {
   // initialized with zeroes (or, in the case of references, an appropriate
   // default value).
   static TypedObject* createZeroed(JSContext* cx, HandleTypeDescr typeObj,
+                                   int32_t length,
                                    gc::InitialHeap heap = gc::DefaultHeap);
 
   // User-accessible constructor (`new TypeDescriptor(...)`). Note that the
@@ -626,11 +585,12 @@ class TypedObject : public JSObject {
   static MOZ_MUST_USE bool construct(JSContext* cx, unsigned argc, Value* vp);
 
   /* Accessors for self hosted code. */
+  static MOZ_MUST_USE bool GetBuffer(JSContext* cx, unsigned argc, Value* vp);
   static MOZ_MUST_USE bool GetByteOffset(JSContext* cx, unsigned argc,
                                          Value* vp);
 
   Shape** addressOfShapeFromGC() {
-    return shape_.unsafeUnbarrieredForTracing();
+    return shapeRef().unsafeUnbarrieredForTracing();
   }
 };
 
@@ -670,7 +630,7 @@ class OutlineTypedObject : public TypedObject {
 
   // Helper for createUnattached()
   static OutlineTypedObject* createUnattachedWithClass(
-      JSContext* cx, const Class* clasp, HandleTypeDescr type,
+      JSContext* cx, const Class* clasp, HandleTypeDescr type, int32_t length,
       gc::InitialHeap heap = gc::DefaultHeap);
 
   // Creates an unattached typed object or handle (depending on the
@@ -680,8 +640,9 @@ class OutlineTypedObject : public TypedObject {
   //
   // Arguments:
   // - type: type object for resulting object
+  // - length: 0 unless this is an array, otherwise the length
   static OutlineTypedObject* createUnattached(
-      JSContext* cx, HandleTypeDescr type,
+      JSContext* cx, HandleTypeDescr type, int32_t length,
       gc::InitialHeap heap = gc::DefaultHeap);
 
   // Creates a typedObj that aliases the memory pointed at by `owner`
@@ -707,6 +668,8 @@ class OutlineTypedObject : public TypedObject {
 class OutlineTransparentTypedObject : public OutlineTypedObject {
  public:
   static const Class class_;
+
+  ArrayBufferObject* getOrCreateBuffer(JSContext* cx);
 };
 
 // Class for an opaque typed object whose owner may be either an array buffer
@@ -723,20 +686,14 @@ class InlineTypedObject : public TypedObject {
   // Start of the inline data, which immediately follows the shape and type.
   uint8_t data_[1];
 
-  static const size_t MaximumSize =
-      JSObject::MAX_BYTE_SIZE - sizeof(TypedObject);
-
  protected:
   uint8_t* inlineTypedMem() const { return (uint8_t*)&data_; }
 
  public:
+  static const size_t MaximumSize =
+      JSObject::MAX_BYTE_SIZE - sizeof(TypedObject);
+
   static inline gc::AllocKind allocKindForTypeDescriptor(TypeDescr* descr);
-
-  static bool canAccommodateSize(size_t size) { return size <= MaximumSize; }
-
-  static bool canAccommodateType(TypeDescr* type) {
-    return type->size() <= MaximumSize;
-  }
 
   uint8_t* inlineTypedMem(const JS::AutoRequireNoGC&) const {
     return inlineTypedMem();
@@ -764,6 +721,8 @@ class InlineTransparentTypedObject : public InlineTypedObject {
  public:
   static const Class class_;
 
+  ArrayBufferObject* getOrCreateBuffer(JSContext* cx);
+
   uint8_t* inlineTypedMem() const {
     return InlineTypedObject::inlineTypedMem();
   }
@@ -773,6 +732,16 @@ class InlineTransparentTypedObject : public InlineTypedObject {
 class InlineOpaqueTypedObject : public InlineTypedObject {
  public:
   static const Class class_;
+};
+
+// Class for the global SIMD object.
+class SimdObject : public NativeObject {
+ public:
+  static const Class class_;
+  static MOZ_MUST_USE bool toString(JSContext* cx, unsigned int argc,
+                                    Value* vp);
+  static MOZ_MUST_USE bool resolve(JSContext* cx, JS::HandleObject obj,
+                                   JS::HandleId, bool* resolved);
 };
 
 /*
@@ -836,8 +805,8 @@ MOZ_MUST_USE bool ObjectIsOpaqueTypedObject(JSContext* cx, unsigned argc,
 MOZ_MUST_USE bool ObjectIsTransparentTypedObject(JSContext* cx, unsigned argc,
                                                  Value* vp);
 
-// Predicates on type descriptor objects.  In all cases, 'obj' must be a type
-// descriptor.
+/* Predicates on type descriptor objects.  In all cases, 'obj' must be a type
+ * descriptor. */
 
 MOZ_MUST_USE bool TypeDescrIsSimpleType(JSContext*, unsigned argc, Value* vp);
 
@@ -878,37 +847,14 @@ MOZ_MUST_USE bool ClampToUint8(JSContext* cx, unsigned argc, Value* vp);
 MOZ_MUST_USE bool GetTypedObjectModule(JSContext* cx, unsigned argc, Value* vp);
 
 /*
- * Usage: IsBoxedWasmAnyRef(Object) -> bool
+ * Usage: GetSimdTypeDescr(simdTypeRepr)
  *
- * Return true iff object is an instance of the Wasm-internal type WasmValueBox.
- */
-MOZ_MUST_USE bool IsBoxedWasmAnyRef(JSContext* cx, unsigned argc, Value* vp);
-
-/*
- * Usage: IsBoxableWasmAnyRef(Value) -> bool
+ * Returns one of the SIMD type objects, identified by `simdTypeRepr` which must
+ * be one of the JS_SIMDTYPEREPR_* constants.
  *
- * Return true iff the value must be boxed into a WasmValueBox in order to be
- * stored into an anyref field.  Values for which false is returned may be
- * passed as they are to Store_WasmAnyRef and may therefore appear as results
- * from Load_WasmAnyRef.
+ * The SIMD pseudo-module must have been initialized for this to be safe.
  */
-MOZ_MUST_USE bool IsBoxableWasmAnyRef(JSContext* cx, unsigned argc, Value* vp);
-
-/*
- * Usage: BoxWasmAnyRef(Value) -> Object
- *
- * Return a new WasmValueBox that holds `value`.  The value can be any value at
- * all.
- */
-MOZ_MUST_USE bool BoxWasmAnyRef(JSContext* cx, unsigned argc, Value* vp);
-
-/*
- * Usage: UnboxBoxedWasmAnyRef(Object) -> Value
- *
- * The object must be a value for which IsBoxedWasmAnyRef returns true.
- * Return the value stored in the box.
- */
-MOZ_MUST_USE bool UnboxBoxedWasmAnyRef(JSContext* cx, unsigned argc, Value* vp);
+MOZ_MUST_USE bool GetSimdTypeDescr(JSContext* cx, unsigned argc, Value* vp);
 
 /*
  * Usage: Store_int8(targetDatum, targetOffset, value)
@@ -1030,7 +976,8 @@ inline bool IsSimpleTypeDescrClass(const Class* clasp) {
 }
 
 inline bool IsComplexTypeDescrClass(const Class* clasp) {
-  return clasp == &StructTypeDescr::class_ || clasp == &ArrayTypeDescr::class_;
+  return clasp == &StructTypeDescr::class_ ||
+         clasp == &ArrayTypeDescr::class_ || clasp == &SimdTypeDescr::class_;
 }
 
 inline bool IsTypeDescrClass(const Class* clasp) {
@@ -1041,8 +988,7 @@ inline bool TypedObject::opaque() const {
   return IsOpaqueTypedObjectClass(getClass());
 }
 
-JSObject* InitTypedObjectModuleObject(JSContext* cx,
-                                      JS::Handle<GlobalObject*> global);
+JSObject* InitTypedObjectModuleObject(JSContext* cx, JS::HandleObject obj);
 
 }  // namespace js
 

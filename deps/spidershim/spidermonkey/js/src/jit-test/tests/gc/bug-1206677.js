@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !('oomTest' in this) || helperThreadCount() === 0
+if (!('oomTest' in this) || helperThreadCount() === 0)
+  quit(0);
 
 var lfGlobal = newGlobal();
 for (lfLocal in this) {

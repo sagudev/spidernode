@@ -1,6 +1,6 @@
 load(libdir + "asm.js");
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.parent = this;
 g.eval("dbg = new Debugger(parent);");
 

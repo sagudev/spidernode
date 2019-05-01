@@ -10,7 +10,6 @@ from collections import (
 )
 
 from ..reader import LogHandler
-import six
 
 
 class SummaryHandler(LogHandler):
@@ -69,7 +68,7 @@ class SummaryHandler(LogHandler):
         Yields a tuple of (suite, summary). The summary returned is
         the same format as returned by 'get'.
         """
-        for suite, data in six.iteritems(self.summary):
+        for suite, data in self.summary.iteritems():
             yield suite, data
 
     @classmethod

@@ -1,4 +1,4 @@
-#define ANNOTATE(property) __attribute__((annotate(property)))
+#define ANNOTATE(property) __attribute__((tag(property)))
 
 namespace js {
 namespace gc {

@@ -5,7 +5,7 @@
 from __future__ import absolute_import, print_function
 
 from mozboot.base import BaseBootstrapper
-from mozboot.linux_common import NasmInstall, NodeInstall, StyloInstall, ClangStaticAnalysisInstall
+from mozboot.linux_common import StyloInstall
 
 
 MERCURIAL_INSTALL_PROMPT = '''
@@ -19,19 +19,22 @@ Mercurial via the "pip" Python packaging utility. This will likely result
 in files being placed in /usr/local/bin and /usr/local/lib.
 
 How would you like to continue?
-  1. Install a modern Mercurial via pip (recommended)
-  2. Install a legacy Mercurial via apt
-  3. Do not install Mercurial
-Your choice: '''
+
+1) Install a modern Mercurial via pip (recommended)
+2) Install a legacy Mercurial via apt
+3) Do not install Mercurial
+
+Choice:
+'''.strip()
 
 
-class DebianBootstrapper(NasmInstall, NodeInstall, StyloInstall, ClangStaticAnalysisInstall,
-                         BaseBootstrapper):
+class DebianBootstrapper(StyloInstall, BaseBootstrapper):
     # These are common packages for all Debian-derived distros (such as
     # Ubuntu).
     COMMON_PACKAGES = [
         'autoconf2.13',
         'build-essential',
+        'ccache',
         'nodejs',
         'python-dev',
         'python-pip',
@@ -74,8 +77,10 @@ class DebianBootstrapper(NasmInstall, NodeInstall, StyloInstall, ClangStaticAnal
     # These are common packages for building Firefox for Android
     # (mobile/android) for all Debian-derived distros (such as Ubuntu).
     MOBILE_ANDROID_COMMON_PACKAGES = [
-        'openjdk-8-jdk-headless',  # Android's `sdkmanager` requires Java 1.8 exactly.
+        'default-jdk',
         'wget',  # For downloading the Android SDK and NDK.
+        'libncurses5:i386',  # See comments about i386 below.
+        'libstdc++6:i386',
     ]
 
     # Subclasses can add packages to this variable to have them installed.
@@ -96,22 +101,7 @@ class DebianBootstrapper(NasmInstall, NodeInstall, StyloInstall, ClangStaticAnal
             self.MOBILE_ANDROID_DISTRO_PACKAGES
 
     def install_system_packages(self):
-        # Python 3 may not be present on all distros. Search for it and
-        # install if found.
-        packages = list(self.packages)
-
-        have_python3 = any([self.which('python3'), self.which('python3.6'),
-                            self.which('python3.5')])
-
-        if not have_python3:
-            python3_packages = self.check_output([
-                'apt-cache', 'pkgnames', 'python3'])
-            python3_packages = python3_packages.splitlines()
-
-            if 'python3' in python3_packages:
-                packages.extend(['python3', 'python3-dev'])
-
-        self.apt_install(*packages)
+        self.apt_install(*self.packages)
 
     def install_browser_packages(self):
         self.ensure_browser_packages()
@@ -128,18 +118,23 @@ class DebianBootstrapper(NasmInstall, NodeInstall, StyloInstall, ClangStaticAnal
     def ensure_browser_packages(self, artifact_mode=False):
         # TODO: Figure out what not to install for artifact mode
         self.apt_install(*self.browser_packages)
-        modern = self.is_nasm_modern()
-        if not modern:
-            self.apt_install('nasm')
 
     def ensure_mobile_android_packages(self, artifact_mode=False):
         # Multi-part process:
         # 1. System packages.
         # 2. Android SDK. Android NDK only if we are not in artifact mode. Android packages.
+
+        # 1. This is hard to believe, but the Android SDK binaries are 32-bit
+        # and that conflicts with 64-bit Debian and Ubuntu installations out of
+        # the box.  The solution is to add the i386 architecture.  See
+        # "Troubleshooting Ubuntu" at
+        # http://developer.android.com/sdk/installing/index.html?pkg=tools.
+        self.run_as_root(['dpkg', '--add-architecture', 'i386'])
+        # After adding a new arch, the list of packages has to be updated
+        self.apt_update()
         self.apt_install(*self.mobile_android_packages)
 
         # 2. Android pieces.
-        self.ensure_java()
         from mozboot import android
         android.ensure_android('linux', artifact_mode=artifact_mode,
                                no_interactive=self.no_interactive)

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,57 +16,54 @@
 #include "vm/JSScript.h"
 
 namespace js {
-
-class ArgumentsObject;
-
 namespace jit {
 
 typedef void* CalleeToken;
 
-enum class FrameType {
+enum FrameType {
   // A JS frame is analogous to a js::InterpreterFrame, representing one
   // scripted function activation. IonJS frames are used by the optimizing
   // compiler.
-  IonJS,
+  JitFrame_IonJS,
 
   // JS frame used by the baseline JIT.
-  BaselineJS,
+  JitFrame_BaselineJS,
 
   // Frame pushed by Baseline stubs that make non-tail calls, so that the
   // return address -> ICEntry mapping works.
-  BaselineStub,
+  JitFrame_BaselineStub,
 
   // The entry frame is the initial prologue block transitioning from the VM
   // into the Ion world.
-  CppToJSJit,
+  JitFrame_CppToJSJit,
 
   // A rectifier frame sits in between two JS frames, adapting argc != nargs
   // mismatches in calls.
-  Rectifier,
+  JitFrame_Rectifier,
 
   // Ion IC calling a scripted getter/setter or a VMFunction.
-  IonICCall,
+  JitFrame_IonICCall,
 
   // An exit frame is necessary for transitioning from a JS frame into C++.
   // From within C++, an exit frame is always the last frame in any
   // JitActivation.
-  Exit,
+  JitFrame_Exit,
 
   // A bailout frame is a special IonJS jit frame after a bailout, and before
   // the reconstruction of the BaselineJS frame. From within C++, a bailout
   // frame is always the last frame in a JitActivation iff the bailout frame
   // information is recorded on the JitActivation.
-  Bailout,
+  JitFrame_Bailout,
 
   // A wasm to JS frame is constructed during fast calls from wasm to the JS
   // jits, used as a marker to interleave JS jit and wasm frames. From the
   // point of view of JS JITs, this is just another kind of entry frame.
-  WasmToJSJit,
+  JitFrame_WasmToJSJit,
 
   // A JS to wasm frame is constructed during fast calls from any JS jits to
   // wasm, and is a special kind of exit frame that doesn't have the exit
   // footer. From the point of view of the jit, it can be skipped as an exit.
-  JSJitToWasm,
+  JitFrame_JSJitToWasm,
 };
 
 enum ReadFrameArgsBehavior {
@@ -106,7 +103,7 @@ class JSJitFrameIter {
  protected:
   uint8_t* current_;
   FrameType type_;
-  uint8_t* resumePCinCurrentFrame_;
+  uint8_t* returnAddressToFp_;
   size_t frameSize_;
 
  private:
@@ -121,14 +118,11 @@ class JSJitFrameIter {
 
   // A constructor specialized for jit->wasm frames, which starts at a
   // specific FP.
-  JSJitFrameIter(const JitActivation* activation, FrameType frameType,
-                 uint8_t* fp);
+  JSJitFrameIter(const JitActivation* activation, uint8_t* fp);
 
   // Used only by DebugModeOSRVolatileJitFrameIter.
   void exchangeReturnAddressIfMatch(uint8_t* oldAddr, uint8_t* newAddr) {
-    if (resumePCinCurrentFrame_ == oldAddr) {
-      resumePCinCurrentFrame_ = newAddr;
-    }
+    if (returnAddressToFp_ == oldAddr) returnAddressToFp_ = newAddr;
   }
 
   // Current frame information.
@@ -151,26 +145,26 @@ class JSJitFrameIter {
   bool checkInvalidation(IonScript** ionScript) const;
   bool checkInvalidation() const;
 
-  bool isExitFrame() const { return type_ == FrameType::Exit; }
+  bool isExitFrame() const { return type_ == JitFrame_Exit; }
   bool isScripted() const {
-    return type_ == FrameType::BaselineJS || type_ == FrameType::IonJS ||
-           type_ == FrameType::Bailout;
+    return type_ == JitFrame_BaselineJS || type_ == JitFrame_IonJS ||
+           type_ == JitFrame_Bailout;
   }
-  bool isBaselineJS() const { return type_ == FrameType::BaselineJS; }
+  bool isBaselineJS() const { return type_ == JitFrame_BaselineJS; }
   bool isIonScripted() const {
-    return type_ == FrameType::IonJS || type_ == FrameType::Bailout;
+    return type_ == JitFrame_IonJS || type_ == JitFrame_Bailout;
   }
-  bool isIonJS() const { return type_ == FrameType::IonJS; }
-  bool isIonICCall() const { return type_ == FrameType::IonICCall; }
-  bool isBailoutJS() const { return type_ == FrameType::Bailout; }
-  bool isBaselineStub() const { return type_ == FrameType::BaselineStub; }
-  bool isRectifier() const { return type_ == FrameType::Rectifier; }
+  bool isIonJS() const { return type_ == JitFrame_IonJS; }
+  bool isIonICCall() const { return type_ == JitFrame_IonICCall; }
+  bool isBailoutJS() const { return type_ == JitFrame_Bailout; }
+  bool isBaselineStub() const { return type_ == JitFrame_BaselineStub; }
+  bool isRectifier() const { return type_ == JitFrame_Rectifier; }
   bool isBareExit() const;
   template <typename T>
   bool isExitFrameLayout() const;
 
   static bool isEntry(FrameType type) {
-    return type == FrameType::CppToJSJit || type == FrameType::WasmToJSJit;
+    return type == JitFrame_CppToJSJit || type == JitFrame_WasmToJSJit;
   }
   bool isEntry() const { return isEntry(type_); }
 
@@ -186,9 +180,9 @@ class JSJitFrameIter {
   void baselineScriptAndPc(JSScript** scriptRes, jsbytecode** pcRes) const;
   Value* actualArgs() const;
 
-  // Returns the address of the next instruction that will execute in this
-  // frame, once control returns to this frame.
-  uint8_t* resumePCinCurrentFrame() const { return resumePCinCurrentFrame_; }
+  // Returns the return address of the frame above this one (that is, the
+  // return address that returns back to the current frame).
+  uint8_t* returnAddressToFp() const { return returnAddressToFp_; }
 
   // Previous frame information extracted from the current frame.
   inline size_t prevFrameLocalSize() const;
@@ -250,9 +244,7 @@ class JSJitFrameIter {
     }
 
     Value* argv = actualArgs();
-    for (unsigned i = start; i < end; i++) {
-      op(argv[i]);
-    }
+    for (unsigned i = start; i < end; i++) op(argv[i]);
   }
 
   void dump() const;
@@ -273,7 +265,7 @@ class JitcodeGlobalTable;
 class JSJitProfilingFrameIterator {
   uint8_t* fp_;
   FrameType type_;
-  void* resumePCinCurrentFrame_;
+  void* returnAddressToFp_;
 
   inline JitFrameLayout* framePtr();
   inline JSScript* frameScript();
@@ -302,9 +294,9 @@ class JSJitProfilingFrameIterator {
     MOZ_ASSERT(!done());
     return type_;
   }
-  void* resumePCinCurrentFrame() const {
+  void* returnAddressToFp() const {
     MOZ_ASSERT(!done());
-    return resumePCinCurrentFrame_;
+    return returnAddressToFp_;
   }
 };
 
@@ -371,21 +363,19 @@ struct MaybeReadFallback {
   bool canRecoverResults() { return maybeCx; }
 
   Value unreadablePlaceholder() const {
-    if (unreadablePlaceholder_ == NoGC_MagicOptimizedOut) {
+    if (unreadablePlaceholder_ == NoGC_MagicOptimizedOut)
       return MagicValue(JS_OPTIMIZED_OUT);
-    }
     return UndefinedValue();
   }
 
   NoGCValue noGCPlaceholder(const Value& v) const {
-    if (v.isMagic(JS_OPTIMIZED_OUT)) {
-      return NoGC_MagicOptimizedOut;
-    }
+    if (v.isMagic(JS_OPTIMIZED_OUT)) return NoGC_MagicOptimizedOut;
     return NoGC_UndefinedValue;
   }
 };
 
 class RResumePoint;
+class RSimdBox;
 
 // Reads frame information in snapshot-encoding order (that is, outermost frame
 // to innermost frame).
@@ -435,6 +425,7 @@ class SnapshotIterator {
   void warnUnreadableAllocation();
 
  private:
+  friend class RSimdBox;
   const FloatRegisters::RegisterContent* floatAllocationPointer(
       const RValueAllocation& a) const;
 
@@ -470,9 +461,7 @@ class SnapshotIterator {
     // Inline frames are inlined on calls, which are considered as being
     // resumed on the Call as baseline will push the pc once we return from
     // the call.
-    if (moreFrames()) {
-      return false;
-    }
+    if (moreFrames()) return false;
     return recover_.resumeAfter();
   }
   inline BailoutKind bailoutKind() const { return snapshot_.bailoutKind(); }
@@ -492,13 +481,13 @@ class SnapshotIterator {
 
   inline bool moreInstructions() const { return recover_.moreInstructions(); }
 
+ protected:
   // Register a vector used for storing the results of the evaluation of
   // recover instructions. This vector should be registered before the
   // beginning of the iteration. This function is in charge of allocating
   // enough space for all instructions results, and return false iff it fails.
   MOZ_MUST_USE bool initInstructionResults(MaybeReadFallback& fallback);
 
- protected:
   // This function is used internally for computing the result of the recover
   // instructions.
   MOZ_MUST_USE bool computeInstructionResults(
@@ -532,9 +521,7 @@ class SnapshotIterator {
   Value readWithDefault(RValueAllocation* alloc) {
     *alloc = RValueAllocation();
     RValueAllocation a = readAllocation();
-    if (allocationReadable(a)) {
-      return allocationValue(a);
-    }
+    if (allocationReadable(a)) return allocationValue(a);
 
     *alloc = a;
     return allocationValue(a, RM_AlwaysDefault);
@@ -556,28 +543,21 @@ class SnapshotIterator {
     if (script->argumentsHasVarBinding()) {
       if (argsObj) {
         Value v = read();
-        if (v.isObject()) {
-          *argsObj = &v.toObject().as<ArgumentsObject>();
-        }
+        if (v.isObject()) *argsObj = &v.toObject().as<ArgumentsObject>();
       } else {
         skip();
       }
     }
 
-    if (thisv) {
+    if (thisv)
       *thisv = maybeRead(fallback);
-    } else {
+    else
       skip();
-    }
 
     unsigned i = 0;
-    if (end < start) {
-      i = start;
-    }
+    if (end < start) i = start;
 
-    for (; i < start; i++) {
-      skip();
-    }
+    for (; i < start; i++) skip();
     for (; i < end; i++) {
       // We are not always able to read values from the snapshots, some values
       // such as non-gc things may still be live in registers and cause an
@@ -664,9 +644,7 @@ class InlineFrameIterator {
     // property still hold since the for inlined frames. This property does not
     // hold for the parent frame because it can have optimize a call to
     // js_fun_call or js_fun_apply.
-    if (more()) {
-      return numActualArgs_;
-    }
+    if (more()) return numActualArgs_;
 
     return frame_->numActualArgs();
   }
@@ -690,11 +668,10 @@ class InlineFrameIterator {
     }
 
     // Read return value.
-    if (rval) {
+    if (rval)
       *rval = s.maybeRead(fallback);
-    } else {
+    else
       s.skip();
-    }
 
     if (newTarget) {
       // For now, only support reading new.target when we are reading
@@ -711,10 +688,9 @@ class InlineFrameIterator {
       // Get the non overflown arguments, which are taken from the inlined
       // frame, because it will have the updated value when JSOP_SETARG is
       // done.
-      if (behavior != ReadFrame_Overflown) {
+      if (behavior != ReadFrame_Overflown)
         s.readFunctionFrameArgs(argOp, argsObj, thisv, 0, nformal, script(),
                                 fallback);
-      }
 
       if (behavior != ReadFrame_Formals) {
         if (more()) {
@@ -739,9 +715,7 @@ class InlineFrameIterator {
                      nactual + 3 + argsObjAdj + hasNewTarget);
           unsigned skip = parent_s.numAllocations() - nactual - 3 - argsObjAdj -
                           hasNewTarget;
-          for (unsigned j = 0; j < skip; j++) {
-            parent_s.skip();
-          }
+          for (unsigned j = 0; j < skip; j++) parent_s.skip();
 
           // Get the overflown arguments
           MaybeReadFallback unusedFallback;
@@ -749,28 +723,22 @@ class InlineFrameIterator {
           parent_s.skip();  // return value
           parent_s.readFunctionFrameArgs(argOp, nullptr, nullptr, nformal,
                                          nactual, it.script(), fallback);
-          if (newTarget && isConstructing()) {
+          if (newTarget && isConstructing())
             *newTarget = parent_s.maybeRead(fallback);
-          }
         } else {
           // There is no parent frame to this inlined frame, we can read
           // from the frame's Value vector directly.
           Value* argv = frame_->actualArgs();
-          for (unsigned i = nformal; i < nactual; i++) {
-            argOp(argv[i]);
-          }
-          if (newTarget && isConstructing()) {
-            *newTarget = argv[nactual];
-          }
+          for (unsigned i = nformal; i < nactual; i++) argOp(argv[i]);
+          if (newTarget && isConstructing()) *newTarget = argv[nactual];
         }
       }
     }
 
     // At this point we've read all the formals in s, and can read the
     // locals.
-    for (unsigned i = 0; i < script()->nfixed(); i++) {
+    for (unsigned i = 0; i < script()->nfixed(); i++)
       localOp(s.maybeRead(fallback));
-    }
   }
 
   template <class Op>
@@ -789,13 +757,12 @@ class InlineFrameIterator {
   bool isModuleFrame() const;
   bool isConstructing() const;
 
-  JSObject* environmentChain(MaybeReadFallback& fallback,
-                             bool* hasInitialEnvironment = nullptr) const {
+  JSObject* environmentChain(MaybeReadFallback& fallback) const {
     SnapshotIterator s(si_);
 
     // envChain
     Value v = s.maybeRead(fallback);
-    return computeEnvironmentChain(v, fallback, hasInitialEnvironment);
+    return computeEnvironmentChain(v, fallback);
   }
 
   Value thisArgument(MaybeReadFallback& fallback) const {
@@ -808,9 +775,7 @@ class InlineFrameIterator {
     s.skip();
 
     // Arguments object.
-    if (script()->argumentsHasVarBinding()) {
-      s.skip();
-    }
+    if (script()->argumentsHasVarBinding()) s.skip();
 
     return s.maybeRead(fallback);
   }

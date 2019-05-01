@@ -7,7 +7,6 @@ from __future__ import print_function, unicode_literals
 import logging
 import re
 
-
 class OutputHandler(object):
     '''
     A class for handling Valgrind output.
@@ -38,7 +37,7 @@ class OutputHandler(object):
     the count of these lines doesn't match the error count found during
     parsing, then the parsing has missed one or more errors and we can fail
     appropriately.
-    '''  # NOQA: E501
+    '''
 
     def __init__(self, logger):
         # The regexps in this list match all of Valgrind's errors. Note that
@@ -105,7 +104,7 @@ class OutputHandler(object):
                 self.logger(logging.ERROR, 'valgrind-error-msg',
                             {'error': self.curr_error,
                              'location': self.curr_location},
-                            'TEST-UNEXPECTED-FAIL | valgrind-test | {error} at {location}')
+                             'TEST-UNEXPECTED-FAIL | valgrind-test | {error} at {location}')
                 for b in self.buffered_lines:
                     self.log(b)
                 self.curr_error = None
@@ -114,3 +113,4 @@ class OutputHandler(object):
 
         if re.match(self.re_suppression, line):
             self.suppression_count += 1
+

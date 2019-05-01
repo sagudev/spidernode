@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,27 +12,28 @@
 #include "jsfriendapi.h"
 #include "jsutil.h"
 
-#include "js/HashTable.h"
-
 namespace js {
 namespace gc {
 
-template <typename Node>
+template <class Node>
 struct GraphNodeBase {
-  using NodeSet =
-      js::HashSet<Node*, js::DefaultHasher<Node*>, js::SystemAllocPolicy>;
+  Node* gcNextGraphNode;
+  Node* gcNextGraphComponent;
+  unsigned gcDiscoveryTime;
+  unsigned gcLowLink;
 
-  NodeSet gcGraphEdges;
-  Node* gcNextGraphNode = nullptr;
-  Node* gcNextGraphComponent = nullptr;
-  unsigned gcDiscoveryTime = 0;
-  unsigned gcLowLink = 0;
+  GraphNodeBase()
+      : gcNextGraphNode(nullptr),
+        gcNextGraphComponent(nullptr),
+        gcDiscoveryTime(0),
+        gcLowLink(0) {}
+
+  ~GraphNodeBase() {}
 
   Node* nextNodeInGroup() const {
     if (gcNextGraphNode &&
-        gcNextGraphNode->gcNextGraphComponent == gcNextGraphComponent) {
+        gcNextGraphNode->gcNextGraphComponent == gcNextGraphComponent)
       return gcNextGraphNode;
-    }
     return nullptr;
   }
 
@@ -43,30 +44,41 @@ struct GraphNodeBase {
  * Find the strongly connected components of a graph using Tarjan's algorithm,
  * and return them in topological order.
  *
- * Nodes derive from GraphNodeBase and add target edge pointers to
- * sourceNode.gcGraphEdges to describe the graph:
+ * Nodes derive from GraphNodeBase and implement findGraphEdges, which calls
+ * finder.addEdgeTo to describe the outgoing edges from that node:
  *
- * struct MyGraphNode : public GraphNodeBase<MyGraphNode>
+ * struct MyComponentFinder;
+ *
+ * struct MyGraphNode : public GraphNodeBase
  * {
- *   ...
+ *     void findOutgoingEdges(MyComponentFinder& finder)
+ *     {
+ *         for edge in my_outgoing_edges:
+ *             if is_relevant(edge):
+ *                 finder.addEdgeTo(edge.destination)
+ *     }
  * }
  *
- * MyGraphNode node1, node2, node3;
- * node1.gcGraphEdges.put(node2); // Error checking elided.
- * node2.gcGraphEdges.put(node3);
- * node3.gcGraphEdges.put(node2);
+ * struct MyComponentFinder : public ComponentFinder<MyGraphNode,
+ *                                                   MyComponentFinder>
+ * {
+ *     ...
+ * };
  *
- * ComponentFinder<MyGraphNode> finder;
- * finder.addNode(node1);
- * finder.addNode(node2);
- * finder.addNode(node3);
- * MyGraphNode* result = finder.getResultsList();
+ * MyComponentFinder finder;
+ * finder.addNode(v);
  */
 
-template <typename Node>
+template <typename Node, typename Derived>
 class ComponentFinder {
  public:
-  explicit ComponentFinder(uintptr_t sl) : stackLimit(sl) {}
+  explicit ComponentFinder(uintptr_t sl)
+      : clock(1),
+        stack(nullptr),
+        firstComponent(nullptr),
+        cur(nullptr),
+        stackLimit(sl),
+        stackFull(false) {}
 
   ~ComponentFinder() {
     MOZ_ASSERT(!stack);
@@ -113,19 +125,12 @@ class ComponentFinder {
   }
 
   static void mergeGroups(Node* first) {
-    for (Node* v = first; v; v = v->gcNextGraphNode) {
+    for (Node* v = first; v; v = v->gcNextGraphNode)
       v->gcNextGraphComponent = nullptr;
-    }
   }
 
- private:
-  // Constant used to indicate an unprocessed vertex.
-  static const unsigned Undefined = 0;
-
-  // Constant used to indicate a processed vertex that is no longer on the
-  // stack.
-  static const unsigned Finished = (unsigned)-1;
-
+ public:
+  /* Call from implementation of GraphNodeBase::findOutgoingEdges(). */
   void addEdgeTo(Node* w) {
     if (w->gcDiscoveryTime == Undefined) {
       processNode(w);
@@ -134,6 +139,14 @@ class ComponentFinder {
       cur->gcLowLink = Min(cur->gcLowLink, w->gcDiscoveryTime);
     }
   }
+
+ private:
+  /* Constant used to indicate an unprocessed vertex. */
+  static const unsigned Undefined = 0;
+
+  /* Constant used to indicate an processed vertex that is no longer on the
+   * stack. */
+  static const unsigned Finished = (unsigned)-1;
 
   void processNode(Node* v) {
     v->gcDiscoveryTime = clock;
@@ -151,14 +164,10 @@ class ComponentFinder {
 
     Node* old = cur;
     cur = v;
-    for (auto r = cur->gcGraphEdges.all(); !r.empty(); r.popFront()) {
-      addEdgeTo(r.front());
-    }
+    cur->findOutgoingEdges(*static_cast<Derived*>(this));
     cur = old;
 
-    if (stackFull) {
-      return;
-    }
+    if (stackFull) return;
 
     if (v->gcLowLink == v->gcDiscoveryTime) {
       Node* nextComponent = firstComponent;
@@ -188,12 +197,12 @@ class ComponentFinder {
   }
 
  private:
-  unsigned clock = 1;
-  Node* stack = nullptr;
-  Node* firstComponent = nullptr;
-  Node* cur = nullptr;
+  unsigned clock;
+  Node* stack;
+  Node* firstComponent;
+  Node* cur;
   uintptr_t stackLimit;
-  bool stackFull = false;
+  bool stackFull;
 };
 
 } /* namespace gc */

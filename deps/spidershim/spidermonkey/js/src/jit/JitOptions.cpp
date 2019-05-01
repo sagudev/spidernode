@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,31 +33,21 @@ struct IsBool<bool> : mozilla::TrueType {};
 static Maybe<int> ParseInt(const char* str) {
   char* endp;
   int retval = strtol(str, &endp, 0);
-  if (*endp == '\0') {
-    return mozilla::Some(retval);
-  }
+  if (*endp == '\0') return mozilla::Some(retval);
   return mozilla::Nothing();
 }
 
 template <typename T>
 T overrideDefault(const char* param, T dflt) {
   char* str = getenv(param);
-  if (!str) {
-    return dflt;
-  }
+  if (!str) return dflt;
   if (IsBool<T>::value) {
-    if (strcmp(str, "true") == 0 || strcmp(str, "yes") == 0) {
-      return true;
-    }
-    if (strcmp(str, "false") == 0 || strcmp(str, "no") == 0) {
-      return false;
-    }
+    if (strcmp(str, "true") == 0 || strcmp(str, "yes") == 0) return true;
+    if (strcmp(str, "false") == 0 || strcmp(str, "no") == 0) return false;
     Warn(param, str);
   } else {
     Maybe<int> value = ParseInt(str);
-    if (value.isSome()) {
-      return value.ref();
-    }
+    if (value.isSome()) return value.ref();
     Warn(param, str);
   }
   return dflt;
@@ -89,8 +79,14 @@ DefaultJitOptions::DefaultJitOptions() {
   // Toggles whether Effective Address Analysis is globally disabled.
   SET_DEFAULT(disableEaa, false);
 
+  // Toggle whether eager simd unboxing is globally disabled.
+  SET_DEFAULT(disableEagerSimdUnbox, false);
+
   // Toggles whether Edge Case Analysis is gobally disabled.
   SET_DEFAULT(disableEdgeCaseAnalysis, false);
+
+  // Toggles whether to use flow sensitive Alias Analysis.
+  SET_DEFAULT(disableFlowAA, true);
 
   // Toggle whether global value numbering is globally disabled.
   SET_DEFAULT(disableGvn, false);
@@ -100,6 +96,9 @@ DefaultJitOptions::DefaultJitOptions() {
 
   // Toggles whether loop invariant code motion is globally disabled.
   SET_DEFAULT(disableLicm, false);
+
+  // Toggles whether Loop Unrolling is globally disabled.
+  SET_DEFAULT(disableLoopUnrolling, true);
 
   // Toggles wheter optimization tracking is globally disabled.
   SET_DEFAULT(disableOptimizationTracking, true);
@@ -122,8 +121,8 @@ DefaultJitOptions::DefaultJitOptions() {
   // Toggles whether CacheIR stubs are used.
   SET_DEFAULT(disableCacheIR, false);
 
-  // Toggles whether CacheIR stubs for calls are used
-  SET_DEFAULT(disableCacheIRCalls, true);
+  // Toggles whether shared stubs are used in Ionmonkey.
+  SET_DEFAULT(disableSharedStubs, false);
 
 // Toggles whether sincos optimization is globally disabled.
 // See bug984018: The MacOS is the only one that has the sincos fast.
@@ -136,12 +135,8 @@ DefaultJitOptions::DefaultJitOptions() {
   // Toggles whether sink code motion is globally disabled.
   SET_DEFAULT(disableSink, true);
 
-  // Toggles whether the use of multiple Ion optimization levels is globally
-  // disabled.
-  SET_DEFAULT(disableOptimizationLevels, false);
-
-  // Whether the Baseline Interpreter is enabled.
-  SET_DEFAULT(baselineInterpreter, false);
+  // Whether functions are compiled immediately.
+  SET_DEFAULT(eagerCompilation, false);
 
   // Whether IonBuilder should prefer IC generation above specialized MIR.
   SET_DEFAULT(forceInlineCaches, false);
@@ -156,23 +151,8 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(runExtraChecks, false);
 
   // How many invocations or loop iterations are needed before functions
-  // enter the Baseline Interpreter.
-  SET_DEFAULT(baselineInterpreterWarmUpThreshold, 10);
-
-  // How many invocations or loop iterations are needed before functions
   // are compiled with the baseline compiler.
-  // Duplicated in all.js - ensure both match.
   SET_DEFAULT(baselineWarmUpThreshold, 10);
-
-  // How many invocations or loop iterations are needed before functions
-  // are compiled with the Ion compiler at OptimizationLevel::Normal.
-  // Duplicated in all.js - ensure both match.
-  SET_DEFAULT(normalIonWarmUpThreshold, 1000);
-
-  // How many invocations or loop iterations are needed before functions
-  // are compiled with the Ion compiler at OptimizationLevel::Full.
-  // Duplicated in all.js - ensure both match.
-  SET_DEFAULT(fullIonWarmUpThreshold, 100'000);
 
   // Number of exception bailouts (resuming into catch/finally block) before
   // we invalidate and forbid Ion compilation.
@@ -180,7 +160,6 @@ DefaultJitOptions::DefaultJitOptions() {
 
   // Number of bailouts without invalidation before we set
   // JSScript::hadFrequentBailouts and invalidate.
-  // Duplicated in all.js - ensure both match.
   SET_DEFAULT(frequentBailoutThreshold, 10);
 
   // Whether to run all debug checks in debug builds.
@@ -201,6 +180,10 @@ DefaultJitOptions::DefaultJitOptions() {
   // pc-relative jump and call instructions.
   SET_DEFAULT(jumpThreshold, UINT32_MAX);
 
+  // Whether the (ARM) simulators should always interrupt before executing any
+  // instruction.
+  SET_DEFAULT(simulatorAlwaysInterrupt, false);
+
   // Branch pruning heuristic is based on a scoring system, which is look at
   // different metrics and provide a score. The score is computed as a
   // projection where each factor defines the weight of each metric. Then this
@@ -212,31 +195,52 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(branchPruningEffectfulInstFactor, 3500);
   SET_DEFAULT(branchPruningThreshold, 4000);
 
+  // Force how many invocation or loop iterations are needed before compiling
+  // a function with the highest ionmonkey optimization level.
+  // (i.e. OptimizationLevel_Normal)
+  const char* forcedDefaultIonWarmUpThresholdEnv =
+      "JIT_OPTION_forcedDefaultIonWarmUpThreshold";
+  if (const char* env = getenv(forcedDefaultIonWarmUpThresholdEnv)) {
+    Maybe<int> value = ParseInt(env);
+    if (value.isSome())
+      forcedDefaultIonWarmUpThreshold.emplace(value.ref());
+    else
+      Warn(forcedDefaultIonWarmUpThresholdEnv, env);
+  }
+
+  // Same but for compiling small functions.
+  const char* forcedDefaultIonSmallFunctionWarmUpThresholdEnv =
+      "JIT_OPTION_forcedDefaultIonSmallFunctionWarmUpThreshold";
+  if (const char* env =
+          getenv(forcedDefaultIonSmallFunctionWarmUpThresholdEnv)) {
+    Maybe<int> value = ParseInt(env);
+    if (value.isSome())
+      forcedDefaultIonSmallFunctionWarmUpThreshold.emplace(value.ref());
+    else
+      Warn(forcedDefaultIonSmallFunctionWarmUpThresholdEnv, env);
+  }
+
   // Force the used register allocator instead of letting the optimization
   // pass decide.
   const char* forcedRegisterAllocatorEnv = "JIT_OPTION_forcedRegisterAllocator";
   if (const char* env = getenv(forcedRegisterAllocatorEnv)) {
     forcedRegisterAllocator = LookupRegisterAllocator(env);
-    if (!forcedRegisterAllocator.isSome()) {
+    if (!forcedRegisterAllocator.isSome())
       Warn(forcedRegisterAllocatorEnv, env);
-    }
   }
 
-#if defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
-  SET_DEFAULT(spectreIndexMasking, false);
-  SET_DEFAULT(spectreObjectMitigationsBarriers, false);
-  SET_DEFAULT(spectreObjectMitigationsMisc, false);
-  SET_DEFAULT(spectreStringMitigations, false);
-  SET_DEFAULT(spectreValueMasking, false);
-  SET_DEFAULT(spectreJitToCxxCalls, false);
-#else
   SET_DEFAULT(spectreIndexMasking, true);
   SET_DEFAULT(spectreObjectMitigationsBarriers, true);
   SET_DEFAULT(spectreObjectMitigationsMisc, true);
   SET_DEFAULT(spectreStringMitigations, true);
   SET_DEFAULT(spectreValueMasking, true);
   SET_DEFAULT(spectreJitToCxxCalls, true);
-#endif
+
+  // Toggles whether unboxed plain objects can be created by the VM.
+  SET_DEFAULT(disableUnboxedObjects, false);
+
+  // Test whether Atomics are allowed in asm.js code.
+  SET_DEFAULT(asmJSAtomicsEnable, false);
 
   // Toggles the optimization whereby offsets are folded into loads and not
   // included in the bounds check.
@@ -254,21 +258,9 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(wasmBatchBaselineThreshold, 10000);
   SET_DEFAULT(wasmBatchIonThreshold, 1100);
 
-#ifdef JS_TRACE_LOGGING
-  // Toggles whether the traceLogger should be on or off.  In either case,
-  // some data structures will always be created and initialized such as
-  // the traceLoggerState.  However, unless this option is set to true
-  // the traceLogger will not be recording any events.
-  SET_DEFAULT(enableTraceLogger, false);
-#endif
-
-  SET_DEFAULT(enableWasmJitExit, true);
-  SET_DEFAULT(enableWasmJitEntry, true);
-  SET_DEFAULT(enableWasmIonFastCalls, true);
-#ifdef WASM_CODEGEN_DEBUG
-  SET_DEFAULT(enableWasmImportCallSpew, false);
-  SET_DEFAULT(enableWasmFuncCallSpew, false);
-#endif
+  // Determines whether we suppress using signal handlers
+  // for interrupting jit-ed code. This is used only for testing.
+  SET_DEFAULT(ionInterruptWithoutSignals, false);
 }
 
 bool DefaultJitOptions::isSmallFunction(JSScript* script) const {
@@ -277,36 +269,38 @@ bool DefaultJitOptions::isSmallFunction(JSScript* script) const {
 
 void DefaultJitOptions::enableGvn(bool enable) { disableGvn = !enable; }
 
-void DefaultJitOptions::setEagerIonCompilation() {
+void DefaultJitOptions::setEagerCompilation() {
+  eagerCompilation = true;
   baselineWarmUpThreshold = 0;
-  normalIonWarmUpThreshold = 0;
-  fullIonWarmUpThreshold = 0;
+  forcedDefaultIonWarmUpThreshold.reset();
+  forcedDefaultIonWarmUpThreshold.emplace(0);
+  forcedDefaultIonSmallFunctionWarmUpThreshold.reset();
+  forcedDefaultIonSmallFunctionWarmUpThreshold.emplace(0);
 }
 
-void DefaultJitOptions::setNormalIonWarmUpThreshold(uint32_t warmUpThreshold) {
-  normalIonWarmUpThreshold = warmUpThreshold;
+void DefaultJitOptions::setCompilerWarmUpThreshold(uint32_t warmUpThreshold) {
+  forcedDefaultIonWarmUpThreshold.reset();
+  forcedDefaultIonWarmUpThreshold.emplace(warmUpThreshold);
+  forcedDefaultIonSmallFunctionWarmUpThreshold.reset();
+  forcedDefaultIonSmallFunctionWarmUpThreshold.emplace(warmUpThreshold);
 
-  if (fullIonWarmUpThreshold < normalIonWarmUpThreshold) {
-    fullIonWarmUpThreshold = normalIonWarmUpThreshold;
+  // Undo eager compilation
+  if (eagerCompilation && warmUpThreshold != 0) {
+    jit::DefaultJitOptions defaultValues;
+    eagerCompilation = false;
+    baselineWarmUpThreshold = defaultValues.baselineWarmUpThreshold;
   }
 }
 
-void DefaultJitOptions::setFullIonWarmUpThreshold(uint32_t warmUpThreshold) {
-  fullIonWarmUpThreshold = warmUpThreshold;
+void DefaultJitOptions::resetCompilerWarmUpThreshold() {
+  forcedDefaultIonWarmUpThreshold.reset();
 
-  if (normalIonWarmUpThreshold > fullIonWarmUpThreshold) {
-    setNormalIonWarmUpThreshold(fullIonWarmUpThreshold);
+  // Undo eager compilation
+  if (eagerCompilation) {
+    jit::DefaultJitOptions defaultValues;
+    eagerCompilation = false;
+    baselineWarmUpThreshold = defaultValues.baselineWarmUpThreshold;
   }
-}
-
-void DefaultJitOptions::resetNormalIonWarmUpThreshold() {
-  jit::DefaultJitOptions defaultValues;
-  setNormalIonWarmUpThreshold(defaultValues.normalIonWarmUpThreshold);
-}
-
-void DefaultJitOptions::resetFullIonWarmUpThreshold() {
-  jit::DefaultJitOptions defaultValues;
-  setFullIonWarmUpThreshold(defaultValues.fullIonWarmUpThreshold);
 }
 
 }  // namespace jit

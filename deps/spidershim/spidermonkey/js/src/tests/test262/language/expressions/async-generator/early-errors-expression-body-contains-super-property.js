@@ -4,7 +4,7 @@
 
 /*---
 author: Caitlin Potter <caitp@igalia.com>
-esid: sec-async-generator-function-definitions-static-semantics-early-errors
+esid: pending
 description: >
   It is a syntax error if AsyncGeneratorBody contains SuperProperty is true.
 negative:
@@ -13,6 +13,6 @@ negative:
 features: [async-iteration]
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 (async function*() { super.prop; });

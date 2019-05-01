@@ -2,12 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"  // mozilla::ArrayLength
-#include "mozilla/Utf8.h"        // mozilla::Utf8Unit
-
-#include "js/CompilationAndEvaluation.h"  // JS::CompileForNonSyntacticScopeDontInflate
-#include "js/PropertySpec.h"
-#include "js/SourceText.h"  // JS::Source{Ownership,Text}
 #include "jsapi-tests/tests.h"
 #include "vm/EnvironmentObject.h"
 #include "vm/EnvironmentObject-inl.h"
@@ -29,13 +23,9 @@ BEGIN_TEST(testExecuteInJSMEnvironment_Basic) {
   options.setFileAndLine(__FILE__, __LINE__);
   options.setNoScriptRval(true);
 
-  JS::SourceText<mozilla::Utf8Unit> srcBuf;
-  CHECK(srcBuf.init(cx, src, mozilla::ArrayLength(src) - 1,
-                    JS::SourceOwnership::Borrowed));
-
-  JS::RootedScript script(
-      cx, JS::CompileForNonSyntacticScopeDontInflate(cx, options, srcBuf));
-  CHECK(script);
+  JS::RootedScript script(cx);
+  CHECK(JS::CompileForNonSyntacticScope(cx, options, src, sizeof(src) - 1,
+                                        &script));
 
   JS::RootedObject varEnv(cx, js::NewJSMEnvironment(cx));
   JS::RootedObject lexEnv(cx, JS_ExtensibleLexicalEnvironment(varEnv));
@@ -66,9 +56,7 @@ END_TEST(testExecuteInJSMEnvironment_Basic);
 
 static bool test_callback(JSContext* cx, unsigned argc, JS::Value* vp) {
   JS::RootedObject env(cx, js::GetJSMEnvironmentOfScriptedCaller(cx));
-  if (!env) {
-    return false;
-  }
+  if (!env) return false;
 
   JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
   args.rval().setObject(*env);
@@ -87,13 +75,9 @@ BEGIN_TEST(testExecuteInJSMEnvironment_Callback) {
   options.setFileAndLine(__FILE__, __LINE__);
   options.setNoScriptRval(true);
 
-  JS::SourceText<mozilla::Utf8Unit> srcBuf;
-  CHECK(srcBuf.init(cx, src, mozilla::ArrayLength(src) - 1,
-                    JS::SourceOwnership::Borrowed));
-
-  JS::RootedScript script(
-      cx, JS::CompileForNonSyntacticScopeDontInflate(cx, options, srcBuf));
-  CHECK(script);
+  JS::RootedScript script(cx);
+  CHECK(JS::CompileForNonSyntacticScope(cx, options, src, sizeof(src) - 1,
+                                        &script));
 
   JS::RootedObject nsvo(cx, js::NewJSMEnvironment(cx));
   CHECK(nsvo);

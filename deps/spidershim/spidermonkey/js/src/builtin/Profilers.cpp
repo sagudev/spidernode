@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,30 +8,25 @@
 
 #include "builtin/Profilers.h"
 
-#include "mozilla/Compiler.h"
 #include "mozilla/Sprintf.h"
 
 #include <stdarg.h>
 
 #ifdef MOZ_CALLGRIND
-#  include <valgrind/callgrind.h>
+#include <valgrind/callgrind.h>
 #endif
 
 #ifdef __APPLE__
-#  ifdef MOZ_INSTRUMENTS
-#    include "devtools/Instruments.h"
-#  endif
+#ifdef MOZ_INSTRUMENTS
+#include "devtools/Instruments.h"
+#endif
 #endif
 
 #ifdef XP_WIN
-#  include <process.h>
-#  define getpid _getpid
+#include <process.h>
+#define getpid _getpid
 #endif
 
-#include "js/CharacterEncoding.h"
-#include "js/PropertySpec.h"
-#include "js/Utility.h"
-#include "util/Text.h"
 #include "vm/Probes.h"
 
 #include "vm/JSContext-inl.h"
@@ -61,16 +56,15 @@ JS_PUBLIC_API const char* JS_UnsafeGetLastProfilingError() {
 static bool StartOSXProfiling(const char* profileName, pid_t pid) {
   bool ok = true;
   const char* profiler = nullptr;
-#  ifdef MOZ_INSTRUMENTS
+#ifdef MOZ_INSTRUMENTS
   ok = Instruments::Start(pid);
   profiler = "Instruments";
-#  endif
+#endif
   if (!ok) {
-    if (profileName) {
+    if (profileName)
       UnsafeError("Failed to start %s for %s", profiler, profileName);
-    } else {
+    else
       UnsafeError("Failed to start %s", profiler);
-    }
     return false;
   }
   return true;
@@ -83,9 +77,7 @@ JS_PUBLIC_API bool JS_StartProfiling(const char* profileName, pid_t pid) {
   ok = StartOSXProfiling(profileName, pid);
 #endif
 #ifdef __linux__
-  if (!js_StartPerf()) {
-    ok = false;
-  }
+  if (!js_StartPerf()) ok = false;
 #endif
   return ok;
 }
@@ -93,14 +85,12 @@ JS_PUBLIC_API bool JS_StartProfiling(const char* profileName, pid_t pid) {
 JS_PUBLIC_API bool JS_StopProfiling(const char* profileName) {
   bool ok = true;
 #ifdef __APPLE__
-#  ifdef MOZ_INSTRUMENTS
+#ifdef MOZ_INSTRUMENTS
   Instruments::Stop(profileName);
-#  endif
+#endif
 #endif
 #ifdef __linux__
-  if (!js_StopPerf()) {
-    ok = false;
-  }
+  if (!js_StopPerf()) ok = false;
 #endif
   return ok;
 }
@@ -114,16 +104,16 @@ static bool ControlProfilers(bool toState) {
 
   if (!probes::ProfilingActive && toState) {
 #ifdef __APPLE__
-#  if defined(MOZ_INSTRUMENTS)
+#if defined(MOZ_INSTRUMENTS)
     const char* profiler;
-#    ifdef MOZ_INSTRUMENTS
+#ifdef MOZ_INSTRUMENTS
     ok = Instruments::Resume();
     profiler = "Instruments";
-#    endif
+#endif
     if (!ok) {
       UnsafeError("Failed to start %s", profiler);
     }
-#  endif
+#endif
 #endif
 #ifdef MOZ_CALLGRIND
     if (!js_StartCallgrind()) {
@@ -133,9 +123,9 @@ static bool ControlProfilers(bool toState) {
 #endif
   } else if (probes::ProfilingActive && !toState) {
 #ifdef __APPLE__
-#  ifdef MOZ_INSTRUMENTS
+#ifdef MOZ_INSTRUMENTS
     Instruments::Pause();
-#  endif
+#endif
 #endif
 #ifdef MOZ_CALLGRIND
     if (!js_StopCallgrind()) {
@@ -177,20 +167,24 @@ JS_PUBLIC_API bool JS_DumpProfile(const char* outfile,
 
 #ifdef MOZ_PROFILING
 
-static UniqueChars RequiredStringArg(JSContext* cx, const CallArgs& args,
-                                     size_t argi, const char* caller) {
-  if (args.length() <= argi) {
-    JS_ReportErrorASCII(cx, "%s: not enough arguments", caller);
-    return nullptr;
+struct RequiredStringArg {
+  JSContext* mCx;
+  char* mBytes;
+  RequiredStringArg(JSContext* cx, const CallArgs& args, size_t argi,
+                    const char* caller)
+      : mCx(cx), mBytes(nullptr) {
+    if (args.length() <= argi) {
+      JS_ReportErrorASCII(cx, "%s: not enough arguments", caller);
+    } else if (!args[argi].isString()) {
+      JS_ReportErrorASCII(cx, "%s: invalid arguments (string expected)",
+                          caller);
+    } else {
+      mBytes = JS_EncodeString(cx, args[argi].toString());
+    }
   }
-
-  if (!args[argi].isString()) {
-    JS_ReportErrorASCII(cx, "%s: invalid arguments (string expected)", caller);
-    return nullptr;
-  }
-
-  return JS_EncodeStringToLatin1(cx, args[argi].toString());
-}
+  operator void*() { return (void*)mBytes; }
+  ~RequiredStringArg() { js_free(mBytes); }
+};
 
 static bool StartProfiling(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -199,13 +193,11 @@ static bool StartProfiling(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  UniqueChars profileName = RequiredStringArg(cx, args, 0, "startProfiling");
-  if (!profileName) {
-    return false;
-  }
+  RequiredStringArg profileName(cx, args, 0, "startProfiling");
+  if (!profileName) return false;
 
   if (args.length() == 1) {
-    args.rval().setBoolean(JS_StartProfiling(profileName.get(), getpid()));
+    args.rval().setBoolean(JS_StartProfiling(profileName.mBytes, getpid()));
     return true;
   }
 
@@ -214,7 +206,7 @@ static bool StartProfiling(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
   pid_t pid = static_cast<pid_t>(args[1].toInt32());
-  args.rval().setBoolean(JS_StartProfiling(profileName.get(), pid));
+  args.rval().setBoolean(JS_StartProfiling(profileName.mBytes, pid));
   return true;
 }
 
@@ -225,11 +217,9 @@ static bool StopProfiling(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  UniqueChars profileName = RequiredStringArg(cx, args, 0, "stopProfiling");
-  if (!profileName) {
-    return false;
-  }
-  args.rval().setBoolean(JS_StopProfiling(profileName.get()));
+  RequiredStringArg profileName(cx, args, 0, "stopProfiling");
+  if (!profileName) return false;
+  args.rval().setBoolean(JS_StopProfiling(profileName.mBytes));
   return true;
 }
 
@@ -240,11 +230,9 @@ static bool PauseProfilers(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  UniqueChars profileName = RequiredStringArg(cx, args, 0, "pauseProfiling");
-  if (!profileName) {
-    return false;
-  }
-  args.rval().setBoolean(JS_PauseProfilers(profileName.get()));
+  RequiredStringArg profileName(cx, args, 0, "pauseProfiling");
+  if (!profileName) return false;
+  args.rval().setBoolean(JS_PauseProfilers(profileName.mBytes));
   return true;
 }
 
@@ -255,11 +243,9 @@ static bool ResumeProfilers(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  UniqueChars profileName = RequiredStringArg(cx, args, 0, "resumeProfiling");
-  if (!profileName) {
-    return false;
-  }
-  args.rval().setBoolean(JS_ResumeProfilers(profileName.get()));
+  RequiredStringArg profileName(cx, args, 0, "resumeProfiling");
+  if (!profileName) return false;
+  args.rval().setBoolean(JS_ResumeProfilers(profileName.mBytes));
   return true;
 }
 
@@ -270,20 +256,16 @@ static bool DumpProfile(JSContext* cx, unsigned argc, Value* vp) {
   if (args.length() == 0) {
     ret = JS_DumpProfile(nullptr, nullptr);
   } else {
-    UniqueChars filename = RequiredStringArg(cx, args, 0, "dumpProfile");
-    if (!filename) {
-      return false;
-    }
+    RequiredStringArg filename(cx, args, 0, "dumpProfile");
+    if (!filename) return false;
 
     if (args.length() == 1) {
-      ret = JS_DumpProfile(filename.get(), nullptr);
+      ret = JS_DumpProfile(filename.mBytes, nullptr);
     } else {
-      UniqueChars profileName = RequiredStringArg(cx, args, 1, "dumpProfile");
-      if (!profileName) {
-        return false;
-      }
+      RequiredStringArg profileName(cx, args, 1, "dumpProfile");
+      if (!profileName) return false;
 
-      ret = JS_DumpProfile(filename.get(), profileName.get());
+      ret = JS_DumpProfile(filename.mBytes, profileName.mBytes);
     }
   }
 
@@ -306,7 +288,7 @@ static bool ClearMaxGCPauseAccumulator(JSContext* cx, unsigned argc,
   return true;
 }
 
-#  if defined(MOZ_INSTRUMENTS)
+#if defined(MOZ_INSTRUMENTS)
 
 static bool IgnoreAndReturnTrue(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -314,9 +296,9 @@ static bool IgnoreAndReturnTrue(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-#  endif
+#endif
 
-#  ifdef MOZ_CALLGRIND
+#ifdef MOZ_CALLGRIND
 static bool StartCallgrind(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   args.rval().setBoolean(js_StartCallgrind());
@@ -336,15 +318,13 @@ static bool DumpCallgrind(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  UniqueChars outFile = RequiredStringArg(cx, args, 0, "dumpCallgrind");
-  if (!outFile) {
-    return false;
-  }
+  RequiredStringArg outFile(cx, args, 0, "dumpCallgrind");
+  if (!outFile) return false;
 
-  args.rval().setBoolean(js_DumpCallgrind(outFile.get()));
+  args.rval().setBoolean(js_DumpCallgrind(outFile.mBytes));
   return true;
 }
-#  endif
+#endif
 
 static const JSFunctionSpec profiling_functions[] = {
     JS_FN("startProfiling", StartProfiling, 1, 0),
@@ -354,25 +334,25 @@ static const JSFunctionSpec profiling_functions[] = {
     JS_FN("dumpProfile", DumpProfile, 2, 0),
     JS_FN("getMaxGCPauseSinceClear", GetMaxGCPauseSinceClear, 0, 0),
     JS_FN("clearMaxGCPauseAccumulator", ClearMaxGCPauseAccumulator, 0, 0),
-#  if defined(MOZ_INSTRUMENTS)
+#if defined(MOZ_INSTRUMENTS)
     /* Keep users of the old shark API happy. */
     JS_FN("connectShark", IgnoreAndReturnTrue, 0, 0),
     JS_FN("disconnectShark", IgnoreAndReturnTrue, 0, 0),
     JS_FN("startShark", StartProfiling, 0, 0),
     JS_FN("stopShark", StopProfiling, 0, 0),
-#  endif
-#  ifdef MOZ_CALLGRIND
+#endif
+#ifdef MOZ_CALLGRIND
     JS_FN("startCallgrind", StartCallgrind, 0, 0),
     JS_FN("stopCallgrind", StopCallgrind, 0, 0),
     JS_FN("dumpCallgrind", DumpCallgrind, 1, 0),
-#  endif
+#endif
     JS_FS_END};
 
 #endif
 
 JS_PUBLIC_API bool JS_DefineProfilingFunctions(JSContext* cx,
                                                HandleObject obj) {
-  cx->check(obj);
+  assertSameCompartment(cx, obj);
 #ifdef MOZ_PROFILING
   return JS_DefineFunctions(cx, obj, profiling_functions);
 #else
@@ -381,35 +361,6 @@ JS_PUBLIC_API bool JS_DefineProfilingFunctions(JSContext* cx,
 }
 
 #ifdef MOZ_CALLGRIND
-
-/* Wrapper for various macros to stop warnings coming from their expansions. */
-#  if defined(__clang__)
-#    define JS_SILENCE_UNUSED_VALUE_IN_EXPR(expr)                             \
-      JS_BEGIN_MACRO                                                          \
-        _Pragma("clang diagnostic push") /* If these _Pragmas cause warnings  \
-                                            for you, try disabling ccache. */ \
-            _Pragma("clang diagnostic ignored \"-Wunused-value\"") {          \
-          expr;                                                               \
-        }                                                                     \
-        _Pragma("clang diagnostic pop")                                       \
-      JS_END_MACRO
-#  elif MOZ_IS_GCC
-
-#    define JS_SILENCE_UNUSED_VALUE_IN_EXPR(expr)                           \
-      JS_BEGIN_MACRO                                                        \
-        _Pragma("GCC diagnostic push")                                      \
-            _Pragma("GCC diagnostic ignored \"-Wunused-but-set-variable\"") \
-                expr;                                                       \
-        _Pragma("GCC diagnostic pop")                                       \
-      JS_END_MACRO
-#  endif
-
-#  if !defined(JS_SILENCE_UNUSED_VALUE_IN_EXPR)
-#    define JS_SILENCE_UNUSED_VALUE_IN_EXPR(expr) \
-      JS_BEGIN_MACRO                              \
-        expr;                                     \
-      JS_END_MACRO
-#  endif
 
 JS_FRIEND_API bool js_StartCallgrind() {
   JS_SILENCE_UNUSED_VALUE_IN_EXPR(CALLGRIND_START_INSTRUMENTATION);
@@ -436,30 +387,30 @@ JS_FRIEND_API bool js_DumpCallgrind(const char* outfile) {
 
 #ifdef __linux__
 
-/*
- * Code for starting and stopping |perf|, the Linux profiler.
- *
- * Output from profiling is written to mozperf.data in your cwd.
- *
- * To enable, set MOZ_PROFILE_WITH_PERF=1 in your environment.
- *
- * To pass additional parameters to |perf record|, provide them in the
- * MOZ_PROFILE_PERF_FLAGS environment variable.  If this variable does not
- * exist, we default it to "--call-graph".  (If you don't want --call-graph but
- * don't want to pass any other args, define MOZ_PROFILE_PERF_FLAGS to the empty
- * string.)
- *
- * If you include --pid or --output in MOZ_PROFILE_PERF_FLAGS, you're just
- * asking for trouble.
- *
- * Our split-on-spaces logic is lame, so don't expect MOZ_PROFILE_PERF_FLAGS to
- * work if you pass an argument which includes a space (e.g.
- * MOZ_PROFILE_PERF_FLAGS="-e 'foo bar'").
- */
+  /*
+   * Code for starting and stopping |perf|, the Linux profiler.
+   *
+   * Output from profiling is written to mozperf.data in your cwd.
+   *
+   * To enable, set MOZ_PROFILE_WITH_PERF=1 in your environment.
+   *
+   * To pass additional parameters to |perf record|, provide them in the
+   * MOZ_PROFILE_PERF_FLAGS environment variable.  If this variable does not
+   * exist, we default it to "--call-graph".  (If you don't want --call-graph
+   * but don't want to pass any other args, define MOZ_PROFILE_PERF_FLAGS to the
+   * empty string.)
+   *
+   * If you include --pid or --output in MOZ_PROFILE_PERF_FLAGS, you're just
+   * asking for trouble.
+   *
+   * Our split-on-spaces logic is lame, so don't expect MOZ_PROFILE_PERF_FLAGS
+   * to work if you pass an argument which includes a space (e.g.
+   * MOZ_PROFILE_PERF_FLAGS="-e 'foo bar'").
+   */
 
-#  include <signal.h>
-#  include <sys/wait.h>
-#  include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 static bool perfInitialized = false;
 static pid_t perfPid = 0;
@@ -502,33 +453,26 @@ bool js_StartPerf() {
                                  mainPidStr, "--output", outfile};
 
     Vector<const char*, 0, SystemAllocPolicy> args;
-    if (!args.append(defaultArgs, ArrayLength(defaultArgs))) {
-      return false;
-    }
+    if (!args.append(defaultArgs, ArrayLength(defaultArgs))) return false;
 
     const char* flags = getenv("MOZ_PROFILE_PERF_FLAGS");
     if (!flags) {
       flags = "--call-graph";
     }
 
-    UniqueChars flags2 = DuplicateString(flags);
-    if (!flags2) {
-      return false;
-    }
+    UniqueChars flags2((char*)js_malloc(strlen(flags) + 1));
+    if (!flags2) return false;
+    strcpy(flags2.get(), flags);
 
     // Split |flags2| on spaces.
     char* toksave;
     char* tok = strtok_r(flags2.get(), " ", &toksave);
     while (tok) {
-      if (!args.append(tok)) {
-        return false;
-      }
+      if (!args.append(tok)) return false;
       tok = strtok_r(nullptr, " ", &toksave);
     }
 
-    if (!args.append((char*)nullptr)) {
-      return false;
-    }
+    if (!args.append((char*)nullptr)) return false;
 
     execvp("perf", const_cast<char**>(args.begin()));
 

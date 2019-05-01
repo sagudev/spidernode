@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty('BigInt')) -- BigInt is not enabled unconditionally
+// |reftest| skip -- BigInt is not supported
 // Copyright (C) 2017 Josh Wolfe. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
@@ -8,17 +8,8 @@ info: |
   BigInt.asUintN ( bits, bigint )
 
   2. Let bigint ? ToBigInt(bigint).
-features: [BigInt, computed-property-names, Symbol, Symbol.toPrimitive]
+features: [BigInt, Symbol, Symbol.toPrimitive, computed-property-names]
 ---*/
-assert.sameValue(typeof BigInt, 'function');
-assert.sameValue(typeof BigInt.asUintN, 'function');
-
-assert.throws(TypeError, function () {
-  BigInt.asUintN();
-}, "ToBigInt: no argument => undefined => TypeError");
-assert.throws(TypeError, function () {
-  BigInt.asUintN(0);
-}, "ToBigInt: no argument => undefined => TypeError");
 
 assert.throws(TypeError, function() {
   BigInt.asUintN(0, undefined);

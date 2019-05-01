@@ -1,5 +1,5 @@
 // |jit-test| error: uncaught exception
-g = newGlobal({newCompartment: true});
+g = newGlobal();
 g.parent = this;
 g.eval(`
     Debugger(parent).onExceptionUnwind = function(frame) { frame.older };

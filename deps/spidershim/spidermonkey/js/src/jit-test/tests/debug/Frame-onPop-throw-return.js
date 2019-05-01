@@ -1,7 +1,7 @@
 // |jit-test| error: TestComplete
 // onPop can change a throw into a normal return.
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 
 function test(type, provocation) {

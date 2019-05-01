@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +15,6 @@
 #include <string.h>
 
 #include "js/TypeDecls.h"
-#include "js/Utility.h"
 
 namespace js {
 
@@ -30,7 +29,7 @@ class GenericPrinter {
  protected:
   bool hadOOM_;  // whether reportOutOfMemory() has been called.
 
-  constexpr GenericPrinter() : hadOOM_(false) {}
+  GenericPrinter();
 
  public:
   // Puts |len| characters from |s| at the current position and
@@ -91,7 +90,7 @@ class Sprinter final : public GenericPrinter {
 
   const char* string() const { return base; }
   const char* stringEnd() const { return base + offset; }
-  JS::UniqueChars release();
+  char* release();
 
   // Returns the string at offset |off|.
   char* stringAt(ptrdiff_t off) const;
@@ -132,12 +131,8 @@ class Fprinter final : public GenericPrinter {
 
  public:
   explicit Fprinter(FILE* fp);
-
-  constexpr Fprinter() : file_(nullptr), init_(false) {}
-
-#ifdef DEBUG
+  Fprinter();
   ~Fprinter();
-#endif
 
   // Initialize this printer, returns false on error.
   MOZ_MUST_USE bool init(const char* path);
@@ -191,20 +186,12 @@ class LSprinter final : public GenericPrinter {
 // Map escaped code to the letter/symbol escaped with a backslash.
 extern const char js_EscapeMap[];
 
-// Return a C-string containing the chars in str, with any non-printing chars
-// escaped. If the optional quote parameter is present and is not '\0', quotes
-// (as specified by the quote argument) are also escaped, and the quote
-// character is appended at the beginning and end of the result string.
-// The returned string is guaranteed to contain only ASCII characters.
-extern JS::UniqueChars QuoteString(JSContext* cx, JSString* str,
-                                   char quote = '\0');
+// Return a GC'ed string containing the chars in str, with any non-printing
+// chars or quotes (' or " as specified by the quote argument) escaped, and
+// with the quote character at the beginning and end of the result string.
+extern JSString* QuoteString(JSContext* cx, JSString* str, char16_t quote);
 
-// Appends the quoted string to the given Sprinter. Follows the same semantics
-// as QuoteString from above.
-extern bool QuoteString(Sprinter* sp, JSString* str, char quote = '\0');
-
-// Appends the JSON quoted string to the given Sprinter.
-extern bool JSONQuoteString(Sprinter* sp, JSString* str);
+extern char* QuoteString(Sprinter* sp, JSString* str, char16_t quote);
 
 }  // namespace js
 

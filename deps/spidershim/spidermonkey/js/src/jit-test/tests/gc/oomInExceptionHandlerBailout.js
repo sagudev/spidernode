@@ -1,4 +1,6 @@
-// |jit-test| skip-if: !('oomTest' in this)
+if (!('oomTest' in this))
+    quit();
+
 oomTest(() => {
     let x = 0;
     try {

@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 #ifndef XP_WIN
-#  include <pthread.h>
+#include <pthread.h>
 #endif
 
 #include "threading/LockGuard.h"
@@ -90,7 +90,8 @@ class ConditionVariable {
   // encounter substantially longer delays, depending on system load.
   CVStatus wait_for(UniqueLock<Mutex>& lock,
                     const mozilla::TimeDuration& rel_time) {
-    return impl_.wait_for(lock.lock, rel_time) == mozilla::CVStatus::Timeout
+    return impl_.wait_for(lock.lock, rel_time) ==
+                   mozilla::detail::CVStatus::Timeout
                ? CVStatus::Timeout
                : CVStatus::NoTimeout;
   }
@@ -103,7 +104,7 @@ class ConditionVariable {
   bool wait_for(UniqueLock<Mutex>& lock, const mozilla::TimeDuration& rel_time,
                 Predicate pred) {
     return wait_until(lock, mozilla::TimeStamp::Now() + rel_time,
-                      std::move(pred));
+                      mozilla::Move(pred));
   }
 
  private:

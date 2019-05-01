@@ -3,9 +3,8 @@
 // Binary: cache/js-dbg-64-fb23c30e3d60-linux
 // Flags: -m -n -a
 //
-function TestCase(n, d, e, a) {
-return TestCase.prototype.dump = function () {
-};
+function TestCase(n, d, e, a)
+TestCase.prototype.dump = function () {
 }
 var lfcode = new Array();
 lfcode.push("2");
@@ -18,7 +17,7 @@ while (true) {\
 ");
 lfcode.push("function testJSON(str, expectSyntaxError)\
 ");
-lfcode.push("{ return 1; }");
+lfcode.push("1");
 lfcode.push("Number.prototype.toString = function() { return 3; };\
 assertEq(JSON.stringify({ 3: 3, 4: 4 }, [(this  . abstract       )]),\
          '{\"3\":3}');\
@@ -43,7 +42,7 @@ function getTimeZoneDiff()\
 {\
   return -((new Date(2000, 1, 1)).getTimezoneOffset())/60;\
 function adjustResultArray(ResultArray, msMode)\
-    { return ResultArray[UTC_HOURS] = HourFromTime(t); }\
+    ResultArray[UTC_HOURS] = HourFromTime(t);\
     ResultArray[UTC_DATE] = DateFromTime(t);\
     ResultArray[UTC_MONTH] = MonthFromTime(t);\
     ResultArray[UTC_YEAR] = YearFromTime(t);\

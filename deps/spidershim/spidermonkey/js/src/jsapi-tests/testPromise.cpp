@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -28,9 +28,7 @@ static bool PromiseExecutor(JSContext* cx, unsigned argc, Value* vp) {
 static JSObject* CreatePromise(JSContext* cx) {
   RootedFunction executor(
       cx, JS_NewFunction(cx, PromiseExecutor, 2, 0, "executor"));
-  if (!executor) {
-    return nullptr;
-  }
+  if (!executor) return nullptr;
   return JS::NewPromiseObject(cx, executor);
 }
 
@@ -45,9 +43,7 @@ END_TEST(testPromise_NewPromise)
 
 BEGIN_TEST(testPromise_GetPromiseState) {
   RootedObject promise(cx, CreatePromise(cx));
-  if (!promise) {
-    return false;
-  }
+  if (!promise) return false;
 
   CHECK(JS::GetPromiseState(promise) == JS::PromiseState::Pending);
 
@@ -57,9 +53,7 @@ END_TEST(testPromise_GetPromiseState)
 
 BEGIN_TEST(testPromise_ResolvePromise) {
   RootedObject promise(cx, CreatePromise(cx));
-  if (!promise) {
-    return false;
-  }
+  if (!promise) return false;
 
   RootedValue result(cx);
   result.setInt32(42);
@@ -73,9 +67,7 @@ END_TEST(testPromise_ResolvePromise)
 
 BEGIN_TEST(testPromise_RejectPromise) {
   RootedObject promise(cx, CreatePromise(cx));
-  if (!promise) {
-    return false;
-  }
+  if (!promise) return false;
 
   RootedValue result(cx);
   result.setInt32(42);
@@ -113,20 +105,14 @@ static bool PromiseCatchHandler(JSContext* cx, unsigned argc, Value* vp) {
 
 BEGIN_TEST(testPromise_PromiseThen) {
   RootedObject promise(cx, CreatePromise(cx));
-  if (!promise) {
-    return false;
-  }
+  if (!promise) return false;
 
   RootedFunction thenHandler(
       cx, JS_NewFunction(cx, PromiseThenHandler, 1, 0, "thenHandler"));
-  if (!thenHandler) {
-    return false;
-  }
+  if (!thenHandler) return false;
   RootedFunction catchHandler(
       cx, JS_NewFunction(cx, PromiseCatchHandler, 1, 0, "catchHandler"));
-  if (!catchHandler) {
-    return false;
-  }
+  if (!catchHandler) return false;
   JS::AddPromiseReactions(cx, promise, thenHandler, catchHandler);
 
   RootedValue result(cx);
@@ -142,20 +128,14 @@ END_TEST(testPromise_PromiseThen)
 
 BEGIN_TEST(testPromise_PromiseCatch) {
   RootedObject promise(cx, CreatePromise(cx));
-  if (!promise) {
-    return false;
-  }
+  if (!promise) return false;
 
   RootedFunction thenHandler(
       cx, JS_NewFunction(cx, PromiseThenHandler, 1, 0, "thenHandler"));
-  if (!thenHandler) {
-    return false;
-  }
+  if (!thenHandler) return false;
   RootedFunction catchHandler(
       cx, JS_NewFunction(cx, PromiseCatchHandler, 1, 0, "catchHandler"));
-  if (!catchHandler) {
-    return false;
-  }
+  if (!catchHandler) return false;
   JS::AddPromiseReactions(cx, promise, thenHandler, catchHandler);
 
   RootedValue result(cx);

@@ -8,7 +8,9 @@
 
 using mozilla::CountPopulation32;
 
-static void TestCountPopulation32() {
+static void
+TestCountPopulation32()
+{
   MOZ_RELEASE_ASSERT(CountPopulation32(0xFFFFFFFF) == 32);
   MOZ_RELEASE_ASSERT(CountPopulation32(0xF0FF1000) == 13);
   MOZ_RELEASE_ASSERT(CountPopulation32(0x7F8F0001) == 13);
@@ -24,7 +26,9 @@ static void TestCountPopulation32() {
   MOZ_RELEASE_ASSERT(CountPopulation32(0x00000000) == 0);
 }
 
-int main() {
+int
+main()
+{
   TestCountPopulation32();
   return 0;
 }

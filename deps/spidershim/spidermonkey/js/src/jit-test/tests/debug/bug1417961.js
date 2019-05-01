@@ -1,5 +1,5 @@
 var evalInFrame = (function evalInFrame(global) {
-    var dbgGlobal = newGlobal({newCompartment: true});
+    var dbgGlobal = newGlobal();
     var dbg = new dbgGlobal.Debugger();
     return function evalInFrame(upCount, code) {
 	dbg.addDebuggee(global);

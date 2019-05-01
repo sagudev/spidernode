@@ -13,7 +13,7 @@ esid: sec-for-in-and-for-of-statements-static-semantics-early-errors
 es6id: 13.7.5
 ---*/
 
-$DONOTEVALUATE();
+throw "Test262: This statement should not be evaluated.";
 
 for (let x of []) {
   var x;

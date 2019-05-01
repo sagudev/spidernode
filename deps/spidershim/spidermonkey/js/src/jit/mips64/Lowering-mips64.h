@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +17,7 @@ class LIRGeneratorMIPS64 : public LIRGeneratorMIPSShared {
   LIRGeneratorMIPS64(MIRGenerator* gen, MIRGraph& graph, LIRGraph& lirGraph)
       : LIRGeneratorMIPSShared(gen, graph, lirGraph) {}
 
+ protected:
   void lowerInt64PhiInput(MPhi*, uint32_t, LBlock*, size_t);
   void defineInt64Phi(MPhi*, size_t);
 
@@ -28,6 +29,7 @@ class LIRGeneratorMIPS64 : public LIRGeneratorMIPSShared {
 
   void lowerUntypedPhiInput(MPhi* phi, uint32_t inputPosition, LBlock* block,
                             size_t lirIndex);
+  void defineUntypedPhi(MPhi* phi, size_t lirIndex);
 
   void lowerTruncateDToInt32(MTruncateToInt32* ins);
   void lowerTruncateFToInt32(MTruncateToInt32* ins);
@@ -36,6 +38,14 @@ class LIRGeneratorMIPS64 : public LIRGeneratorMIPSShared {
   void lowerModI64(MMod* mod);
   void lowerUDivI64(MDiv* div);
   void lowerUModI64(MMod* mod);
+
+ public:
+  void visitBox(MBox* box);
+  void visitUnbox(MUnbox* unbox);
+  void visitReturn(MReturn* ret);
+  void visitRandom(MRandom* ins);
+  void visitWasmTruncateToInt64(MWasmTruncateToInt64* ins);
+  void visitInt64ToFloatingPoint(MInt64ToFloatingPoint* ins);
 };
 
 typedef LIRGeneratorMIPS64 LIRGeneratorSpecific;

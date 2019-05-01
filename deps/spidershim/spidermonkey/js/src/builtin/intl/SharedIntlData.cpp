@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +10,6 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/HashFunctions.h"
-#include "mozilla/TextUtils.h"
 
 #include <stdint.h>
 
@@ -22,14 +21,12 @@
 #include "js/Utility.h"
 #include "vm/JSAtom.h"
 
-using mozilla::IsAsciiLowercaseAlpha;
-
 using js::HashNumber;
 using js::intl::StringsAreEqual;
 
 template <typename Char>
 static constexpr Char ToUpperASCII(Char c) {
-  return IsAsciiLowercaseAlpha(c) ? (c & ~0x20) : c;
+  return ('a' <= c && c <= 'z') ? (c & ~0x20) : c;
 }
 
 static_assert(ToUpperASCII('a') == 'A', "verifying 'a' uppercases correctly");
@@ -45,76 +42,68 @@ static_assert(ToUpperASCII(u'z') == u'Z',
 template <typename Char>
 static HashNumber HashStringIgnoreCaseASCII(const Char* s, size_t length) {
   uint32_t hash = 0;
-  for (size_t i = 0; i < length; i++) {
+  for (size_t i = 0; i < length; i++)
     hash = mozilla::AddToHash(hash, ToUpperASCII(s[i]));
-  }
   return hash;
 }
 
 js::intl::SharedIntlData::TimeZoneHasher::Lookup::Lookup(
     JSLinearString* timeZone)
     : js::intl::SharedIntlData::LinearStringLookup(timeZone) {
-  if (isLatin1) {
+  if (isLatin1)
     hash = HashStringIgnoreCaseASCII(latin1Chars, length);
-  } else {
+  else
     hash = HashStringIgnoreCaseASCII(twoByteChars, length);
-  }
 }
 
 template <typename Char1, typename Char2>
 static bool EqualCharsIgnoreCaseASCII(const Char1* s1, const Char2* s2,
                                       size_t len) {
-  for (const Char1* s1end = s1 + len; s1 < s1end; s1++, s2++) {
-    if (ToUpperASCII(*s1) != ToUpperASCII(*s2)) {
-      return false;
-    }
+  for (const Char1 *s1end = s1 + len; s1 < s1end; s1++, s2++) {
+    if (ToUpperASCII(*s1) != ToUpperASCII(*s2)) return false;
   }
   return true;
 }
 
 bool js::intl::SharedIntlData::TimeZoneHasher::match(TimeZoneName key,
                                                      const Lookup& lookup) {
-  if (key->length() != lookup.length) {
-    return false;
-  }
+  if (key->length() != lookup.length) return false;
 
   // Compare time zone names ignoring ASCII case differences.
   if (key->hasLatin1Chars()) {
     const Latin1Char* keyChars = key->latin1Chars(lookup.nogc);
-    if (lookup.isLatin1) {
+    if (lookup.isLatin1)
       return EqualCharsIgnoreCaseASCII(keyChars, lookup.latin1Chars,
                                        lookup.length);
-    }
     return EqualCharsIgnoreCaseASCII(keyChars, lookup.twoByteChars,
                                      lookup.length);
   }
 
   const char16_t* keyChars = key->twoByteChars(lookup.nogc);
-  if (lookup.isLatin1) {
+  if (lookup.isLatin1)
     return EqualCharsIgnoreCaseASCII(lookup.latin1Chars, keyChars,
                                      lookup.length);
-  }
   return EqualCharsIgnoreCaseASCII(keyChars, lookup.twoByteChars,
                                    lookup.length);
 }
 
 static bool IsLegacyICUTimeZone(const char* timeZone) {
   for (const auto& legacyTimeZone : js::timezone::legacyICUTimeZones) {
-    if (StringsAreEqual(timeZone, legacyTimeZone)) {
-      return true;
-    }
+    if (StringsAreEqual(timeZone, legacyTimeZone)) return true;
   }
   return false;
 }
 
 bool js::intl::SharedIntlData::ensureTimeZones(JSContext* cx) {
-  if (timeZoneDataInitialized) {
-    return true;
-  }
+  if (timeZoneDataInitialized) return true;
 
   // If ensureTimeZones() was called previously, but didn't complete due to
   // OOM, clear all sets/maps and start from scratch.
-  availableTimeZones.clearAndCompact();
+  if (availableTimeZones.initialized()) availableTimeZones.finish();
+  if (!availableTimeZones.init()) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
 
   UErrorCode status = U_ZERO_ERROR;
   UEnumeration* values = ucal_openTimeZones(&status);
@@ -133,20 +122,14 @@ bool js::intl::SharedIntlData::ensureTimeZones(JSContext* cx) {
       return false;
     }
 
-    if (rawTimeZone == nullptr) {
-      break;
-    }
+    if (rawTimeZone == nullptr) break;
 
     // Skip legacy ICU time zone names.
-    if (IsLegacyICUTimeZone(rawTimeZone)) {
-      continue;
-    }
+    if (IsLegacyICUTimeZone(rawTimeZone)) continue;
 
     MOZ_ASSERT(size >= 0);
     timeZone = Atomize(cx, rawTimeZone, size_t(size));
-    if (!timeZone) {
-      return false;
-    }
+    if (!timeZone) return false;
 
     TimeZoneHasher::Lookup lookup(timeZone);
     TimeZoneSet::AddPtr p = availableTimeZones.lookupForAdd(lookup);
@@ -159,14 +142,17 @@ bool js::intl::SharedIntlData::ensureTimeZones(JSContext* cx) {
     }
   }
 
-  ianaZonesTreatedAsLinksByICU.clearAndCompact();
+  if (ianaZonesTreatedAsLinksByICU.initialized())
+    ianaZonesTreatedAsLinksByICU.finish();
+  if (!ianaZonesTreatedAsLinksByICU.init()) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
 
   for (const char* rawTimeZone : timezone::ianaZonesTreatedAsLinksByICU) {
     MOZ_ASSERT(rawTimeZone != nullptr);
     timeZone = Atomize(cx, rawTimeZone, strlen(rawTimeZone));
-    if (!timeZone) {
-      return false;
-    }
+    if (!timeZone) return false;
 
     TimeZoneHasher::Lookup lookup(timeZone);
     TimeZoneSet::AddPtr p = ianaZonesTreatedAsLinksByICU.lookupForAdd(lookup);
@@ -178,7 +164,12 @@ bool js::intl::SharedIntlData::ensureTimeZones(JSContext* cx) {
     }
   }
 
-  ianaLinksCanonicalizedDifferentlyByICU.clearAndCompact();
+  if (ianaLinksCanonicalizedDifferentlyByICU.initialized())
+    ianaLinksCanonicalizedDifferentlyByICU.finish();
+  if (!ianaLinksCanonicalizedDifferentlyByICU.init()) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
 
   RootedAtom linkName(cx);
   RootedAtom& target = timeZone;
@@ -189,15 +180,11 @@ bool js::intl::SharedIntlData::ensureTimeZones(JSContext* cx) {
 
     MOZ_ASSERT(rawLinkName != nullptr);
     linkName = Atomize(cx, rawLinkName, strlen(rawLinkName));
-    if (!linkName) {
-      return false;
-    }
+    if (!linkName) return false;
 
     MOZ_ASSERT(rawTarget != nullptr);
     target = Atomize(cx, rawTarget, strlen(rawTarget));
-    if (!target) {
-      return false;
-    }
+    if (!target) return false;
 
     TimeZoneHasher::Lookup lookup(linkName);
     TimeZoneMap::AddPtr p =
@@ -222,33 +209,23 @@ bool js::intl::SharedIntlData::ensureTimeZones(JSContext* cx) {
 bool js::intl::SharedIntlData::validateTimeZoneName(JSContext* cx,
                                                     HandleString timeZone,
                                                     MutableHandleAtom result) {
-  if (!ensureTimeZones(cx)) {
-    return false;
-  }
+  if (!ensureTimeZones(cx)) return false;
 
   RootedLinearString timeZoneLinear(cx, timeZone->ensureLinear(cx));
-  if (!timeZoneLinear) {
-    return false;
-  }
+  if (!timeZoneLinear) return false;
 
   TimeZoneHasher::Lookup lookup(timeZoneLinear);
-  if (TimeZoneSet::Ptr p = availableTimeZones.lookup(lookup)) {
-    result.set(*p);
-  }
+  if (TimeZoneSet::Ptr p = availableTimeZones.lookup(lookup)) result.set(*p);
 
   return true;
 }
 
 bool js::intl::SharedIntlData::tryCanonicalizeTimeZoneConsistentWithIANA(
     JSContext* cx, HandleString timeZone, MutableHandleAtom result) {
-  if (!ensureTimeZones(cx)) {
-    return false;
-  }
+  if (!ensureTimeZones(cx)) return false;
 
   RootedLinearString timeZoneLinear(cx, timeZone->ensureLinear(cx));
-  if (!timeZoneLinear) {
-    return false;
-  }
+  if (!timeZoneLinear) return false;
 
   TimeZoneHasher::Lookup lookup(timeZoneLinear);
   MOZ_ASSERT(availableTimeZones.has(lookup), "Invalid time zone name");
@@ -264,9 +241,7 @@ bool js::intl::SharedIntlData::tryCanonicalizeTimeZoneConsistentWithIANA(
     // Ensure ICU supports the new target zone before applying the update.
     TimeZoneName targetTimeZone = p->value();
     TimeZoneHasher::Lookup targetLookup(targetTimeZone);
-    if (availableTimeZones.has(targetLookup)) {
-      result.set(targetTimeZone);
-    }
+    if (availableTimeZones.has(targetLookup)) result.set(targetTimeZone);
   } else if (TimeZoneSet::Ptr p = ianaZonesTreatedAsLinksByICU.lookup(lookup)) {
     result.set(*p);
   }
@@ -276,42 +251,39 @@ bool js::intl::SharedIntlData::tryCanonicalizeTimeZoneConsistentWithIANA(
 
 js::intl::SharedIntlData::LocaleHasher::Lookup::Lookup(JSLinearString* locale)
     : js::intl::SharedIntlData::LinearStringLookup(locale) {
-  if (isLatin1) {
+  if (isLatin1)
     hash = mozilla::HashString(latin1Chars, length);
-  } else {
+  else
     hash = mozilla::HashString(twoByteChars, length);
-  }
 }
 
 bool js::intl::SharedIntlData::LocaleHasher::match(Locale key,
                                                    const Lookup& lookup) {
-  if (key->length() != lookup.length) {
-    return false;
-  }
+  if (key->length() != lookup.length) return false;
 
   if (key->hasLatin1Chars()) {
     const Latin1Char* keyChars = key->latin1Chars(lookup.nogc);
-    if (lookup.isLatin1) {
+    if (lookup.isLatin1)
       return EqualChars(keyChars, lookup.latin1Chars, lookup.length);
-    }
     return EqualChars(keyChars, lookup.twoByteChars, lookup.length);
   }
 
   const char16_t* keyChars = key->twoByteChars(lookup.nogc);
-  if (lookup.isLatin1) {
+  if (lookup.isLatin1)
     return EqualChars(lookup.latin1Chars, keyChars, lookup.length);
-  }
   return EqualChars(keyChars, lookup.twoByteChars, lookup.length);
 }
 
 bool js::intl::SharedIntlData::ensureUpperCaseFirstLocales(JSContext* cx) {
-  if (upperCaseFirstInitialized) {
-    return true;
-  }
+  if (upperCaseFirstInitialized) return true;
 
   // If ensureUpperCaseFirstLocales() was called previously, but didn't
   // complete due to OOM, clear all data and start from scratch.
-  upperCaseFirstLocales.clearAndCompact();
+  if (upperCaseFirstLocales.initialized()) upperCaseFirstLocales.finish();
+  if (!upperCaseFirstLocales.init()) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
 
   UErrorCode status = U_ZERO_ERROR;
   UEnumeration* available = ucol_openAvailableLocales(&status);
@@ -330,9 +302,7 @@ bool js::intl::SharedIntlData::ensureUpperCaseFirstLocales(JSContext* cx) {
       return false;
     }
 
-    if (rawLocale == nullptr) {
-      break;
-    }
+    if (rawLocale == nullptr) break;
 
     UCollator* collator = ucol_open(rawLocale, &status);
     if (U_FAILURE(status)) {
@@ -348,15 +318,11 @@ bool js::intl::SharedIntlData::ensureUpperCaseFirstLocales(JSContext* cx) {
       return false;
     }
 
-    if (caseFirst != UCOL_UPPER_FIRST) {
-      continue;
-    }
+    if (caseFirst != UCOL_UPPER_FIRST) continue;
 
     MOZ_ASSERT(size >= 0);
     locale = Atomize(cx, rawLocale, size_t(size));
-    if (!locale) {
-      return false;
-    }
+    if (!locale) return false;
 
     LocaleHasher::Lookup lookup(locale);
     LocaleSet::AddPtr p = upperCaseFirstLocales.lookupForAdd(lookup);
@@ -380,14 +346,10 @@ bool js::intl::SharedIntlData::ensureUpperCaseFirstLocales(JSContext* cx) {
 bool js::intl::SharedIntlData::isUpperCaseFirst(JSContext* cx,
                                                 HandleString locale,
                                                 bool* isUpperFirst) {
-  if (!ensureUpperCaseFirstLocales(cx)) {
-    return false;
-  }
+  if (!ensureUpperCaseFirstLocales(cx)) return false;
 
   RootedLinearString localeLinear(cx, locale->ensureLinear(cx));
-  if (!localeLinear) {
-    return false;
-  }
+  if (!localeLinear) return false;
 
   LocaleHasher::Lookup lookup(localeLinear);
   *isUpperFirst = upperCaseFirstLocales.has(lookup);
@@ -396,15 +358,15 @@ bool js::intl::SharedIntlData::isUpperCaseFirst(JSContext* cx,
 }
 
 void js::intl::SharedIntlData::destroyInstance() {
-  availableTimeZones.clearAndCompact();
-  ianaZonesTreatedAsLinksByICU.clearAndCompact();
-  ianaLinksCanonicalizedDifferentlyByICU.clearAndCompact();
-  upperCaseFirstLocales.clearAndCompact();
+  availableTimeZones.finish();
+  ianaZonesTreatedAsLinksByICU.finish();
+  ianaLinksCanonicalizedDifferentlyByICU.finish();
+  upperCaseFirstLocales.finish();
 }
 
 void js::intl::SharedIntlData::trace(JSTracer* trc) {
   // Atoms are always tenured.
-  if (!JS::RuntimeHeapIsMinorCollecting()) {
+  if (!JS::CurrentThreadIsHeapMinorCollecting()) {
     availableTimeZones.trace(trc);
     ianaZonesTreatedAsLinksByICU.trace(trc);
     ianaLinksCanonicalizedDifferentlyByICU.trace(trc);
@@ -414,9 +376,9 @@ void js::intl::SharedIntlData::trace(JSTracer* trc) {
 
 size_t js::intl::SharedIntlData::sizeOfExcludingThis(
     mozilla::MallocSizeOf mallocSizeOf) const {
-  return availableTimeZones.shallowSizeOfExcludingThis(mallocSizeOf) +
-         ianaZonesTreatedAsLinksByICU.shallowSizeOfExcludingThis(mallocSizeOf) +
-         ianaLinksCanonicalizedDifferentlyByICU.shallowSizeOfExcludingThis(
+  return availableTimeZones.sizeOfExcludingThis(mallocSizeOf) +
+         ianaZonesTreatedAsLinksByICU.sizeOfExcludingThis(mallocSizeOf) +
+         ianaLinksCanonicalizedDifferentlyByICU.sizeOfExcludingThis(
              mallocSizeOf) +
-         upperCaseFirstLocales.shallowSizeOfExcludingThis(mallocSizeOf);
+         upperCaseFirstLocales.sizeOfExcludingThis(mallocSizeOf);
 }

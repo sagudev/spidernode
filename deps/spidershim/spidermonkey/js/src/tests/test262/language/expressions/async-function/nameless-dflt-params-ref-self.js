@@ -4,7 +4,7 @@
 /*---
 description: Referencing a parameter from within its own initializer (async function nameless expression)
 esid: sec-async-function-definitions
-features: [default-parameters, async-functions]
+features: [default-parameters]
 flags: [generated, async]
 info: |
     14.6 Async Function Definitions

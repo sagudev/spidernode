@@ -2,7 +2,6 @@
 
 import json
 
-
 def generate(output, tpp_txt):
     """
     This file generates a ThirdPartyPaths.cpp file from the ThirdPartyPaths.txt

@@ -1,7 +1,7 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html#License
 sw_KE{
-    Version{"2.1.47.71"}
+    Version{"2.1.37.6"}
     calendar{
         generic{
             DateTimePatterns{
@@ -21,10 +21,6 @@ sw_KE{
             }
         }
         gregorian{
-            AmPmMarkers{
-                "AM",
-                "PM",
-            }
             DateTimePatterns{
                 "HH:mm:ss zzzz",
                 "HH:mm:ss z",

@@ -26,7 +26,7 @@ assert.sameValue(
 assert.sameValue(
   escape('!"#$%&\'()'),
   '%21%22%23%24%25%26%27%28%29',
-  'characters preceding "*": !"#$%&\'()'
+  'characters preceeding "*": !"#$%&\'()'
 );
 
 assert.sameValue(escape(','), '%2C', 'character between "+" and "-": ,');

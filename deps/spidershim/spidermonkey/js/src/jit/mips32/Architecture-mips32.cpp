@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,9 +29,7 @@ const Registers::SetType Registers::CallMask =
 
 FloatRegisters::Encoding FloatRegisters::FromName(const char* name) {
   for (size_t i = 0; i < RegisterIdLimit; i++) {
-    if (strcmp(GetName(i), name) == 0) {
-      return Encoding(i);
-    }
+    if (strcmp(GetName(i), name) == 0) return Encoding(i);
   }
 
   return Invalid;
@@ -39,17 +37,13 @@ FloatRegisters::Encoding FloatRegisters::FromName(const char* name) {
 
 FloatRegister FloatRegister::doubleOverlay() const {
   MOZ_ASSERT(isNotOdd());
-  if (isSingle()) {
-    return FloatRegister(code_, Double);
-  }
+  if (isSingle()) return FloatRegister(code_, Double);
   return *this;
 }
 
 FloatRegister FloatRegister::singleOverlay() const {
   MOZ_ASSERT(isNotOdd());
-  if (isDouble()) {
-    return FloatRegister(code_, Single);
-  }
+  if (isDouble()) return FloatRegister(code_, Single);
   return *this;
 }
 
@@ -71,9 +65,7 @@ uint32_t FloatRegister::GetPushSizeInBytes(const FloatRegisterSet& s) {
 
   // Additional space needed by MacroAssembler::PushRegsInMask to ensure
   // correct alignment of double values.
-  if (ret) {
-    ret += sizeof(double);
-  }
+  if (ret) ret += sizeof(double);
 
   return ret;
 }

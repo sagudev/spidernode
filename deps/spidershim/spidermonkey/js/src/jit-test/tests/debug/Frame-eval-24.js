@@ -1,6 +1,6 @@
 // Make sure the getVariable/setVariable/eval functions work correctly with
 // unaliased locals.
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 g.eval('\
 function g() { debugger; };\
 function f(arg) {\

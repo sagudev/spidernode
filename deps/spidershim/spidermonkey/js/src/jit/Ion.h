@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,8 +12,8 @@
 
 #include "jit/CompileWrappers.h"
 #include "jit/JitOptions.h"
+#include "vm/JSCompartment.h"
 #include "vm/JSContext.h"
-#include "vm/Realm.h"
 
 namespace js {
 namespace jit {
@@ -48,49 +48,35 @@ static_assert(sizeof(AbortReasonOr<bool>) <= sizeof(uintptr_t),
 
 // A JIT context is needed to enter into either an JIT method or an instance
 // of a JIT compiler. It points to a temporary allocator and the active
-// JSContext, either of which may be nullptr, and the active realm, which
+// JSContext, either of which may be nullptr, and the active compartment, which
 // will not be nullptr.
 
 class JitContext {
  public:
   JitContext(JSContext* cx, TempAllocator* temp);
-  JitContext(CompileRuntime* rt, CompileRealm* realm, TempAllocator* temp);
+  JitContext(CompileRuntime* rt, CompileCompartment* comp, TempAllocator* temp);
+  JitContext(CompileRuntime* rt, TempAllocator* temp);
+  explicit JitContext(CompileRuntime* rt);
   explicit JitContext(TempAllocator* temp);
   JitContext();
   ~JitContext();
 
-  // Running context when executing on the main thread. Not available during
+  // Running context when executing on the active thread. Not available during
   // compilation.
   JSContext* cx;
 
   // Allocator for temporary memory during compilation.
   TempAllocator* temp;
 
-  // Wrappers with information about the current runtime/realm for use
+  // Wrappers with information about the current runtime/compartment for use
   // during compilation.
   CompileRuntime* runtime;
+  CompileCompartment* compartment;
 
   int getNextAssemblerId() { return assemblerCount_++; }
 
-  CompileRealm* maybeRealm() const { return realm_; }
-  CompileRealm* realm() const {
-    MOZ_ASSERT(maybeRealm());
-    return maybeRealm();
-  }
-
-#ifdef DEBUG
-  bool isCompilingWasm() { return isCompilingWasm_; }
-  bool hasOOM() { return oom_; }
-  void setOOM() { oom_ = true; }
-#endif
-
  private:
   JitContext* prev_;
-  CompileRealm* realm_;
-#ifdef DEBUG
-  bool isCompilingWasm_;
-  bool oom_;
-#endif
   int assemblerCount_;
 };
 
@@ -154,7 +140,7 @@ LIRGraph* GenerateLIR(MIRGenerator* mir);
 CodeGenerator* GenerateCode(MIRGenerator* mir, LIRGraph* lir);
 CodeGenerator* CompileBackEnd(MIRGenerator* mir);
 
-void AttachFinishedCompilations(JSContext* cx);
+void AttachFinishedCompilations(ZoneGroup* group, JSContext* maybecx);
 void FinishOffThreadBuilder(JSRuntime* runtime, IonBuilder* builder,
                             const AutoLockHelperThreadState& lock);
 void FreeIonBuilder(IonBuilder* builder);
@@ -163,7 +149,8 @@ void LinkIonScript(JSContext* cx, HandleScript calleescript);
 uint8_t* LazyLinkTopActivation(JSContext* cx, LazyLinkExitFrameLayout* frame);
 
 static inline bool IsIonEnabled(JSContext* cx) {
-#if defined(JS_CODEGEN_NONE)
+// The ARM64 Ion engine is not yet implemented.
+#if defined(JS_CODEGEN_NONE) || defined(JS_CODEGEN_ARM64)
   return false;
 #else
   return cx->options().ion() && cx->options().baseline() &&
@@ -171,17 +158,12 @@ static inline bool IsIonEnabled(JSContext* cx) {
 #endif
 }
 
-inline bool IsIonInlinableGetterOrSetterPC(jsbytecode* pc) {
-  // GETPROP, CALLPROP, LENGTH, GETELEM, and JSOP_CALLELEM. (Inlined Getters)
-  // SETPROP, SETNAME, SETGNAME (Inlined Setters)
-  return IsGetPropPC(pc) || IsGetElemPC(pc) || IsSetPropPC(pc);
-}
-
 inline bool IsIonInlinablePC(jsbytecode* pc) {
   // CALL, FUNCALL, FUNAPPLY, EVAL, NEW (Normal Callsites)
-  // or an inlinable getter or setter.
-  return (IsCallPC(pc) && !IsSpreadCallPC(pc)) ||
-         IsIonInlinableGetterOrSetterPC(pc);
+  // GETPROP, CALLPROP, and LENGTH. (Inlined Getters)
+  // SETPROP, SETNAME, SETGNAME (Inlined Setters)
+  return (IsCallPC(pc) && !IsSpreadCallPC(pc)) || IsGetPropPC(pc) ||
+         IsSetPropPC(pc);
 }
 
 inline bool TooManyActualArguments(unsigned nargs) {
@@ -194,9 +176,7 @@ inline bool TooManyFormalArguments(unsigned nargs) {
 
 inline size_t NumLocalsAndArgs(JSScript* script) {
   size_t num = 1 /* this */ + script->nfixed();
-  if (JSFunction* fun = script->functionNonDelazifying()) {
-    num += fun->nargs();
-  }
+  if (JSFunction* fun = script->functionNonDelazifying()) num += fun->nargs();
   return num;
 }
 

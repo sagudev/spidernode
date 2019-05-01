@@ -444,10 +444,6 @@ lv{
         }
         MRO{
             "MRO",
-            "Mauritānijas ugija (1973–2017)",
-        }
-        MRU{
-            "MRU",
             "Mauritānijas ugija",
         }
         MTL{
@@ -580,7 +576,7 @@ lv{
         }
         SAR{
             "SAR",
-            "Saūda Arābijas riāls",
+            "Saūda riāls",
         }
         SBD{
             "SBD",
@@ -636,10 +632,6 @@ lv{
         }
         STD{
             "STD",
-            "Santome un Prinsipi dobra (1977–2017)",
-        }
-        STN{
-            "STN",
             "Santome un Prinsipi dobra",
         }
         SVC{
@@ -724,10 +716,6 @@ lv{
         }
         VEF{
             "VEF",
-            "Venecuēlas bolivārs (2008–2018)",
-        }
-        VES{
-            "VES",
             "Venecuēlas bolivārs",
         }
         VND{
@@ -811,7 +799,7 @@ lv{
             "Testa valūtas kods",
         }
         XXX{
-            "¤",
+            "XXX",
             "Nezināma valūta",
         }
         YER{
@@ -919,7 +907,7 @@ lv{
         SHP{"£"}
         SRD{"$"}
         SSP{"£"}
-        STN{"Db"}
+        STD{"Db"}
         SYP{"£"}
         THB{"฿"}
         TOP{"T$"}
@@ -1416,11 +1404,6 @@ lv{
             zero{"Makao patakas"}
         }
         MRO{
-            one{"Mauritānijas ugija (1973–2017)"}
-            other{"Mauritānijas ugijas (1973–2017)"}
-            zero{"Mauritānijas ugijas (1973–2017)"}
-        }
-        MRU{
             one{"Mauritānijas ugija"}
             other{"Mauritānijas ugijas"}
             zero{"Mauritānijas ugijas"}
@@ -1616,11 +1599,6 @@ lv{
             zero{"Dienvidsudānas mārciņas"}
         }
         STD{
-            one{"Santome un Prinsipi dobra (1977–2017)"}
-            other{"Santome un Prinsipi dobras (1977–2017)"}
-            zero{"Santome un Prinsipi dobras (1977–2017)"}
-        }
-        STN{
             one{"Santome un Prinsipi dobra"}
             other{"Santome un Prinsipi dobras"}
             zero{"Santome un Prinsipi dobras"}
@@ -1721,11 +1699,6 @@ lv{
             zero{"Venecuēlas bolivāri (1871–2008)"}
         }
         VEF{
-            one{"Venecuēlas bolivārs (2008–2018)"}
-            other{"Venecuēlas bolivāri (2008–2018)"}
-            zero{"Venecuēlas bolivāri (2008–2018)"}
-        }
-        VES{
             one{"Venecuēlas bolivārs"}
             other{"Venecuēlas bolivāri"}
             zero{"Venecuēlas bolivāri"}
@@ -1821,5 +1794,5 @@ lv{
         other{"{0} {1}"}
         zero{"{0} {1}"}
     }
-    Version{"2.1.48.43"}
+    Version{"2.1.37.5"}
 }

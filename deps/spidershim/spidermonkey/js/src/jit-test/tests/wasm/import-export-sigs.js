@@ -32,7 +32,7 @@ var module = new WebAssembly.Module(wasmTextToBinary(`(module
   (import $Ii "env" "I_i" (result i64) (param i32))
   (export "I_i" $Ii)
 
-  (import $table "env" "table" (table 0 funcref))
+  (import $table "env" "table" (table 0 anyfunc))
   (export "table" (table $table))
 
   (import $fd "env" "f_d" (result f32) (param f64))

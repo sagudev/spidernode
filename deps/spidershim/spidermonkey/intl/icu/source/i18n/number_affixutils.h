@@ -3,7 +3,7 @@
 
 #include "unicode/utypes.h"
 
-#if !UCONFIG_NO_FORMATTING
+#if !UCONFIG_NO_FORMATTING && !UPRV_INCOMPLETE_CPP11_SUPPORT
 #ifndef __NUMBER_AFFIXUTILS_H__
 #define __NUMBER_AFFIXUTILS_H__
 
@@ -12,7 +12,6 @@
 #include "unicode/stringpiece.h"
 #include "unicode/unistr.h"
 #include "number_stringbuilder.h"
-#include "unicode/uniset.h"
 
 U_NAMESPACE_BEGIN namespace number {
 namespace impl {
@@ -38,27 +37,19 @@ struct AffixTag {
     AffixPatternState state;
     AffixPatternType type;
 
-    AffixTag()
-            : offset(0), state(STATE_BASE) {}
+    AffixTag() : offset(0), state(STATE_BASE) {}
 
-    AffixTag(int32_t offset)
-            : offset(offset) {}
+    AffixTag(int32_t offset) : offset(offset) {}
 
     AffixTag(int32_t offset, UChar32 codePoint, AffixPatternState state, AffixPatternType type)
-            : offset(offset), codePoint(codePoint), state(state), type(type) {}
-};
-
-class TokenConsumer {
-  public:
-    virtual ~TokenConsumer();
-
-    virtual void consumeToken(AffixPatternType type, UChar32 cp, UErrorCode& status) = 0;
+        : offset(offset), codePoint(codePoint), state(state), type(type)
+        {}
 };
 
 // Exported as U_I18N_API because it is a base class for other exported types
 class U_I18N_API SymbolProvider {
   public:
-    virtual ~SymbolProvider();
+    virtual ~SymbolProvider() = default;
 
     // TODO: Could this be more efficient if it returned by reference?
     virtual UnicodeString getSymbol(AffixPatternType type) const = 0;
@@ -116,7 +107,7 @@ class U_I18N_API AffixUtils {
      * @param patternString The original string whose width will be estimated.
      * @return The length of the unescaped string.
      */
-    static int32_t estimateLength(const UnicodeString& patternString, UErrorCode& status);
+    static int32_t estimateLength(const CharSequence &patternString, UErrorCode &status);
 
     /**
      * Takes a string and escapes (quotes) characters that have special meaning in the affix pattern
@@ -127,7 +118,7 @@ class U_I18N_API AffixUtils {
      * @param input The string to be escaped.
      * @return The resulting UnicodeString.
      */
-    static UnicodeString escape(const UnicodeString& input);
+    static UnicodeString escape(const CharSequence &input);
 
     static Field getFieldForType(AffixPatternType type);
 
@@ -143,9 +134,9 @@ class U_I18N_API AffixUtils {
      * @param position The index into the NumberStringBuilder to insert the string.
      * @param provider An object to generate locale symbols.
      */
-    static int32_t unescape(const UnicodeString& affixPattern, NumberStringBuilder& output,
-                            int32_t position, const SymbolProvider& provider, Field field,
-                            UErrorCode& status);
+    static int32_t
+    unescape(const CharSequence &affixPattern, NumberStringBuilder &output, int32_t position,
+             const SymbolProvider &provider, UErrorCode &status);
 
     /**
    * Sames as {@link #unescape}, but only calculates the code point count.  More efficient than {@link #unescape}
@@ -155,8 +146,8 @@ class U_I18N_API AffixUtils {
      * @param provider An object to generate locale symbols.
      * @return The same return value as if you called {@link #unescape}.
      */
-    static int32_t unescapedCodePointCount(const UnicodeString& affixPattern,
-                                           const SymbolProvider& provider, UErrorCode& status);
+    static int32_t unescapedCodePointCount(const CharSequence &affixPattern,
+                                           const SymbolProvider &provider, UErrorCode &status);
 
     /**
      * Checks whether the given affix pattern contains at least one token of the given type, which is
@@ -166,7 +157,8 @@ class U_I18N_API AffixUtils {
      * @param type The token type.
      * @return true if the affix pattern contains the given token type; false otherwise.
      */
-    static bool containsType(const UnicodeString& affixPattern, AffixPatternType type, UErrorCode& status);
+    static bool
+    containsType(const CharSequence &affixPattern, AffixPatternType type, UErrorCode &status);
 
     /**
      * Checks whether the specified affix pattern has any unquoted currency symbols ("¤").
@@ -174,7 +166,7 @@ class U_I18N_API AffixUtils {
      * @param affixPattern The string to check for currency symbols.
      * @return true if the literal has at least one unquoted currency symbol; false otherwise.
      */
-    static bool hasCurrencySymbols(const UnicodeString& affixPattern, UErrorCode& status);
+    static bool hasCurrencySymbols(const CharSequence &affixPattern, UErrorCode &status);
 
     /**
      * Replaces all occurrences of tokens with the given type with the given replacement char.
@@ -184,21 +176,9 @@ class U_I18N_API AffixUtils {
      * @param replacementChar The char to substitute in place of chars of the given token type.
      * @return A string containing the new affix pattern.
      */
-    static UnicodeString replaceType(const UnicodeString& affixPattern, AffixPatternType type,
-                                     char16_t replacementChar, UErrorCode& status);
-
-    /**
-     * Returns whether the given affix pattern contains only symbols and ignorables as defined by the
-     * given ignorables set.
-     */
-    static bool containsOnlySymbolsAndIgnorables(const UnicodeString& affixPattern,
-                                                 const UnicodeSet& ignorables, UErrorCode& status);
-
-    /**
-     * Iterates over the affix pattern, calling the TokenConsumer for each token.
-     */
-    static void iterateWithConsumer(const UnicodeString& affixPattern, TokenConsumer& consumer,
-                                    UErrorCode& status);
+    static UnicodeString
+    replaceType(const CharSequence &affixPattern, AffixPatternType type, char16_t replacementChar,
+                UErrorCode &status);
 
     /**
      * Returns the next token from the affix pattern.
@@ -210,7 +190,7 @@ class U_I18N_API AffixUtils {
      *     (never negative), or -1 if there were no more tokens in the affix pattern.
      * @see #hasNext
      */
-    static AffixTag nextToken(AffixTag tag, const UnicodeString& patternString, UErrorCode& status);
+    static AffixTag nextToken(AffixTag tag, const CharSequence &patternString, UErrorCode &status);
 
     /**
      * Returns whether the affix pattern string has any more tokens to be retrieved from a call to
@@ -220,7 +200,7 @@ class U_I18N_API AffixUtils {
      * @param string The affix pattern.
      * @return true if there are more tokens to consume; false otherwise.
      */
-    static bool hasNext(const AffixTag& tag, const UnicodeString& string);
+    static bool hasNext(const AffixTag &tag, const CharSequence &string);
 
   private:
     /**
@@ -228,8 +208,8 @@ class U_I18N_API AffixUtils {
      * The order of the arguments is consistent with Java, but the order of the stored
      * fields is not necessarily the same.
      */
-    static inline AffixTag makeTag(int32_t offset, AffixPatternType type, AffixPatternState state,
-                                   UChar32 cp) {
+    static inline AffixTag
+    makeTag(int32_t offset, AffixPatternType type, AffixPatternState state, UChar32 cp) {
         return {offset, cp, state, type};
     }
 };

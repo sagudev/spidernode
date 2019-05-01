@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,47 +9,47 @@
 #include "mozilla/Range.h"
 #include "mozilla/RangedPtr.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/TextUtils.h"
 
+#include <ctype.h>
+
+#include "jsarray.h"
 #include "jsnum.h"
 
-#include "builtin/Array.h"
 #include "util/StringBuffer.h"
-#include "vm/Realm.h"
+#include "vm/JSCompartment.h"
 
 #include "vm/NativeObject-inl.h"
 
 using namespace js;
 
-using mozilla::AsciiAlphanumericToNumber;
-using mozilla::IsAsciiDigit;
-using mozilla::IsAsciiHexDigit;
 using mozilla::RangedPtr;
 
 JSONParserBase::~JSONParserBase() {
   for (size_t i = 0; i < stack.length(); i++) {
-    if (stack[i].state == FinishArrayElement) {
+    if (stack[i].state == FinishArrayElement)
       js_delete(&stack[i].elements());
-    } else {
+    else
       js_delete(&stack[i].properties());
-    }
   }
 
-  for (size_t i = 0; i < freeElements.length(); i++) {
-    js_delete(freeElements[i]);
-  }
+  for (size_t i = 0; i < freeElements.length(); i++) js_delete(freeElements[i]);
 
-  for (size_t i = 0; i < freeProperties.length(); i++) {
+  for (size_t i = 0; i < freeProperties.length(); i++)
     js_delete(freeProperties[i]);
-  }
 }
 
 void JSONParserBase::trace(JSTracer* trc) {
-  for (auto& elem : stack) {
-    if (elem.state == FinishArrayElement) {
-      elem.elements().trace(trc);
+  for (size_t i = 0; i < stack.length(); i++) {
+    if (stack[i].state == FinishArrayElement) {
+      ElementVector& elements = stack[i].elements();
+      for (size_t j = 0; j < elements.length(); j++)
+        TraceRoot(trc, &elements[j], "JSONParser element");
     } else {
-      elem.properties().trace(trc);
+      PropertyVector& properties = stack[i].properties();
+      for (size_t j = 0; j < properties.length(); j++) {
+        TraceRoot(trc, &properties[j].value, "JSONParser property value");
+        TraceRoot(trc, &properties[j].id, "JSONParser property id");
+      }
     }
   }
 }
@@ -64,9 +64,7 @@ void JSONParser<CharT>::getTextPosition(uint32_t* column, uint32_t* line) {
       ++row;
       col = 1;
       // \r\n is treated as a single newline.
-      if (ptr + 1 < current && *ptr == '\r' && *(ptr + 1) == '\n') {
-        ++ptr;
-      }
+      if (ptr + 1 < current && *ptr == '\r' && *(ptr + 1) == '\n') ++ptr;
     } else {
       ++col;
     }
@@ -123,15 +121,11 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
       JSFlatString* str = (ST == JSONParser::PropertyName)
                               ? AtomizeChars(cx, start.get(), length)
                               : NewStringCopyN<CanGC>(cx, start.get(), length);
-      if (!str) {
-        return token(OOM);
-      }
+      if (!str) return token(OOM);
       return stringToken(str);
     }
 
-    if (*current == '\\') {
-      break;
-    }
+    if (*current == '\\') break;
 
     if (*current <= 0x001F) {
       error("bad control character in string literal");
@@ -144,24 +138,19 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
    * of unescaped characters into a temporary buffer, then an escaped
    * character, and repeat until the entire string is consumed.
    */
-  JSStringBuilder buffer(cx);
+  StringBuffer buffer(cx);
   do {
-    if (start < current && !buffer.append(start.get(), current.get())) {
+    if (start < current && !buffer.append(start.get(), current.get()))
       return token(OOM);
-    }
 
-    if (current >= end) {
-      break;
-    }
+    if (current >= end) break;
 
     char16_t c = *current++;
     if (c == '"') {
       JSFlatString* str = (ST == JSONParser::PropertyName)
                               ? buffer.finishAtom()
                               : buffer.finishString();
-      if (!str) {
-        return token(OOM);
-      }
+      if (!str) return token(OOM);
       return stringToken(str);
     }
 
@@ -171,9 +160,7 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
       return token(Error);
     }
 
-    if (current >= end) {
-      break;
-    }
+    if (current >= end) break;
 
     switch (*current++) {
       case '"':
@@ -203,29 +190,26 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
 
       case 'u':
         if (end - current < 4 ||
-            !(IsAsciiHexDigit(current[0]) && IsAsciiHexDigit(current[1]) &&
-              IsAsciiHexDigit(current[2]) && IsAsciiHexDigit(current[3]))) {
+            !(JS7_ISHEX(current[0]) && JS7_ISHEX(current[1]) &&
+              JS7_ISHEX(current[2]) && JS7_ISHEX(current[3]))) {
           // Point to the first non-hexadecimal character (which may be
           // missing).
-          if (current == end || !IsAsciiHexDigit(current[0])) {
+          if (current == end || !JS7_ISHEX(current[0]))
             ;  // already at correct location
-          } else if (current + 1 == end || !IsAsciiHexDigit(current[1])) {
+          else if (current + 1 == end || !JS7_ISHEX(current[1]))
             current += 1;
-          } else if (current + 2 == end || !IsAsciiHexDigit(current[2])) {
+          else if (current + 2 == end || !JS7_ISHEX(current[2]))
             current += 2;
-          } else if (current + 3 == end || !IsAsciiHexDigit(current[3])) {
+          else if (current + 3 == end || !JS7_ISHEX(current[3]))
             current += 3;
-          } else {
+          else
             MOZ_CRASH("logic error determining first erroneous character");
-          }
 
           error("bad Unicode escape");
           return token(Error);
         }
-        c = (AsciiAlphanumericToNumber(current[0]) << 12) |
-            (AsciiAlphanumericToNumber(current[1]) << 8) |
-            (AsciiAlphanumericToNumber(current[2]) << 4) |
-            (AsciiAlphanumericToNumber(current[3]));
+        c = (JS7_UNHEX(current[0]) << 12) | (JS7_UNHEX(current[1]) << 8) |
+            (JS7_UNHEX(current[2]) << 4) | (JS7_UNHEX(current[3]));
         current += 4;
         break;
 
@@ -234,15 +218,11 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
         error("bad escaped character");
         return token(Error);
     }
-    if (!buffer.append(c)) {
-      return token(OOM);
-    }
+    if (!buffer.append(c)) return token(OOM);
 
     start = current;
     for (; current < end; current++) {
-      if (*current == '"' || *current == '\\' || *current <= 0x001F) {
-        break;
-      }
+      if (*current == '"' || *current == '\\' || *current <= 0x001F) break;
     }
   } while (current < end);
 
@@ -253,7 +233,7 @@ JSONParserBase::Token JSONParser<CharT>::readString() {
 template <typename CharT>
 JSONParserBase::Token JSONParser<CharT>::readNumber() {
   MOZ_ASSERT(current < end);
-  MOZ_ASSERT(IsAsciiDigit(*current) || *current == '-');
+  MOZ_ASSERT(JS7_ISDEC(*current) || *current == '-');
 
   /*
    * JSONNumber:
@@ -271,15 +251,13 @@ JSONParserBase::Token JSONParser<CharT>::readNumber() {
   const CharPtr digitStart = current;
 
   /* 0|[1-9][0-9]+ */
-  if (!IsAsciiDigit(*current)) {
+  if (!JS7_ISDEC(*current)) {
     error("unexpected non-digit");
     return token(Error);
   }
   if (*current++ != '0') {
     for (; current < end; current++) {
-      if (!IsAsciiDigit(*current)) {
-        break;
-      }
+      if (!JS7_ISDEC(*current)) break;
     }
   }
 
@@ -297,9 +275,10 @@ JSONParserBase::Token JSONParser<CharT>::readNumber() {
     }
 
     double d;
-    if (!GetFullInteger(cx, digitStart.get(), current.get(), 10, &d)) {
+    const CharT* dummy;
+    if (!GetPrefixInteger(cx, digitStart.get(), current.get(), 10, &dummy, &d))
       return token(OOM);
-    }
+    MOZ_ASSERT(current == dummy);
     return numberToken(negative ? -d : d);
   }
 
@@ -309,14 +288,12 @@ JSONParserBase::Token JSONParser<CharT>::readNumber() {
       error("missing digits after decimal point");
       return token(Error);
     }
-    if (!IsAsciiDigit(*current)) {
+    if (!JS7_ISDEC(*current)) {
       error("unterminated fractional number");
       return token(Error);
     }
     while (++current < end) {
-      if (!IsAsciiDigit(*current)) {
-        break;
-      }
+      if (!JS7_ISDEC(*current)) break;
     }
   }
 
@@ -332,21 +309,20 @@ JSONParserBase::Token JSONParser<CharT>::readNumber() {
         return token(Error);
       }
     }
-    if (!IsAsciiDigit(*current)) {
+    if (!JS7_ISDEC(*current)) {
       error("exponent part is missing a number");
       return token(Error);
     }
     while (++current < end) {
-      if (!IsAsciiDigit(*current)) {
-        break;
-      }
+      if (!JS7_ISDEC(*current)) break;
     }
   }
 
   double d;
-  if (!FullStringToDouble(cx, digitStart.get(), current.get(), &d)) {
+  const CharT* finish;
+  if (!js_strtod(cx, digitStart.get(), current.get(), &finish, &d))
     return token(OOM);
-  }
+  MOZ_ASSERT(current == finish);
   return numberToken(negative ? -d : d);
 }
 
@@ -356,9 +332,7 @@ static inline bool IsJSONWhitespace(char16_t c) {
 
 template <typename CharT>
 JSONParserBase::Token JSONParser<CharT>::advance() {
-  while (current < end && IsJSONWhitespace(*current)) {
-    current++;
-  }
+  while (current < end && IsJSONWhitespace(*current)) current++;
   if (current >= end) {
     error("unexpected end of data");
     return token(Error);
@@ -440,17 +414,13 @@ template <typename CharT>
 JSONParserBase::Token JSONParser<CharT>::advanceAfterObjectOpen() {
   MOZ_ASSERT(current[-1] == '{');
 
-  while (current < end && IsJSONWhitespace(*current)) {
-    current++;
-  }
+  while (current < end && IsJSONWhitespace(*current)) current++;
   if (current >= end) {
     error("end of data while reading object contents");
     return token(Error);
   }
 
-  if (*current == '"') {
-    return readString<PropertyName>();
-  }
+  if (*current == '"') return readString<PropertyName>();
 
   if (*current == '}') {
     current++;
@@ -475,16 +445,14 @@ static inline void AssertPastValue(const RangedPtr<const CharT> current) {
              (current[-1] == 'e' && current[-2] == 's' && current[-3] == 'l' &&
               current[-4] == 'a' && current[-5] == 'f') ||
              current[-1] == '}' || current[-1] == ']' || current[-1] == '"' ||
-             IsAsciiDigit(current[-1]));
+             JS7_ISDEC(current[-1]));
 }
 
 template <typename CharT>
 JSONParserBase::Token JSONParser<CharT>::advanceAfterArrayElement() {
   AssertPastValue(current);
 
-  while (current < end && IsJSONWhitespace(*current)) {
-    current++;
-  }
+  while (current < end && IsJSONWhitespace(*current)) current++;
   if (current >= end) {
     error("end of data when ',' or ']' was expected");
     return token(Error);
@@ -508,17 +476,13 @@ template <typename CharT>
 JSONParserBase::Token JSONParser<CharT>::advancePropertyName() {
   MOZ_ASSERT(current[-1] == ',');
 
-  while (current < end && IsJSONWhitespace(*current)) {
-    current++;
-  }
+  while (current < end && IsJSONWhitespace(*current)) current++;
   if (current >= end) {
     error("end of data when property name was expected");
     return token(Error);
   }
 
-  if (*current == '"') {
-    return readString<PropertyName>();
-  }
+  if (*current == '"') return readString<PropertyName>();
 
   error("expected double-quoted property name");
   return token(Error);
@@ -528,9 +492,7 @@ template <typename CharT>
 JSONParserBase::Token JSONParser<CharT>::advancePropertyColon() {
   MOZ_ASSERT(current[-1] == '"');
 
-  while (current < end && IsJSONWhitespace(*current)) {
-    current++;
-  }
+  while (current < end && IsJSONWhitespace(*current)) current++;
   if (current >= end) {
     error("end of data after property name when ':' was expected");
     return token(Error);
@@ -549,9 +511,7 @@ template <typename CharT>
 JSONParserBase::Token JSONParser<CharT>::advanceAfterProperty() {
   AssertPastValue(current);
 
-  while (current < end && IsJSONWhitespace(*current)) {
-    current++;
-  }
+  while (current < end && IsJSONWhitespace(*current)) current++;
   if (current >= end) {
     error("end of data after property value in object");
     return token(Error);
@@ -577,22 +537,17 @@ inline bool JSONParserBase::finishObject(MutableHandleValue vp,
 
   JSObject* obj = ObjectGroup::newPlainObject(
       cx, properties.begin(), properties.length(), GenericObject);
-  if (!obj) {
-    return false;
-  }
+  if (!obj) return false;
 
   vp.setObject(*obj);
-  if (!freeProperties.append(&properties)) {
-    return false;
-  }
+  if (!freeProperties.append(&properties)) return false;
   stack.popBack();
 
   if (!stack.empty() && stack.back().state == FinishArrayElement) {
     const ElementVector& elements = stack.back().elements();
     if (!CombinePlainObjectPropertyTypes(cx, obj, elements.begin(),
-                                         elements.length())) {
+                                         elements.length()))
       return false;
-    }
   }
 
   return true;
@@ -604,22 +559,16 @@ inline bool JSONParserBase::finishArray(MutableHandleValue vp,
 
   ArrayObject* obj = ObjectGroup::newArrayObject(
       cx, elements.begin(), elements.length(), GenericObject);
-  if (!obj) {
-    return false;
-  }
+  if (!obj) return false;
 
   vp.setObject(*obj);
-  if (!freeElements.append(&elements)) {
-    return false;
-  }
+  if (!freeElements.append(&elements)) return false;
   stack.popBack();
 
   if (!stack.empty() && stack.back().state == FinishArrayElement) {
     const ElementVector& elements = stack.back().elements();
-    if (!CombineArrayElementTypes(cx, obj, elements.begin(),
-                                  elements.length())) {
+    if (!CombineArrayElementTypes(cx, obj, elements.begin(), elements.length()))
       return false;
-    }
   }
 
   return true;
@@ -642,20 +591,15 @@ bool JSONParser<CharT>::parse(MutableHandleValue vp) {
 
         token = advanceAfterProperty();
         if (token == ObjectClose) {
-          if (!finishObject(&value, properties)) {
-            return false;
-          }
+          if (!finishObject(&value, properties)) return false;
           break;
         }
         if (token != Comma) {
-          if (token == OOM) {
-            return false;
-          }
-          if (token != Error) {
+          if (token == OOM) return false;
+          if (token != Error)
             error(
                 "expected ',' or '}' after property-value pair in object "
                 "literal");
-          }
           return errorReturn();
         }
         token = advancePropertyName();
@@ -666,9 +610,7 @@ bool JSONParser<CharT>::parse(MutableHandleValue vp) {
         if (token == String) {
           jsid id = AtomToId(atomValue());
           PropertyVector& properties = stack.back().properties();
-          if (!properties.append(IdValuePair(id))) {
-            return false;
-          }
+          if (!properties.append(IdValuePair(id))) return false;
           token = advancePropertyColon();
           if (token != Colon) {
             MOZ_ASSERT(token == Error);
@@ -676,27 +618,18 @@ bool JSONParser<CharT>::parse(MutableHandleValue vp) {
           }
           goto JSONValue;
         }
-        if (token == OOM) {
-          return false;
-        }
-        if (token != Error) {
+        if (token == OOM) return false;
+        if (token != Error)
           error("property names must be double-quoted strings");
-        }
         return errorReturn();
 
       case FinishArrayElement: {
         ElementVector& elements = stack.back().elements();
-        if (!elements.append(value.get())) {
-          return false;
-        }
+        if (!elements.append(value.get())) return false;
         token = advanceAfterArrayElement();
-        if (token == Comma) {
-          goto JSONValue;
-        }
+        if (token == Comma) goto JSONValue;
         if (token == ArrayClose) {
-          if (!finishArray(&value, elements)) {
-            return false;
-          }
+          if (!finishArray(&value, elements)) return false;
           break;
         }
         MOZ_ASSERT(token == Error);
@@ -731,20 +664,13 @@ bool JSONParser<CharT>::parse(MutableHandleValue vp) {
               elements->clear();
             } else {
               elements = cx->new_<ElementVector>(cx);
-              if (!elements) {
-                return false;
-              }
+              if (!elements) return false;
             }
-            if (!stack.append(elements)) {
-              js_delete(elements);
-              return false;
-            }
+            if (!stack.append(elements)) return false;
 
             token = advance();
             if (token == ArrayClose) {
-              if (!finishArray(&value, *elements)) {
-                return false;
-              }
+              if (!finishArray(&value, *elements)) return false;
               break;
             }
             goto JSONValueSwitch;
@@ -757,20 +683,13 @@ bool JSONParser<CharT>::parse(MutableHandleValue vp) {
               properties->clear();
             } else {
               properties = cx->new_<PropertyVector>(cx);
-              if (!properties) {
-                return false;
-              }
+              if (!properties) return false;
             }
-            if (!stack.append(properties)) {
-              js_delete(properties);
-              return false;
-            }
+            if (!stack.append(properties)) return false;
 
             token = advanceAfterObjectOpen();
             if (token == ObjectClose) {
-              if (!finishObject(&value, *properties)) {
-                return false;
-              }
+              if (!finishObject(&value, *properties)) return false;
               break;
             }
             goto JSONMember;
@@ -795,9 +714,7 @@ bool JSONParser<CharT>::parse(MutableHandleValue vp) {
         break;
     }
 
-    if (stack.empty()) {
-      break;
-    }
+    if (stack.empty()) break;
     state = stack.back().state;
   }
 

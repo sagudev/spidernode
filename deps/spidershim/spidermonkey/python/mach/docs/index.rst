@@ -1,5 +1,5 @@
 ====
-Mach
+mach
 ====
 
 Mach (German for *do*) is a generic command dispatcher for the command
@@ -10,11 +10,8 @@ executable *driver* script (named whatever you want), and write mach
 commands. When the *driver* is executed, mach dispatches to the
 requested command handler automatically.
 
-.. raw:: html
-
-    <h2>Features</h2>
-
-----
+Features
+========
 
 On a high level, mach is similar to using argparse with subparsers (for
 command handling). When you dig deeper, mach offers a number of
@@ -37,11 +34,8 @@ Settings files
   Mach provides a facility for reading settings from an ini-like file
   format.
 
-.. raw:: html
-
-    <h2>Components</h2>
-
-----
+Components
+==========
 
 Mach is conceptually composed of the following components:
 
@@ -62,11 +56,8 @@ driver
   unique to the deployed environment. But, it's usually based on an
   example from this source tree.
 
-.. raw:: html
-
-    <h2> Project State</h2>
-
-----
+Project State
+=============
 
 mach was originally written as a command dispatching framework to aid
 Firefox development. While the code is mostly generic, there are still
@@ -77,9 +68,7 @@ best fit for you.
 
 .. toctree::
    :maxdepth: 1
-   :hidden:
 
-   usage
    commands
    driver
    logging

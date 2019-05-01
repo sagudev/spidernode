@@ -13,49 +13,46 @@
 #include "mozilla/Attributes.h"
 
 #include <initializer_list>
-#include <type_traits>
 
 #include <stdint.h>
 
 namespace mozilla {
 
 /**
- * EnumSet<T, U> is a set of values defined by an enumeration. It is implemented
- * using a bit mask with the size of U for each value. It works both for enum
- * and enum class types.
+ * EnumSet<T> is a set of values defined by an enumeration. It is implemented
+ * using a 32 bit mask for each value so it will only work for enums with an int
+ * representation less than 32. It works both for enum and enum class types.
  */
-template <typename T, typename Serialized = typename std::make_unsigned<
-                          typename std::underlying_type<T>::type>::type>
+template <typename T>
 class EnumSet {
  public:
-  typedef T valueType;
+  typedef uint32_t serializedType;
 
-  constexpr EnumSet() : mBitField(0) {}
+  EnumSet() : mBitField(0) {}
 
-  constexpr MOZ_IMPLICIT EnumSet(T aEnum) : mBitField(bitFor(aEnum)) {}
+  MOZ_IMPLICIT EnumSet(T aEnum) : mBitField(bitFor(aEnum)) {}
 
-  constexpr EnumSet(T aEnum1, T aEnum2)
-      : mBitField(bitFor(aEnum1) | bitFor(aEnum2)) {}
+  EnumSet(T aEnum1, T aEnum2) : mBitField(bitFor(aEnum1) | bitFor(aEnum2)) {}
 
-  constexpr EnumSet(T aEnum1, T aEnum2, T aEnum3)
+  EnumSet(T aEnum1, T aEnum2, T aEnum3)
       : mBitField(bitFor(aEnum1) | bitFor(aEnum2) | bitFor(aEnum3)) {}
 
-  constexpr EnumSet(T aEnum1, T aEnum2, T aEnum3, T aEnum4)
+  EnumSet(T aEnum1, T aEnum2, T aEnum3, T aEnum4)
       : mBitField(bitFor(aEnum1) | bitFor(aEnum2) | bitFor(aEnum3) |
                   bitFor(aEnum4)) {}
 
-  constexpr MOZ_IMPLICIT EnumSet(std::initializer_list<T> list) : mBitField(0) {
+  MOZ_IMPLICIT EnumSet(std::initializer_list<T> list) : mBitField(0) {
     for (auto value : list) {
       (*this) += value;
     }
   }
 
-  constexpr EnumSet(const EnumSet& aEnumSet) : mBitField(aEnumSet.mBitField) {}
+  EnumSet(const EnumSet& aEnumSet) : mBitField(aEnumSet.mBitField) {}
 
   /**
    * Add an element
    */
-  constexpr void operator+=(T aEnum) {
+  void operator+=(T aEnum) {
     incVersion();
     mBitField |= bitFor(aEnum);
   }
@@ -63,8 +60,8 @@ class EnumSet {
   /**
    * Add an element
    */
-  constexpr EnumSet operator+(T aEnum) const {
-    EnumSet result(*this);
+  EnumSet<T> operator+(T aEnum) const {
+    EnumSet<T> result(*this);
     result += aEnum;
     return result;
   }
@@ -72,7 +69,7 @@ class EnumSet {
   /**
    * Union
    */
-  void operator+=(const EnumSet& aEnumSet) {
+  void operator+=(const EnumSet<T> aEnumSet) {
     incVersion();
     mBitField |= aEnumSet.mBitField;
   }
@@ -80,8 +77,8 @@ class EnumSet {
   /**
    * Union
    */
-  EnumSet operator+(const EnumSet& aEnumSet) const {
-    EnumSet result(*this);
+  EnumSet<T> operator+(const EnumSet<T> aEnumSet) const {
+    EnumSet<T> result(*this);
     result += aEnumSet;
     return result;
   }
@@ -97,8 +94,8 @@ class EnumSet {
   /**
    * Remove an element
    */
-  EnumSet operator-(T aEnum) const {
-    EnumSet result(*this);
+  EnumSet<T> operator-(T aEnum) const {
+    EnumSet<T> result(*this);
     result -= aEnum;
     return result;
   }
@@ -106,7 +103,7 @@ class EnumSet {
   /**
    * Remove a set of elements
    */
-  void operator-=(const EnumSet& aEnumSet) {
+  void operator-=(const EnumSet<T> aEnumSet) {
     incVersion();
     mBitField &= ~(aEnumSet.mBitField);
   }
@@ -114,8 +111,8 @@ class EnumSet {
   /**
    * Remove a set of elements
    */
-  EnumSet operator-(const EnumSet& aEnumSet) const {
-    EnumSet result(*this);
+  EnumSet<T> operator-(const EnumSet<T> aEnumSet) const {
+    EnumSet<T> result(*this);
     result -= aEnumSet;
     return result;
   }
@@ -131,7 +128,7 @@ class EnumSet {
   /**
    * Intersection
    */
-  void operator&=(const EnumSet& aEnumSet) {
+  void operator&=(const EnumSet<T> aEnumSet) {
     incVersion();
     mBitField &= aEnumSet.mBitField;
   }
@@ -139,8 +136,8 @@ class EnumSet {
   /**
    * Intersection
    */
-  EnumSet operator&(const EnumSet& aEnumSet) const {
-    EnumSet result(*this);
+  EnumSet<T> operator&(const EnumSet<T> aEnumSet) const {
+    EnumSet<T> result(*this);
     result &= aEnumSet;
     return result;
   }
@@ -148,26 +145,9 @@ class EnumSet {
   /**
    * Equality
    */
-  bool operator==(const EnumSet& aEnumSet) const {
+  bool operator==(const EnumSet<T> aEnumSet) const {
     return mBitField == aEnumSet.mBitField;
   }
-
-  /**
-   * Equality
-   */
-  bool operator==(T aEnum) const { return mBitField == bitFor(aEnum); }
-
-  /**
-   * Not equal
-   */
-  bool operator!=(const EnumSet& aEnumSet) const {
-    return !operator==(aEnumSet);
-  }
-
-  /**
-   * Not equal
-   */
-  bool operator!=(T aEnum) const { return !operator==(aEnum); }
 
   /**
    * Test is an element is contained in the set.
@@ -175,18 +155,11 @@ class EnumSet {
   bool contains(T aEnum) const { return mBitField & bitFor(aEnum); }
 
   /**
-   * Test if a set is contained in the set.
-   */
-  bool contains(const EnumSet& aEnumSet) const {
-    return (mBitField & aEnumSet.mBitField) == aEnumSet.mBitField;
-  }
-
-  /**
    * Return the number of elements in the set.
    */
   uint8_t size() const {
     uint8_t count = 0;
-    for (Serialized bitField = mBitField; bitField; bitField >>= 1) {
+    for (uint32_t bitField = mBitField; bitField; bitField >>= 1) {
       if (bitField & 1) {
         count++;
       }
@@ -196,15 +169,15 @@ class EnumSet {
 
   bool isEmpty() const { return mBitField == 0; }
 
-  Serialized serialize() const { return mBitField; }
+  serializedType serialize() const { return mBitField; }
 
-  void deserialize(Serialized aValue) {
+  void deserialize(serializedType aValue) {
     incVersion();
     mBitField = aValue;
   }
 
   class ConstIterator {
-    const EnumSet* mSet;
+    const EnumSet<T>* mSet;
     uint32_t mPos;
 #ifdef DEBUG
     uint64_t mVersion;
@@ -216,7 +189,7 @@ class EnumSet {
     }
 
    public:
-    ConstIterator(const EnumSet& aSet, uint32_t aPos)
+    ConstIterator(const EnumSet<T>& aSet, uint32_t aPos)
         : mSet(&aSet), mPos(aPos) {
 #ifdef DEBUG
       mVersion = mSet->mVersion;
@@ -278,21 +251,20 @@ class EnumSet {
   ConstIterator end() const { return ConstIterator(*this, kMaxBits); }
 
  private:
-  constexpr static Serialized bitFor(T aEnum) {
-    auto bitNumber = static_cast<Serialized>(aEnum);
-    MOZ_DIAGNOSTIC_ASSERT(bitNumber < kMaxBits);
-    return static_cast<Serialized>(Serialized{1} << bitNumber);
+  static uint32_t bitFor(T aEnum) {
+    uint32_t bitNumber = (uint32_t)aEnum;
+    MOZ_ASSERT(bitNumber < kMaxBits);
+    return 1U << bitNumber;
   }
 
-  constexpr void incVersion() {
+  void incVersion() {
 #ifdef DEBUG
     mVersion++;
 #endif
   }
 
-  static const size_t kMaxBits = sizeof(Serialized) * 8;
-
-  Serialized mBitField;
+  static const size_t kMaxBits = 32;
+  serializedType mBitField;
 
 #ifdef DEBUG
   uint64_t mVersion = 0;

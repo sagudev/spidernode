@@ -418,8 +418,7 @@ private:
     const char *path;                              /* working path (u_icudata_Dir) */
     const char *nextPath;                          /* path following this one */
     const char *basename;                          /* item's basename (icudt22e_mt.res)*/
-
-    StringPiece suffix;                            /* item suffix (can be null) */
+    const char *suffix;                            /* item suffix (can be null) */
 
     uint32_t    basenameLen;                       /* length of basename */
 
@@ -433,15 +432,13 @@ private:
 };
 
 /**
- * @param iter    The iterator to be initialized. Its current state does not matter.
- * @param inPath  The full pathname to be iterated over.  If NULL, defaults to U_ICUDATA_NAME 
- * @param pkg     Package which is being searched for, ex "icudt28l".  Will ignore leaf directories such as /icudt28l 
- * @param item    Item to be searched for.  Can include full path, such as /a/b/foo.dat 
- * @param inSuffix  Optional item suffix, if not-null (ex. ".dat") then 'path' can contain 'item' explicitly.
- *             Ex:   'stuff.dat' would be found in '/a/foo:/tmp/stuff.dat:/bar/baz' as item #2.   
- *                   '/blarg/stuff.dat' would also be found.
- *  Note: inSuffix may also be the 'item' being searched for as well, (ex: "ibm-5348_P100-1997.cnv"), in which case 
- *        the 'item' parameter is often the same as pkg. (Though sometimes might have a tree part as well, ex: "icudt62l-curr").
+ * @param iter  The iterator to be initialized. Its current state does not matter. 
+ * @param path  The full pathname to be iterated over.  If NULL, defaults to U_ICUDATA_NAME 
+ * @param pkg   Package which is being searched for, ex "icudt28l".  Will ignore leave directories such as /icudt28l 
+ * @param item  Item to be searched for.  Can include full path, such as /a/b/foo.dat 
+ * @param suffix  Optional item suffix, if not-null (ex. ".dat") then 'path' can contain 'item' explicitly.
+ *               Ex:   'stuff.dat' would be found in '/a/foo:/tmp/stuff.dat:/bar/baz' as item #2.   
+ *                     '/blarg/stuff.dat' would also be found.
  */
 UDataPathIterator::UDataPathIterator(const char *inPath, const char *pkg,
                                      const char *item, const char *inSuffix, UBool doCheckLastFour,
@@ -569,7 +566,7 @@ const char *UDataPathIterator::next(UErrorCode *pErrorCode)
 
         if(checkLastFour == TRUE && 
            (pathLen>=4) &&
-           uprv_strncmp(pathBuffer.data() +(pathLen-4), suffix.data(), 4)==0 && /* suffix matches */
+           uprv_strncmp(pathBuffer.data() +(pathLen-4), suffix, 4)==0 && /* suffix matches */
            uprv_strncmp(findBasename(pathBuffer.data()), basename, basenameLen)==0  && /* base matches */
            uprv_strlen(pathBasename)==(basenameLen+4)) { /* base+suffix = full len */
 
@@ -605,13 +602,8 @@ const char *UDataPathIterator::next(UErrorCode *pErrorCode)
             /* + basename */
             pathBuffer.append(packageStub.data()+1, packageStub.length()-1, *pErrorCode);
 
-            if (!suffix.empty())  /* tack on suffix */
+            if(*suffix)  /* tack on suffix */
             {
-                if (suffix.length() > 4) {
-                    // If the suffix is actually an item ("ibm-5348_P100-1997.cnv") and not an extension (".res")
-                    // then we need to ensure that the path ends with a separator.
-                    pathBuffer.ensureEndsWithFileSeparator(*pErrorCode);
-                }
                 pathBuffer.append(suffix, *pErrorCode);
             }
         }
@@ -759,18 +751,15 @@ openCommonData(const char *path,          /*  Path from OpenChoice?          */
 
     UDataPathIterator iter(u_getDataDirectory(), inBasename, path, ".dat", TRUE, pErrorCode);
 
-    while ((UDataMemory_isLoaded(&tData)==FALSE) && (pathBuffer = iter.next(pErrorCode)) != NULL)
+    while((UDataMemory_isLoaded(&tData)==FALSE) && (pathBuffer = iter.next(pErrorCode)) != NULL)
     {
 #ifdef UDATA_DEBUG
         fprintf(stderr, "ocd: trying path %s - ", pathBuffer);
 #endif
-        uprv_mapFile(&tData, pathBuffer, pErrorCode);
+        uprv_mapFile(&tData, pathBuffer);
 #ifdef UDATA_DEBUG
         fprintf(stderr, "%s\n", UDataMemory_isLoaded(&tData)?"LOADED":"not loaded");
 #endif
-    }
-    if (U_FAILURE(*pErrorCode)) {
-        return NULL;
     }
 
 #if defined(OS390_STUBDATA) && defined(OS390BATCH)
@@ -780,7 +769,7 @@ openCommonData(const char *path,          /*  Path from OpenChoice?          */
         uprv_strncpy(ourPathBuffer, path, 1019);
         ourPathBuffer[1019]=0;
         uprv_strcat(ourPathBuffer, ".dat");
-        uprv_mapFile(&tData, ourPathBuffer, pErrorCode);
+        uprv_mapFile(&tData, ourPathBuffer);
     }
 #endif
 
@@ -871,7 +860,7 @@ static UBool extendICUData(UErrorCode *pErr)
     umtx_unlock(&extendICUDataMutex);
 #endif
     return didUpdate;               /* Return true if ICUData pointer was updated.   */
-                                    /*   (Could potentially have been done by another thread racing */
+                                    /*   (Could potentialy have been done by another thread racing */
                                     /*   us through here, but that's fine, we still return true    */
                                     /*   so that current thread will also examine extended data.   */
 }
@@ -997,12 +986,12 @@ static UDataMemory *doLoadFromIndividualFiles(const char *pkgName,
     /* init path iterator for individual files */
     UDataPathIterator iter(dataPath, pkgName, path, tocEntryPathSuffix, FALSE, pErrorCode);
 
-    while ((pathBuffer = iter.next(pErrorCode)) != NULL)
+    while((pathBuffer = iter.next(pErrorCode)) != NULL)
     {
 #ifdef UDATA_DEBUG
         fprintf(stderr, "UDATA: trying individual file %s\n", pathBuffer);
 #endif
-        if (uprv_mapFile(&dataMemory, pathBuffer, pErrorCode))
+        if(uprv_mapFile(&dataMemory, pathBuffer))
         {
             pEntryData = checkDataItem(dataMemory.pHeader, isAcceptable, context, type, name, subErrorCode, pErrorCode);
             if (pEntryData != NULL) {
@@ -1018,7 +1007,7 @@ static UDataMemory *doLoadFromIndividualFiles(const char *pkgName,
                 return pEntryData;
             }
 
-            /* the data is not acceptable, or some error occurred.  Either way, unmap the memory */
+            /* the data is not acceptable, or some error occured.  Either way, unmap the memory */
             udata_close(&dataMemory);
 
             /* If we had a nasty error, bail out completely.  */
@@ -1086,11 +1075,6 @@ static UDataMemory *doLoadFromCommonData(UBool isICUData, const char * /*pkgName
                     return pEntryData;
                 }
             }
-        }
-        // If we failed due to being out-of-memory, then stop early and report the error.
-        if (*subErrorCode == U_MEMORY_ALLOCATION_ERROR) {
-            *pErrorCode = *subErrorCode;
-            return NULL;
         }
         /* Data wasn't found.  If we were looking for an ICUData item and there is
          * more data available, load it and try again,
@@ -1268,8 +1252,7 @@ doOpenChoice(const char *path, const char *type, const char *name,
         tocEntryName.append(".", *pErrorCode).append(type, *pErrorCode);
         tocEntryPath.append(".", *pErrorCode).append(type, *pErrorCode);
     }
-    // The +1 is for the U_FILE_SEP_CHAR that is always appended above.
-    tocEntryPathSuffix = tocEntryPath.data() + tocEntrySuffixIndex + 1; /* suffix starts here */
+    tocEntryPathSuffix = tocEntryPath.data()+tocEntrySuffixIndex; /* suffix starts here */
 
 #ifdef UDATA_DEBUG
     fprintf(stderr, " tocEntryName = %s\n", tocEntryName.data());

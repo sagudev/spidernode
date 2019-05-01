@@ -1,4 +1,5 @@
-// |jit-test| skip-if: !('oomTest' in this)
+if (!('oomTest' in this))
+    quit();
 
 // Don't run a full oomTest because it takes ages - a few iterations are
 // sufficient to trigger the bug.

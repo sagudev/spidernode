@@ -1,6 +1,8 @@
 // onPromiseSettled handlers fire, until they are removed.
+if (!('Promise' in this))
+    quit(0);
 
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var dbg = new Debugger(g);
 var log;
 

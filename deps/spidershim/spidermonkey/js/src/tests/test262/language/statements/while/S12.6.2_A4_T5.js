@@ -10,17 +10,16 @@ description: Using labeled "break" in order to continue a "while" loop
 ---*/
 
 //CHECK#1
-var i = 0;
+var i=0;
 woohoo:{
   while(true){
     i++;
-    if ( i == 10 ) {
+    if ( ! (i < 10) ) {
       break woohoo;
-      throw new Test262Error('#1.1: "break woohoo" must break loop');
+      $ERROR('#1.1: "break woohoo" must break loop');
     }
   }
-  throw new Test262Error('This code should be unreacheable');
+  if (i!==10) $ERROR('#1.2: i===10. Actual:  i==='+ i );
 }
-assert.sameValue(i, 10);
 
 reportCompare(0, 0);

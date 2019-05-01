@@ -1,3 +1,4 @@
-// |jit-test| skip-if: helperThreadCount() === 0
+if (helperThreadCount() === 0)
+    quit();
 gczeal(4);
 offThreadCompileScript("let x = 1;");

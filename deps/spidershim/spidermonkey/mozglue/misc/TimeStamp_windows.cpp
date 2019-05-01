@@ -59,18 +59,26 @@ static const DWORD kDefaultTimeIncrement = 156001;
 // Global variables, not changing at runtime
 // ----------------------------------------------------------------------------
 
+/**
+ * The [mt] unit:
+ *
+ * Many values are kept in ticks of the Performance Coutner x 1000,
+ * further just referred as [mt], meaning milli-ticks.
+ *
+ * This is needed to preserve maximum precision of the performance frequency
+ * representation.  GetTickCount64 values in milliseconds are multiplied with
+ * frequency per second.  Therefor we need to multiply QPC value by 1000 to
+ * have the same units to allow simple arithmentic with both QPC and GTC.
+ */
+
+#define ms2mt(x) ((x)*sFrequencyPerSec)
+#define mt2ms(x) ((x) / sFrequencyPerSec)
+#define mt2ms_f(x) (double(x) / sFrequencyPerSec)
+
 // Result of QueryPerformanceFrequency
 // We use default of 1 for the case we can't use QueryPerformanceCounter
 // to make mt/ms conversions work despite that.
-static uint64_t sFrequencyPerSec = 1;
-
-namespace mozilla {
-
-MFBT_API uint64_t GetQueryPerformanceFrequencyPerSec() {
-  return sFrequencyPerSec;
-}
-
-}  // namespace mozilla
+static LONGLONG sFrequencyPerSec = 1;
 
 // How much we are tolerant to GTC occasional loose of resoltion.
 // This number says how many multiples of the minimal GTC resolution
@@ -155,15 +163,17 @@ static inline ULONGLONG PerformanceCounter() {
   LARGE_INTEGER pc;
   ::QueryPerformanceCounter(&pc);
 
-  // QueryPerformanceCounter may slightly jitter (not be 100% monotonic.)
-  // This is a simple go-backward protection for such a faulty hardware.
-  AutoCriticalSection lock(&sTimeStampLock);
+  if (!sHasStableTSC) {
+    // This is a simple go-backward protection for faulty hardware
+    AutoCriticalSection lock(&sTimeStampLock);
 
-  static decltype(LARGE_INTEGER::QuadPart) last;
-  if (last > pc.QuadPart) {
-    return last * 1000ULL;
+    static decltype(LARGE_INTEGER::QuadPart) last;
+    if (last > pc.QuadPart) {
+      return last * 1000ULL;
+    }
+    last = pc.QuadPart;
   }
-  last = pc.QuadPart;
+
   return pc.QuadPart * 1000ULL;
 }
 
@@ -253,14 +263,8 @@ static void InitResolution() {
 // TimeStampValue implementation
 // ----------------------------------------------------------------------------
 MFBT_API
-TimeStampValue::TimeStampValue(ULONGLONG aGTC, ULONGLONG aQPC, bool aHasQPC,
-                               bool aUsedCanonicalNow)
-    : mGTC(aGTC),
-      mQPC(aQPC),
-      mUsedCanonicalNow(aUsedCanonicalNow),
-      mHasQPC(aHasQPC) {
-  mIsNull = aGTC == 0 && aQPC == 0;
-}
+TimeStampValue::TimeStampValue(ULONGLONG aGTC, ULONGLONG aQPC, bool aHasQPC)
+    : mGTC(aGTC), mQPC(aQPC), mHasQPC(aHasQPC), mIsNull(false) {}
 
 MFBT_API TimeStampValue& TimeStampValue::operator+=(const int64_t aOther) {
   mGTC += aOther;
@@ -352,7 +356,7 @@ MFBT_API uint64_t TimeStampValue::CheckQPC(const TimeStampValue& aOther) const {
 
 MFBT_API uint64_t
 TimeStampValue::operator-(const TimeStampValue& aOther) const {
-  if (IsNull() && aOther.IsNull()) {
+  if (mIsNull && aOther.mIsNull) {
     return uint64_t(0);
   }
 
@@ -396,12 +400,6 @@ MFBT_API int64_t BaseTimeDurationPlatformUtils::ResolutionInTicks() {
 }
 
 static bool HasStableTSC() {
-#if defined(_M_ARM64)
-  // AArch64 defines that its system counter run at a constant rate
-  // regardless of the current clock frequency of the system.  See "The
-  // Generic Timer", section D7, in the ARMARM for ARMv8.
-  return true;
-#else
   union {
     int regs[4];
     struct {
@@ -433,7 +431,6 @@ static bool HasStableTSC() {
   // if bit 8 is set than TSC will run at a constant rate
   // in all ACPI P-states, C-states and T-states
   return regs[3] & (1 << 8);
-#endif
 }
 
 static bool gInitialized = false;
@@ -485,22 +482,14 @@ MFBT_API void TimeStamp::Startup() {
 
 MFBT_API void TimeStamp::Shutdown() { DeleteCriticalSection(&sTimeStampLock); }
 
-TimeStampValue NowInternal(bool aHighResolution) {
+MFBT_API TimeStamp TimeStamp::Now(bool aHighResolution) {
   // sUseQPC is volatile
   bool useQPC = (aHighResolution && sUseQPC);
 
   // Both values are in [mt] units.
   ULONGLONG QPC = useQPC ? PerformanceCounter() : uint64_t(0);
   ULONGLONG GTC = ms2mt(GetTickCount64());
-  return TimeStampValue(GTC, QPC, useQPC, false);
-}
-
-MFBT_API TimeStamp TimeStamp::Now(bool aHighResolution) {
-  return TimeStamp::NowFuzzy(NowInternal(aHighResolution));
-}
-
-MFBT_API TimeStamp TimeStamp::NowUnfuzzed(bool aHighResolution) {
-  return TimeStamp(NowInternal(aHighResolution));
+  return TimeStamp(TimeStampValue(GTC, QPC, useQPC));
 }
 
 // Computes and returns the process uptime in microseconds.

@@ -5,15 +5,19 @@
 from mozbuild.pythonutil import iter_modules_in_path
 from mozunit import main
 import os
+import unittest
 
 
-def test_iter_modules_in_path():
-    tests_path = os.path.normcase(os.path.dirname(__file__))
-    paths = list(iter_modules_in_path(tests_path))
-    assert set(paths) == set([
-        os.path.join(os.path.abspath(tests_path), '__init__.py'),
-        os.path.join(os.path.abspath(tests_path), 'test_pythonutil.py'),
-    ])
+class TestIterModules(unittest.TestCase):
+    def test_iter_modules_in_path(self):
+        mozbuild_path = os.path.normcase(os.path.dirname(os.path.dirname(__file__)))
+        paths = list(iter_modules_in_path(mozbuild_path))
+        self.assertEquals(set(paths), set([
+            os.path.join(os.path.abspath(mozbuild_path), '__init__.py'),
+            os.path.join(os.path.abspath(mozbuild_path), 'pythonutil.py'),
+            os.path.join(os.path.abspath(mozbuild_path), 'test', '__init__.py'),
+            os.path.join(os.path.abspath(mozbuild_path), 'test', 'test_pythonutil.py'),
+        ]))
 
 
 if __name__ == '__main__':

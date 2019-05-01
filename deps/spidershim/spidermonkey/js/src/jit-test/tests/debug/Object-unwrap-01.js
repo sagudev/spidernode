@@ -3,7 +3,7 @@
 load(libdir + 'asserts.js');
 
 var dbg = new Debugger();
-var g = newGlobal({newCompartment: true});
+var g = newGlobal();
 var gw = dbg.addDebuggee(g);
 
 assertEq(Object.getOwnPropertyDescriptor(gw, 'unwrap'), undefined);

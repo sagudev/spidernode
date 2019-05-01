@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -9,8 +9,8 @@
 
 #include "builtin/String.h"
 #include "jsapi-tests/tests.h"
+#include "vm/JSCompartment.h"
 #include "vm/JSContext.h"
-#include "vm/Realm.h"
 
 #include "vm/StringType-inl.h"
 
@@ -54,9 +54,8 @@ BEGIN_TEST(testIndexToString) {
     JSString* str = js::IndexToString(cx, u);
     CHECK(str);
 
-    if (!js::StaticStrings::hasUint(u)) {
-      CHECK(cx->realm()->dtoaCache.lookup(10, u) == str);
-    }
+    if (!js::StaticStrings::hasUint(u))
+      CHECK(cx->compartment()->dtoaCache.lookup(10, u) == str);
 
     bool match = false;
     CHECK(JS_StringEqualsAscii(cx, str, tests[i].expected, &match));

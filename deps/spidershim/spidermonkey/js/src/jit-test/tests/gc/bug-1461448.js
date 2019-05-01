@@ -1,15 +1,16 @@
-// |jit-test| skip-if: helperThreadCount() === 0
+if (helperThreadCount() === 0)
+    quit();
 
 gczeal(0);
 
 let lfPreamble = `
-  var lfOffThreadGlobal = newGlobal({newCompartment: true});
+  var lfOffThreadGlobal = newGlobal();
   for (lfLocal in this)
     try {} catch(lfVare5) {}
 `;
 evaluate(lfPreamble);
 evaluate(`
-  var g = newGlobal({newCompartment: true});
+  var g = newGlobal();
   var dbg = new Debugger;
   var gw = dbg.addDebuggee(g);
   for (lfLocal in this)
@@ -17,7 +18,7 @@ evaluate(`
       try {
         lfOffThreadGlobal[lfLocal] = this[lfLocal];
       } catch(lfVare5) {}
-  var g = newGlobal({newCompartment: true});
+  var g = newGlobal();
   var gw = dbg.addDebuggee(g);
 `);
 lfOffThreadGlobal.offThreadCompileScript(`
@@ -26,7 +27,7 @@ lfOffThreadGlobal.offThreadCompileScript(`
 `);
 lfOffThreadGlobal.runOffThreadScript();
 eval(`
-  var lfOffThreadGlobal = newGlobal({newCompartment: true});
+  var lfOffThreadGlobal = newGlobal();
   try { evaluate(\`
     gczeal(18, 1);
     grayRoot()[0] = "foo";

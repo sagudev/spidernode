@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,12 +24,10 @@ ABIArg ABIArgGenerator::next(MIRType type) {
   switch (type) {
     case MIRType::Int32:
     case MIRType::Pointer:
-    case MIRType::RefOrNull:
-      if (GetIntArgReg(usedArgSlots_, &destReg)) {
+      if (GetIntArgReg(usedArgSlots_, &destReg))
         current_ = ABIArg(destReg);
-      } else {
+      else
         current_ = ABIArg(usedArgSlots_ * sizeof(intptr_t));
-      }
       usedArgSlots_++;
       break;
     case MIRType::Int64:
@@ -40,9 +38,7 @@ ABIArg ABIArgGenerator::next(MIRType type) {
         current_ = ABIArg(a2, a3);
         usedArgSlots_ = 4;
       } else {
-        if (usedArgSlots_ < NumIntArgRegs) {
-          usedArgSlots_ = NumIntArgRegs;
-        }
+        if (usedArgSlots_ < NumIntArgRegs) usedArgSlots_ = NumIntArgRegs;
         usedArgSlots_ += usedArgSlots_ % 2;
         current_ = ABIArg(usedArgSlots_ * sizeof(intptr_t));
         usedArgSlots_ += 2;
@@ -57,9 +53,7 @@ ABIArg ABIArgGenerator::next(MIRType type) {
       } else if (useGPRForFloats_ && GetIntArgReg(usedArgSlots_, &destReg)) {
         current_ = ABIArg(destReg);
       } else {
-        if (usedArgSlots_ < NumIntArgRegs) {
-          usedArgSlots_ = NumIntArgRegs;
-        }
+        if (usedArgSlots_ < NumIntArgRegs) usedArgSlots_ = NumIntArgRegs;
         current_ = ABIArg(usedArgSlots_ * sizeof(intptr_t));
       }
       usedArgSlots_++;
@@ -76,9 +70,7 @@ ABIArg ABIArgGenerator::next(MIRType type) {
         current_ = ABIArg(a2, a3);
         usedArgSlots_ = 4;
       } else {
-        if (usedArgSlots_ < NumIntArgRegs) {
-          usedArgSlots_ = NumIntArgRegs;
-        }
+        if (usedArgSlots_ < NumIntArgRegs) usedArgSlots_ = NumIntArgRegs;
         usedArgSlots_ += usedArgSlots_ % 2;
         current_ = ABIArg(usedArgSlots_ * sizeof(intptr_t));
         usedArgSlots_ += 2;
@@ -111,22 +103,49 @@ uint32_t js::jit::SA(FloatRegister r) {
 }
 
 // Used to patch jumps created by MacroAssemblerMIPSCompat::jumpWithPatch.
-void jit::PatchJump(CodeLocationJump& jump_, CodeLocationLabel label) {
+void jit::PatchJump(CodeLocationJump& jump_, CodeLocationLabel label,
+                    ReprotectCode reprotect) {
   Instruction* inst1 = (Instruction*)jump_.raw();
   Instruction* inst2 = inst1->next();
 
+  MaybeAutoWritableJitCode awjc(inst1, 8, reprotect);
   AssemblerMIPSShared::UpdateLuiOriValue(inst1, inst2, (uint32_t)label.raw());
 
   AutoFlushICache::flush(uintptr_t(inst1), 8);
+}
+
+// For more infromation about backedges look at comment in
+// MacroAssemblerMIPSCompat::backedgeJump()
+void jit::PatchBackedge(CodeLocationJump& jump, CodeLocationLabel label,
+                        JitZoneGroup::BackedgeTarget target) {
+  uint32_t sourceAddr = (uint32_t)jump.raw();
+  uint32_t targetAddr = (uint32_t)label.raw();
+  InstImm* branch = (InstImm*)jump.raw();
+
+  MOZ_ASSERT(branch->extractOpcode() == (uint32_t(op_beq) >> OpcodeShift));
+
+  if (BOffImm16::IsInRange(targetAddr - sourceAddr)) {
+    branch->setBOffImm16(BOffImm16(targetAddr - sourceAddr));
+  } else {
+    if (target == JitZoneGroup::BackedgeLoopHeader) {
+      Instruction* lui = &branch[1];
+      AssemblerMIPSShared::UpdateLuiOriValue(lui, lui->next(), targetAddr);
+      // Jump to ori. The lui will be executed in delay slot.
+      branch->setBOffImm16(BOffImm16(2 * sizeof(uint32_t)));
+    } else {
+      Instruction* lui = &branch[4];
+      AssemblerMIPSShared::UpdateLuiOriValue(lui, lui->next(), targetAddr);
+      branch->setBOffImm16(BOffImm16(4 * sizeof(uint32_t)));
+    }
+  }
 }
 
 void Assembler::executableCopy(uint8_t* buffer, bool flushICache) {
   MOZ_ASSERT(isFinished);
   m_buffer.executableCopy(buffer);
 
-  if (flushICache) {
+  if (flushICache)
     AutoFlushICache::setRange(uintptr_t(buffer), m_buffer.size());
-  }
 }
 
 uintptr_t Assembler::GetPointer(uint8_t* instPtr) {
@@ -161,14 +180,27 @@ static void TraceOneDataRelocation(JSTracer* trc, Instruction* inst) {
   }
 }
 
-/* static */
-void Assembler::TraceDataRelocations(JSTracer* trc, JitCode* code,
-                                     CompactBufferReader& reader) {
+static void TraceDataRelocations(JSTracer* trc, uint8_t* buffer,
+                                 CompactBufferReader& reader) {
   while (reader.more()) {
     size_t offset = reader.readUnsigned();
-    Instruction* inst = (Instruction*)(code->raw() + offset);
+    Instruction* inst = (Instruction*)(buffer + offset);
     TraceOneDataRelocation(trc, inst);
   }
+}
+
+static void TraceDataRelocations(JSTracer* trc, MIPSBuffer* buffer,
+                                 CompactBufferReader& reader) {
+  while (reader.more()) {
+    BufferOffset bo(reader.readUnsigned());
+    MIPSBuffer::AssemblerBufferInstIterator iter(bo, buffer);
+    TraceOneDataRelocation(trc, iter.cur());
+  }
+}
+
+void Assembler::TraceDataRelocations(JSTracer* trc, JitCode* code,
+                                     CompactBufferReader& reader) {
+  ::TraceDataRelocations(trc, code->raw(), reader);
 }
 
 Assembler::Condition Assembler::UnsignedCondition(Condition cond) {
@@ -209,6 +241,21 @@ Assembler::Condition Assembler::ConditionWithoutEqual(Condition cond) {
       return Above;
     default:
       MOZ_CRASH("unexpected condition");
+  }
+}
+
+void Assembler::trace(JSTracer* trc) {
+  for (size_t i = 0; i < jumps_.length(); i++) {
+    RelativePatch& rp = jumps_[i];
+    if (rp.kind == Relocation::JITCODE) {
+      JitCode* code = JitCode::FromExecutable((uint8_t*)rp.target);
+      TraceManuallyBarrieredEdge(trc, &code, "masmrel32");
+      MOZ_ASSERT(code == JitCode::FromExecutable((uint8_t*)rp.target));
+    }
+  }
+  if (dataRelocations_.length()) {
+    CompactBufferReader reader(dataRelocations_);
+    ::TraceDataRelocations(trc, &m_buffer, reader);
   }
 }
 

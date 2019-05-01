@@ -1,83 +1,70 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "jsapi-tests/tests.h"
 
-#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
-
 #include <stdio.h>
 
-#include "js/CompilationAndEvaluation.h"  // JS::Evaluate
 #include "js/Initialization.h"
 #include "js/RootingAPI.h"
-#include "js/SourceText.h"  // JS::Source{Ownership,Text}
 
 JSAPITest* JSAPITest::list;
 
 bool JSAPITest::init() {
   cx = createContext();
-  if (!cx) {
-    return false;
-  }
+  if (!cx) return false;
   js::UseInternalJobQueues(cx);
-  if (!JS::InitSelfHostedCode(cx)) {
-    return false;
-  }
+  if (!JS::InitSelfHostedCode(cx)) return false;
+  JS_BeginRequest(cx);
   global.init(cx);
   createGlobal();
-  if (!global) {
-    return false;
-  }
-  JS::EnterRealm(cx, global);
+  if (!global) return false;
+  JS_EnterCompartment(cx, global);
   return true;
 }
 
 void JSAPITest::uninit() {
+  if (oldCompartment) {
+    JS_LeaveCompartment(cx, oldCompartment);
+    oldCompartment = nullptr;
+  }
   if (global) {
-    JS::LeaveRealm(cx, nullptr);
+    JS_LeaveCompartment(cx, nullptr);
     global = nullptr;
   }
   if (cx) {
+    JS_EndRequest(cx);
     destroyContext();
     cx = nullptr;
   }
   msgs.clear();
 }
 
-bool JSAPITest::exec(const char* utf8, const char* filename, int lineno) {
+bool JSAPITest::exec(const char* bytes, const char* filename, int lineno) {
+  JS::RootedValue v(cx);
   JS::CompileOptions opts(cx);
   opts.setFileAndLine(filename, lineno);
-
-  JS::SourceText<mozilla::Utf8Unit> srcBuf;
-  JS::RootedValue v(cx);
-  return (srcBuf.init(cx, utf8, strlen(utf8), JS::SourceOwnership::Borrowed) &&
-          JS::Evaluate(cx, opts, srcBuf, &v)) ||
-         fail(JSAPITestString(utf8), filename, lineno);
+  return JS::Evaluate(cx, opts, bytes, strlen(bytes), &v) ||
+         fail(JSAPITestString(bytes), filename, lineno);
 }
 
-bool JSAPITest::execDontReport(const char* utf8, const char* filename,
+bool JSAPITest::execDontReport(const char* bytes, const char* filename,
                                int lineno) {
+  JS::RootedValue v(cx);
   JS::CompileOptions opts(cx);
   opts.setFileAndLine(filename, lineno);
-
-  JS::SourceText<mozilla::Utf8Unit> srcBuf;
-  JS::RootedValue v(cx);
-  return srcBuf.init(cx, utf8, strlen(utf8), JS::SourceOwnership::Borrowed) &&
-         JS::Evaluate(cx, opts, srcBuf, &v);
+  return JS::Evaluate(cx, opts, bytes, strlen(bytes), &v);
 }
 
-bool JSAPITest::evaluate(const char* utf8, const char* filename, int lineno,
+bool JSAPITest::evaluate(const char* bytes, const char* filename, int lineno,
                          JS::MutableHandleValue vp) {
   JS::CompileOptions opts(cx);
   opts.setFileAndLine(filename, lineno);
-
-  JS::SourceText<mozilla::Utf8Unit> srcBuf;
-  return (srcBuf.init(cx, utf8, strlen(utf8), JS::SourceOwnership::Borrowed) &&
-          JS::Evaluate(cx, opts, srcBuf, vp)) ||
-         fail(JSAPITestString(utf8), filename, lineno);
+  return JS::Evaluate(cx, opts, bytes, strlen(bytes), vp) ||
+         fail(JSAPITestString(bytes), filename, lineno);
 }
 
 bool JSAPITest::definePrint() {
@@ -87,17 +74,19 @@ bool JSAPITest::definePrint() {
 JSObject* JSAPITest::createGlobal(JSPrincipals* principals) {
   /* Create the global object. */
   JS::RootedObject newGlobal(cx);
-  JS::RealmOptions options;
-  options.creationOptions()
-      .setStreamsEnabled(true)
-      .setBigIntEnabled(true)
-      .setFieldsEnabled(true)
-      .setAwaitFixEnabled(true);
+  JS::CompartmentOptions options;
+#ifdef ENABLE_STREAMS
+  options.creationOptions().setStreamsEnabled(true);
+#endif
   newGlobal = JS_NewGlobalObject(cx, getGlobalClass(), principals,
                                  JS::FireOnNewGlobalHook, options);
-  if (!newGlobal) {
-    return nullptr;
-  }
+  if (!newGlobal) return nullptr;
+
+  JSAutoCompartment ac(cx, newGlobal);
+
+  // Populate the global object with the standard globals like Object and
+  // Array.
+  if (!JS_InitStandardClasses(cx, newGlobal)) return nullptr;
 
   global = newGlobal;
   return newGlobal;
@@ -115,9 +104,7 @@ int main(int argc, char* argv[]) {
 
   for (JSAPITest* test = JSAPITest::list; test; test = test->next) {
     const char* name = test->name();
-    if (filter && strstr(name, filter) == nullptr) {
-      continue;
-    }
+    if (filter && strstr(name, filter) == nullptr) continue;
 
     total += 1;
 
@@ -136,9 +123,7 @@ int main(int argc, char* argv[]) {
       printf("%s | %s | %.*s\n",
              (test->knownFail ? "TEST-KNOWN-FAIL" : "TEST-UNEXPECTED-FAIL"),
              name, (int)messages.length(), messages.begin());
-      if (!test->knownFail) {
-        failures++;
-      }
+      if (!test->knownFail) failures++;
     }
     test->uninit();
   }

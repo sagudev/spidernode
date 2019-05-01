@@ -1,6 +1,6 @@
 // Test doing a GC while we have a non-empty log.
 
-const root = newGlobal({newCompartment: true});
+const root = newGlobal();
 const dbg = new Debugger();
 dbg.addDebuggee(root)
 dbg.memory.trackingAllocationSites = true;

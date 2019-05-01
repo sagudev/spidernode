@@ -1,6 +1,7 @@
-// |jit-test| skip-if: helperThreadCount() === 0
-
 load(libdir + "asserts.js");
+
+if (helperThreadCount() === 0)
+  quit(0);
 
 options('werror');
 offThreadCompileScript("function f() {'use asm'}");

@@ -80,7 +80,7 @@ function debuggeeValueToString(dv, style) {
         return [dvrepr, undefined];
 
     if (dv.class == "Error") {
-        let errval = debuggeeGlobalWrapper.executeInGlobalWithBindings("$$.toString()", debuggeeValues);
+        let errval = debuggeeGlobalWrapper.executeInGlobalWithBindings("$" + i + ".toString()", debuggeeValues);
         return [dvrepr, errval.return];
     }
 
@@ -106,7 +106,6 @@ function debuggeeValueToString(dv, style) {
 function showDebuggeeValue(dv, style={pretty: options.pretty}) {
     var i = nextDebuggeeValueIndex++;
     debuggeeValues["$" + i] = dv;
-    debuggeeValues["$$"] = dv;
     let [brief, full] = debuggeeValueToString(dv, style);
     print("$" + i + " = " + brief);
     if (full !== undefined)
@@ -748,7 +747,7 @@ function handleBreakpoint (frame) {
 var jorendbDepth;
 if (typeof jorendbDepth == 'undefined') jorendbDepth = 0;
 
-var debuggeeGlobal = newGlobal({newCompartment: true});
+var debuggeeGlobal = newGlobal("new-compartment");
 debuggeeGlobal.jorendbDepth = jorendbDepth + 1;
 var debuggeeGlobalWrapper = dbg.addDebuggee(debuggeeGlobal);
 
@@ -864,9 +863,10 @@ for (var task of todo) {
     task['scriptArgs'] = actualScriptArgs;
 }
 
-// Always drop into a repl at the end. Especially if the main script throws an
-// exception.
-todo.push({ 'action': 'repl' });
+// If nothing to run, just drop into a repl
+if (todo.length == 0) {
+    todo.push({ 'action': 'repl' });
+}
 
 while (rerun) {
     print("Top of run loop");
@@ -879,12 +879,7 @@ while (rerun) {
             debuggeeGlobal['scriptArgs'] = task.scriptArgs;
             debuggeeGlobal['scriptPath'] = task.script;
             print("Loading JavaScript file " + task.script);
-            try {
-                debuggeeGlobal.evaluate(read(task.script), { 'fileName': task.script, 'lineNumber': 1 });
-            } catch (exc) {
-                print("Caught exception " + exc);
-                print(exc.stack);
-            }
+            debuggeeGlobal.evaluate(read(task.script), { 'fileName': task.script, 'lineNumber': 1 });
         } else if (task.action == 'repl') {
             repl();
         }

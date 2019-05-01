@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,80 +16,62 @@ namespace js {
 
 inline LexicalEnvironmentObject& NearestEnclosingExtensibleLexicalEnvironment(
     JSObject* env) {
-  MOZ_ASSERT(env);
-  while (!IsExtensibleLexicalEnvironment(env)) {
+  while (!IsExtensibleLexicalEnvironment(env))
     env = env->enclosingEnvironment();
-    MOZ_ASSERT(env);
-  }
   return env->as<LexicalEnvironmentObject>();
 }
 
-// Returns the innermost "qualified var object" on the environment chain.
-// See the JSObject::isQualifiedVarObj comment for more info.
-inline JSObject& GetVariablesObject(JSObject* envChain) {
-  while (!envChain->isQualifiedVarObj()) {
-    envChain = envChain->enclosingEnvironment();
-  }
-  MOZ_ASSERT(envChain);
-  return *envChain;
-}
-
-inline const Value& EnvironmentObject::aliasedBinding(
-    EnvironmentCoordinate ec) {
-  MOZ_ASSERT(!IsExtensibleLexicalEnvironment(this));
-  MOZ_ASSERT(nonExtensibleIsFixedSlot(ec) ==
-             NativeObject::isFixedSlot(ec.slot()));
-  return getSlot(ec.slot());
-}
-
 inline void EnvironmentObject::setAliasedBinding(JSContext* cx, uint32_t slot,
+                                                 PropertyName* name,
                                                  const Value& v) {
-  MOZ_ASSERT(!isSingleton());
+  if (isSingleton()) {
+    MOZ_ASSERT(name);
+    AddTypePropertyId(cx, this, NameToId(name), v);
+
+    // Keep track of properties which have ever been overwritten.
+    if (!getSlot(slot).isUndefined()) {
+      Shape* shape = lookup(cx, name);
+      shape->setOverwritten();
+    }
+  }
+
   setSlot(slot, v);
 }
 
 inline void EnvironmentObject::setAliasedBinding(JSContext* cx,
                                                  EnvironmentCoordinate ec,
+                                                 PropertyName* name,
                                                  const Value& v) {
-  MOZ_ASSERT(!IsExtensibleLexicalEnvironment(this));
-  MOZ_ASSERT(nonExtensibleIsFixedSlot(ec) ==
-             NativeObject::isFixedSlot(ec.slot()));
-  setAliasedBinding(cx, ec.slot(), v);
+  setAliasedBinding(cx, ec.slot(), name, v);
 }
 
 inline void EnvironmentObject::setAliasedBinding(JSContext* cx,
                                                  const BindingIter& bi,
                                                  const Value& v) {
   MOZ_ASSERT(bi.location().kind() == BindingLocation::Kind::Environment);
-  setAliasedBinding(cx, bi.location().slot(), v);
+  setAliasedBinding(cx, bi.location().slot(), bi.name()->asPropertyName(), v);
 }
 
 inline void CallObject::setAliasedFormalFromArguments(JSContext* cx,
                                                       const Value& argsValue,
                                                       jsid id, const Value& v) {
   setSlot(ArgumentsObject::SlotFromMagicScopeSlotValue(argsValue), v);
-  if (isSingleton()) {
-    AddTypePropertyId(cx, this, id, v);
-  }
+  if (isSingleton()) AddTypePropertyId(cx, this, id, v);
 }
 
 } /* namespace js */
 
 inline JSObject* JSObject::enclosingEnvironment() const {
-  if (is<js::EnvironmentObject>()) {
+  if (is<js::EnvironmentObject>())
     return &as<js::EnvironmentObject>().enclosingEnvironment();
-  }
 
-  if (is<js::DebugEnvironmentProxy>()) {
+  if (is<js::DebugEnvironmentProxy>())
     return &as<js::DebugEnvironmentProxy>().enclosingEnvironment();
-  }
 
-  if (is<js::GlobalObject>()) {
-    return nullptr;
-  }
+  if (is<js::GlobalObject>()) return nullptr;
 
   MOZ_ASSERT_IF(is<JSFunction>(), as<JSFunction>().isInterpreted());
-  return &nonCCWGlobal();
+  return &global();
 }
 
 #endif /* vm_EnvironmentObject_inl_h */

@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files('**'):
-    BUG_COMPONENT = ('Firefox Build System', 'General')
+    BUG_COMPONENT = ('Core', 'Build Config')
 
 # This cannot be named "build" because of bug 922191.
 SPHINX_TREES['buildsystem'] = 'docs'
@@ -15,12 +15,17 @@ with Files('docs/**'):
 
 if CONFIG['OS_ARCH'] == 'WINNT':
     DIRS += ['win32']
+    if CONFIG['WIN64_CARGO_LINKER']:
+        CONFIGURE_SUBST_FILES += ['win64/cargo-linker.bat']
 else:
     DIRS += ['unix']
 
 CRAMTEST_MANIFESTS += [
     'tests/cram/cram.ini',
 ]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
+    DIRS += ['annotationProcessors']
 
 DEFINES['ACCEPTED_MAR_CHANNEL_IDS'] = CONFIG['ACCEPTED_MAR_CHANNEL_IDS']
 
@@ -48,7 +53,6 @@ OBJDIR_FILES += ['!/dist/bin/.gdbinit_python']
 # Install the clang-cl runtime library for ASAN next to the binaries we produce.
 if CONFIG['MOZ_ASAN'] and CONFIG['CC_TYPE'] == 'clang-cl':
     FINAL_TARGET_FILES += ['%' + CONFIG['MOZ_CLANG_RT_ASAN_LIB_PATH']]
-    FINAL_TARGET_FILES += ['%' + CONFIG['MOZ_CLANG_RT_ASAN_LIB_PATH'].replace(".dll", ".pdb")]
 
 if CONFIG['LLVM_SYMBOLIZER']:
     FINAL_TARGET_FILES += ['/' + CONFIG['LLVM_SYMBOLIZER']]
@@ -92,20 +96,6 @@ if CONFIG['MOZ_APP_BASENAME']:
     appini.script = 'appini_header.py'
     appini.inputs = ['!application.ini']
 
-if CONFIG['ENABLE_TESTS']:
-    GENERATED_FILES += ['automation.py']
-    auto = GENERATED_FILES['automation.py']
-    auto.script = 'gen_automation.py'
-    auto.inputs = ['automation.py.in']
-
-    TEST_HARNESS_FILES.reftest += [
-        '!automation.py',
-    ]
-
-    TEST_HARNESS_FILES.testing.mochitest += [
-        '!automation.py',
-    ]
-
 # NOTE: Keep .gdbinit in the topsrcdir for people who run gdb from the topsrcdir.
 OBJDIR_FILES += ['/.gdbinit']
 
@@ -114,7 +104,6 @@ OBJDIR_FILES += ['/.gdbinit']
 # directories as the current working directory.  The .lldbinit file will
 # load $(topsrcdir)/.lldbinit, which is where the actual debugging commands are.
 DEFINES['topsrcdir'] = TOPSRCDIR
-DEFINES['topobjdir'] = TOPOBJDIR
 FINAL_TARGET_PP_FILES += ['.lldbinit.in']
 OBJDIR_FILES += ['!/dist/bin/.lldbinit']
 
@@ -127,4 +116,11 @@ if CONFIG['MOZ_VALGRIND']:
         'valgrind/cross-architecture.sup',
         'valgrind/i386-pc-linux-gnu.sup',
         'valgrind/x86_64-pc-linux-gnu.sup',
+    ]
+
+if CONFIG['MOZ_ARTIFACT_BUILDS']:
+    # Ensure a pre-built interfaces.xpt installed to the objdir by the artifact
+    # code is included by the top-level chrome.manifest.
+    EXTRA_COMPONENTS += [
+        'prebuilt-interfaces.manifest',
     ]

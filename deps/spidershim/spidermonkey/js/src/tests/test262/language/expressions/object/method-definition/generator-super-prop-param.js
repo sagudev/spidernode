@@ -3,11 +3,11 @@
 
 /*---
 info: |
- GeneratorMethod can reference SuperProperty in default parameters
+ GeneratorMethod can reference SuperProperty in arg
 es6id: 14.4.1
 author: Sam Mikes
 description: GeneratorMethod uses SuperProperty (allowed)
-features: [default-parameters, generators, super]
+features: [ default-arg, generators, super ]
 ---*/
 
 var obj = {

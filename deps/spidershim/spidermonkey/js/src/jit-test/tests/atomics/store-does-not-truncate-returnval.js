@@ -1,3 +1,6 @@
+if (!this.SharedArrayBuffer)
+    quit(0);
+
 var ia = new Int32Array(new SharedArrayBuffer(4));
 
 // Atomics.store() returns the input value converted to integer as if

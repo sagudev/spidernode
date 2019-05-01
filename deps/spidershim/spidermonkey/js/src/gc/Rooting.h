@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +7,6 @@
 #ifndef gc_Rooting_h
 #define gc_Rooting_h
 
-#include "gc/Policy.h"
 #include "js/GCVector.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
@@ -30,7 +29,6 @@ class DebuggerEnvironment;
 class DebuggerFrame;
 class DebuggerObject;
 class Scope;
-class ModuleObject;
 
 // These are internal counterparts to the public types such as HandleObject.
 
@@ -43,13 +41,12 @@ typedef JS::Handle<PropertyName*> HandlePropertyName;
 typedef JS::Handle<ArrayObject*> HandleArrayObject;
 typedef JS::Handle<PlainObject*> HandlePlainObject;
 typedef JS::Handle<SavedFrame*> HandleSavedFrame;
-typedef JS::Handle<ScriptSourceObject*> HandleScriptSourceObject;
+typedef JS::Handle<ScriptSourceObject*> HandleScriptSource;
 typedef JS::Handle<DebuggerArguments*> HandleDebuggerArguments;
 typedef JS::Handle<DebuggerEnvironment*> HandleDebuggerEnvironment;
 typedef JS::Handle<DebuggerFrame*> HandleDebuggerFrame;
 typedef JS::Handle<DebuggerObject*> HandleDebuggerObject;
 typedef JS::Handle<Scope*> HandleScope;
-typedef JS::Handle<ModuleObject*> HandleModuleObject;
 
 typedef JS::MutableHandle<Shape*> MutableHandleShape;
 typedef JS::MutableHandle<JSAtom*> MutableHandleAtom;
@@ -62,7 +59,6 @@ typedef JS::MutableHandle<DebuggerEnvironment*>
 typedef JS::MutableHandle<DebuggerFrame*> MutableHandleDebuggerFrame;
 typedef JS::MutableHandle<DebuggerObject*> MutableHandleDebuggerObject;
 typedef JS::MutableHandle<Scope*> MutableHandleScope;
-typedef JS::MutableHandle<ModuleObject*> MutableHandleModuleObject;
 
 typedef JS::Rooted<NativeObject*> RootedNativeObject;
 typedef JS::Rooted<Shape*> RootedShape;
@@ -74,30 +70,27 @@ typedef JS::Rooted<ArrayObject*> RootedArrayObject;
 typedef JS::Rooted<GlobalObject*> RootedGlobalObject;
 typedef JS::Rooted<PlainObject*> RootedPlainObject;
 typedef JS::Rooted<SavedFrame*> RootedSavedFrame;
-typedef JS::Rooted<ScriptSourceObject*> RootedScriptSourceObject;
+typedef JS::Rooted<ScriptSourceObject*> RootedScriptSource;
 typedef JS::Rooted<DebuggerArguments*> RootedDebuggerArguments;
 typedef JS::Rooted<DebuggerEnvironment*> RootedDebuggerEnvironment;
 typedef JS::Rooted<DebuggerFrame*> RootedDebuggerFrame;
 typedef JS::Rooted<DebuggerObject*> RootedDebuggerObject;
 typedef JS::Rooted<Scope*> RootedScope;
-typedef JS::Rooted<ModuleObject*> RootedModuleObject;
 
 typedef JS::GCVector<JSFunction*> FunctionVector;
 typedef JS::GCVector<PropertyName*> PropertyNameVector;
 typedef JS::GCVector<Shape*> ShapeVector;
 typedef JS::GCVector<JSString*> StringVector;
 
-/**
- * Interface substitute for Rooted<T> which does not root the variable's
- * memory.
- */
+/** Interface substitute for Rooted<T> which does not root the variable's
+ * memory. */
 template <typename T>
 class MOZ_RAII FakeRooted : public RootedBase<T, FakeRooted<T>> {
  public:
   using ElementType = T;
 
   template <typename CX>
-  explicit FakeRooted(CX* cx) : ptr(JS::SafelyInitialized<T>()) {}
+  explicit FakeRooted(CX* cx) : ptr(JS::GCPolicy<T>::initial()) {}
 
   template <typename CX>
   FakeRooted(CX* cx, T initial) : ptr(initial) {}
@@ -115,10 +108,8 @@ class MOZ_RAII FakeRooted : public RootedBase<T, FakeRooted<T>> {
   FakeRooted(const FakeRooted&) = delete;
 };
 
-/**
- * Interface substitute for MutableHandle<T> which is not required to point to
- * rooted memory.
- */
+/** Interface substitute for MutableHandle<T> which is not required to point to
+ * rooted memory. */
 template <typename T>
 class FakeMutableHandle
     : public js::MutableHandleBase<T, FakeMutableHandle<T>> {
@@ -136,7 +127,7 @@ class FakeMutableHandle
   DECLARE_NONPOINTER_MUTABLE_ACCESSOR_METHODS(*ptr);
 
  private:
-  FakeMutableHandle() : ptr(nullptr) {}
+  FakeMutableHandle() {}
   DELETE_ASSIGNMENT_OPS(FakeMutableHandle, T);
 
   T* ptr;

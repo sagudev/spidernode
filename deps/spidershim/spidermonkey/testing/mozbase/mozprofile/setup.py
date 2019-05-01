@@ -7,13 +7,12 @@ from __future__ import absolute_import
 from setuptools import setup
 
 PACKAGE_NAME = 'mozprofile'
-PACKAGE_VERSION = '2.2.0'
+PACKAGE_VERSION = '0.29'
 
-deps = [
-    'mozfile>=1.2',
-    'mozlog~=4.0',
-    'six>=1.10.0,<2',
-]
+deps = ['mozfile >= 1.0',
+        'mozlog >= 3.0',
+        'six >= 1.10.0'
+        ]
 
 setup(name=PACKAGE_NAME,
       version=PACKAGE_VERSION,
@@ -25,7 +24,7 @@ setup(name=PACKAGE_NAME,
                    'Natural Language :: English',
                    'Operating System :: OS Independent',
                    'Programming Language :: Python :: 2.7',
-                   'Programming Language :: Python :: 3.5',
+                   'Programming Language :: Python :: 3',
                    'Topic :: Software Development :: Libraries :: Python Modules',
                    ],
       keywords='mozilla',
