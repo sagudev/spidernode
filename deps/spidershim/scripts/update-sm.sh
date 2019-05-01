@@ -35,6 +35,10 @@ for patch in `ls spidermonkey-patches/* | sort`; do
   (cd spidermonkey && patch -p1 --no-backup < "../$patch")
 done
 
+# to fix libmozglue.a not found
+# TODO: apply patch with GNU patch not with sed
+sed -i -e "\$aNO_EXPAND_LIBS = True" ./spidermonkey/mozglue/build/moz.build
+
 git add spidermonkey
 # The following will fail if there are no deleted files, so || with true.
 git rm -r `git ls-files --deleted spidermonkey` || true
@@ -43,6 +47,5 @@ git add -f `git ls-files --others spidermonkey` || true
 
 scripts/build-spidermonkey-files.py
 sed -i '/spaces.bat/d' ./spidermonkey-files.gypi
-sed -i -e "\$aNO_EXPAND_LIBS = True" ./spidermonkey/mozglue/build/moz.build # to fix libmozglue.a not found
 git add spidermonkey-files.gypi
 git commit -m "Sync SpiderMonkey from $2"
