@@ -169,9 +169,8 @@ void ObjectTemplateFinalize(JSFreeOp* fop, JSObject* obj) {
 const JSClassOps objectTemplateClassOps = {
   nullptr, // addProperty
   nullptr, // delProperty
-  nullptr, // getProperty
-  nullptr, // setProperty
   nullptr, // enumerate
+  nullptr, // newEnumerate
   nullptr, // resolve
   nullptr, // mayResolve
   ObjectTemplateFinalize,
@@ -374,7 +373,7 @@ struct PropCallbackTraits<typename PropXerTraits<N>::PropSetter, N> :
                      typename PropXerTraits<N>::PropSetter callback,
                      JS::HandleId id,
                      PropertyCallbackInfo& info,
-                     JS::MutableHandleValue vp) {
+                     JS::HandleValue vp) {
     auto name = PropXerTraits<N>::MakeName(isolate, id);
     Local<Value> value = internal::Local<Value>::New(isolate, vp);
 
@@ -643,8 +642,8 @@ static bool ResolveOp_Getter(JSContext* cx, JS::HandleObject obj,
 
 template<typename CallbackType, typename N>
 static bool SetterOpImpl(JSContext* cx, JS::HandleObject obj,
-                         JS::HandleId id, JS::MutableHandleValue vp,
-                         JS::ObjectOpResult& result) {
+                     JS::HandleId id, JS::HandleValue vp,
+                     JS::ObjectOpResult& result) {
   PREPARE_CALLBACK(Setter)
 
   if (callback) {
@@ -664,7 +663,7 @@ static bool SetterOpImpl(JSContext* cx, JS::HandleObject obj,
 }
 
 static bool SetterOp(JSContext* cx, JS::HandleObject obj,
-                     JS::HandleId id, JS::MutableHandleValue vp,
+                     JS::HandleId id, JS::HandleValue vp,
                      JS::ObjectOpResult& result) {
   JSSetterOp impl = nullptr;
   if (JSID_IS_INT(id)) {
@@ -1046,7 +1045,7 @@ Local<Object> ObjectTemplate::NewInstance(Local<Object> prototype,
     instanceObj = JS_NewObjectWithGivenProto(cx, instanceClass, protoObj);
   } else if (objectType == GlobalObject) {
     JS::CompartmentOptions options;
-    options.behaviors().setVersion(JSVERSION_LATEST);
+    options.behaviors();
     instanceObj = JS_NewGlobalObject(cx, instanceClass, nullptr,
                                      JS::FireOnNewGlobalHook, options);
     if (!instanceObj) {
@@ -1207,8 +1206,9 @@ ObjectTemplate::InstanceClass* ObjectTemplate::GetInstanceClass(ObjectType objec
     instanceClass->name = JS_EncodeStringToUTF8(cx, str);
     flags |= InstanceClass::nameAllocated;
   }
-
-  if (HasGetterProp<Name>(obj) ||
+// fix this
+// fix with proxies
+  /* if (HasGetterProp<Name>(obj) ||
       HasGetterProp<String>(obj) ||
       HasGetterProp<uint32_t>(obj)) {
     instanceClass->ModifyClassOps().getProperty = GetterOp;
@@ -1223,7 +1223,7 @@ ObjectTemplate::InstanceClass* ObjectTemplate::GetInstanceClass(ObjectType objec
       HasSetterProp<String>(obj) ||
       HasSetterProp<uint32_t>(obj)) {
     instanceClass->ModifyClassOps().setProperty = SetterOp;
-  }
+  } */
 
   if (HasQueryProp<Name>(obj) ||
       HasQueryProp<String>(obj) ||
@@ -1239,11 +1239,11 @@ ObjectTemplate::InstanceClass* ObjectTemplate::GetInstanceClass(ObjectType objec
     instanceClass->ModifyClassOps().delProperty = DeleterOp;
   }
 
-  if (HasEnumeratorProp<Name>(obj) ||
-      HasEnumeratorProp<String>(obj) ||
-      HasEnumeratorProp<uint32_t>(obj)) {
-    instanceClass->ModifyObjectOps().enumerate = EnumeratorOp;
-  }
+//  if (HasEnumeratorProp<Name>(obj) ||
+//      HasEnumeratorProp<String>(obj) ||
+//      HasEnumeratorProp<uint32_t>(obj)) {
+//    instanceClass->ModifyObjectOps().enumerate = EnumeratorOp;
+//  }
 
   JS::Value callAsFunctionHandler =
     js::GetReservedSlot(obj, size_t(TemplateSlots::CallCallbackSlot));

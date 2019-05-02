@@ -302,7 +302,7 @@ MaybeLocal<Value> Object::GetOwnPropertyDescriptor(Local<Context> context,
   auto flatKey = internal::GetFlatString(cx, key);
   JS::RootedObject thisVal(cx, GetObject(this));
   JS::Rooted<JS::PropertyDescriptor> desc(cx);
-  if (!JS_GetOwnUCPropertyDescriptor(cx, thisVal, flatKey.get(), &desc)) {
+  if (!JS_GetOwnUCPropertyDescriptor(cx, thisVal, flatKey.get(), std::char_traits<char16_t>::length(flatKey.get()), &desc)) {
     return MaybeLocal<Value>();
   }
   JS::RootedValue result(cx);

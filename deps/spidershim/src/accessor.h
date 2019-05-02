@@ -269,14 +269,14 @@ bool SetAccessor(JSContext* cx,
   }
 
   unsigned attrs = internal::AttrsToFlags(attribute) |
-                   JSPROP_SHARED | JSPROP_GETTER;
+                   JSPROP_SETTER | JSPROP_GETTER;
   if (setter) {
     attrs |= JSPROP_SETTER;
   }
 
-  if (!JS_DefinePropertyById(cx, obj, id, JS::UndefinedHandleValue, attrs,
+  if (!JS_DefinePropertyById(cx, obj, id,
                              JS_DATA_TO_FUNC_PTR(JSNative, getter.get()),
-                             JS_DATA_TO_FUNC_PTR(JSNative, setter.get()))) {
+                             JS_DATA_TO_FUNC_PTR(JSNative, setter.get()), attrs)) {
     return false;
   }
 

@@ -134,7 +134,11 @@ Isolate::Isolate() : pimpl_(new Impl()) {
   JS_SetGCParameter(pimpl_->cx, JSGC_MODE, JSGC_MODE_INCREMENTAL);
   JS_SetGCParameter(pimpl_->cx, JSGC_MAX_BYTES, 0xffffffff);
   JS_SetNativeStackQuota(pimpl_->cx, sStackSize);
-  JS_SetDefaultLocale(pimpl_->cx, "UTF-8");
+  // Dirty hack here
+  JSRuntime* rt = JS_GetRuntime(pimpl_->cx);
+  JS_SetDefaultLocale(rt, "UTF-8");
+  // end of dirty hack
+  // original was JS_SetDefaultLocale(pimpl_->cx, "UTF-8");
   js::SetStackFormat(pimpl_->cx, js::StackFormat::V8);
 
 #ifndef DEBUG
@@ -588,7 +592,7 @@ Local<Object> Isolate::GetHiddenGlobal() {
     // only used in those cases.
     static const JSClassOps cOps = {
         nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, JS_GlobalObjectTraceHook};
+        nullptr, nullptr, nullptr, nullptr, JS_GlobalObjectTraceHook};
     static const JSClass globalClass = {
       "HiddenGlobalObject",
       // SpiderMonkey allocates JSCLASS_GLOBAL_APPLICATION_SLOTS (5) reserved slots
@@ -603,7 +607,7 @@ Local<Object> Isolate::GetHiddenGlobal() {
     JSAutoRequest ar(cx);
     JS::RootedObject newGlobal(cx);
     JS::CompartmentOptions options;
-    options.behaviors().setVersion(JSVERSION_LATEST);
+    options.behaviors();
     newGlobal = JS_NewGlobalObject(cx, &globalClass, nullptr,
                                    JS::FireOnNewGlobalHook, options);
     if (!newGlobal) {
