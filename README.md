@@ -28,6 +28,15 @@ $ make
 ...
 $ ./node -e 'console.log("hello from " + process.jsEngine)'
 hello from spidermonkey
+$ ./node -e 'console.log(process.versions)'
+{ http_parser: '2.7.0',
+  node: '8.0.0-pre',
+  spidermonkey: 'JavaScript-C60.6.2',
+  uv: '1.11.0',
+  zlib: '1.2.11',
+  ares: '1.10.1-DEV',
+  modules: '54',
+  openssl: '1.0.2k' }
 ```
 
 Where `options` is zero or more of:
